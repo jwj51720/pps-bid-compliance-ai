@@ -216,3 +216,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Competition data (keep directory structure only)
+data/*
+!data/raw/
+!data/derived/
+data/raw/*
+data/derived/*
+!data/raw/.gitkeep
+!data/derived/.gitkeep
