@@ -36,7 +36,7 @@ python scripts/run_experiment.py --config config.yaml
 python -m pytest
 ```
 
-Some entry points are still planned rather than implemented; update these commands when their interfaces become real. Initial local Gemma experiments use OpenRouter model `google/gemma-4-26b-a4b-it` (or its `:free` variant). Keep provider calls inside `src/external/`.
+Profile the official files with `python scripts/profile_data.py --config config.yaml`. Use `--mock` for a no-network pipeline smoke test and rerun the same experiment command to resume an interrupted checkpoint. Initial local Gemma experiments use OpenRouter model `google/gemma-4-26b-a4b-it:free`; select the model in versioned config, while the ignored `.env` stores only `OPENROUTER_API_KEY`. Keep provider calls inside `src/external/`.
 
 ## Competition-Critical Implementation Rules
 
@@ -45,6 +45,7 @@ Some entry points are still planned rather than implemented; update these comman
 - External LLMs may create self-labels only from competition-provided material. Record model, prompt, generation settings, inputs, and outputs so the process is reproducible.
 - Evidence must be an unchanged source-document substring of at most 500 characters. `e10`, `e11`, `e16`, `e18`, and `e20` are always blank. Resolve and validate evidence in Python rather than trusting generated paraphrases.
 - Read submission paths from `PPS_DATA_DIR`, `PPS_OUTPUT_DIR`, `PPS_MODEL_DIR`, and `PPS_EMBED_DIR`; never hard-code local paths. Inference has no internet access.
+- Preserve the document order `공고문 → 규격서 → 과업지시서 → 제안요청서 → 예외공표서`. If the token budget cannot hold every complete document, use additional notice-level passes that retain the notice and cover omitted document types; combine a positive finding from either pass and retain evidence from its source document.
 
 ## Experiments and Testing
 
@@ -62,4 +63,4 @@ Use Python, four-space indentation, PEP 8, type hints at module boundaries, `sna
 
 When explicitly asked to commit, inspect all changes first and split sequential commits by responsibility. Use concise imperative subjects; experiment commits may use `exp005: add v3 threshold rule`. Pull requests should state the hypothesis, validation commands, metric/runtime deltas, and any rule or packaging impact.
 
-Never commit API keys, `.env`, competition data, generated submissions, caches, or prohibited model weights. Keep safe placeholders in `.env.example`.
+Never commit API keys, `.env`, competition data, generated submissions, caches, or prohibited model weights. Do not maintain a tracked environment template; document variable names without placeholder files when needed.

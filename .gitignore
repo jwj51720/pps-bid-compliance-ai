@@ -225,3 +225,7 @@ data/raw/*
 data/derived/*
 !data/raw/.gitkeep
 !data/derived/.gitkeep
+
+# Experiment outputs may contain competition text and model responses
+outputs/*
+!outputs/.gitkeep
