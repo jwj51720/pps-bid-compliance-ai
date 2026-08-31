@@ -127,3 +127,39 @@ def test_full_split_merge_keeps_one_target_document_per_pass_and_splits_long_one
     assert "[공고문 앵커:A1]" in contexts[1].text
     assert contexts[1].target_text + contexts[2].target_text == "S" * 100
     assert all(count_tokens([{"content": context.text}]) <= 120 for context in contexts)
+
+
+def test_full_split_budget_counts_product_context_in_every_pass() -> None:
+    record = {
+        "id": "N1",
+        "meta": {},
+        "dropped_doc_counts": {},
+        "docs": [
+            {"doc_id": "A1", "type": "공고문", "text": "A" * 80},
+        ],
+    }
+
+    def count_tokens(messages):
+        return sum(len(message["content"]) for message in messages)
+
+    product_context = "대회 제공 경쟁제품 고시 조회 결과 " * 3
+    contexts = pack_document_contexts_to_token_budget(
+        record,
+        "system",
+        count_tokens,
+        prompt_budget_tokens=150,
+        competition_product_context=product_context,
+    )
+    messages = [
+        build_messages(
+            record,
+            "system",
+            None,
+            document_context=context.text,
+            competition_product_context=product_context,
+        )
+        for context in contexts
+    ]
+
+    assert len(contexts) > 1
+    assert all(count_tokens(message) <= 150 for message in messages)

@@ -229,6 +229,7 @@ class BaselinePipeline:
     def contexts_for_record(
         self, record: dict[str, Any]
     ) -> list[str | DocumentContext | None]:
+        competition_context = self.competition_product_context_for_record(record)
         if self.context_strategy == "full_split_merge":
             if self.count_tokens is None:
                 raise ValueError("full_split_merge requires an exact tokenizer token counter")
@@ -238,6 +239,7 @@ class BaselinePipeline:
                 self.count_tokens,
                 self.prompt_budget_tokens,
                 self.notice_anchor_chars,
+                competition_product_context=competition_context,
             )
             return contexts
         forced_contexts: list[str | None] = (
@@ -260,6 +262,7 @@ class BaselinePipeline:
                 self.count_tokens,
                 self.prompt_budget_tokens,
                 self.notice_anchor_chars,
+                competition_product_context=competition_context,
             )
         return forced_contexts
 
@@ -270,13 +273,14 @@ class BaselinePipeline:
             record, self.system_prompt, self.max_document_chars,
             include_normalized_facts=self.include_normalized_facts,
             document_context=context.text if isinstance(context, DocumentContext) else context,
-            competition_product_context=(
-                format_competition_product_context(
-                    record, competition_product_fact(record, self.competition_products)
-                )
-                if self.competition_products is not None
-                else None
-            ),
+            competition_product_context=self.competition_product_context_for_record(record),
+        )
+
+    def competition_product_context_for_record(self, record: dict[str, Any]) -> str | None:
+        if self.competition_products is None:
+            return None
+        return format_competition_product_context(
+            record, competition_product_fact(record, self.competition_products)
         )
 
     def finalize(

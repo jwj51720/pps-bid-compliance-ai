@@ -1,10 +1,10 @@
 # 항목별 Decision Card 파생 데이터
 
-`data/derived/decision_cards_v1.json`은 `data/항목표.json`의 v1~v24 키에 정확히
-연결되는 첫 판정정책 파생 데이터다. 생성 명령은 다음과 같다.
+`data/derived/decision_cards_v*.json`은 `data/항목표.json`의 v1~v24 키에 정확히
+연결되는 판정정책 파생 데이터다. 생성 명령은 다음과 같다.
 
 ```bash
-.venv/bin/python scripts/build_decision_cards.py
+.venv/bin/python scripts/build_decision_cards.py --version v1
 ```
 
 각 card는 다음을 포함한다.
@@ -33,7 +33,8 @@ config·파생 파일 SHA-256·입력 chat은 output에 저장한다.
 ## 관리 원칙
 
 카드는 모든 v를 한 파일에 둬 항목표와 일대일 검증한다. 항목별 수정은 생성 script의
-`CARD_TEXT`에서 하고 다시 생성한다. 실제 `data/derived/`는 Git ignore 대상이므로,
+versioned card text에서 하고 새 버전 파일로 생성한다. v1은 EXP-009 재현을 위해 보존하며,
+v2는 경쟁제품/일반제품 적용성 원칙을 제품분류 관련 항목 카드에 추가한다. 실제 `data/derived/`는 Git ignore 대상이므로,
 다른 환경 공유에는 `scripts/export_artifacts.py`가 포함하는 derived artifact archive를
 사용한다. 카드에 새 법적 숫자나 예외를 추가할 때는 대회 제공 법령/고시 원문 출처와
 추출 근거를 함께 기록한다.

@@ -16,7 +16,7 @@ if str(ROOT) not in sys.path:
 from src.data import load_item_table
 
 
-CARD_TEXT = {
+CARD_TEXT_V1 = {
     "v1": "적용 확인: 대상 문서에 대학·연구기관·특정 법인 등 특정기관만 참여할 수 있다는 제한이 있는지 확인한다. 1 조건: 그 제한이 적용계약법상 허용되는 자격요건인지 확인되지 않고 실제 참가자격을 특정기관으로 한정한다. 0 조건: 일반 자격 설명, 법령상 필수 자격, 또는 특정기관 한정이 명시되지 않은 경우 0.",
     "v2": "적용 확인: 실적제한과 적용계약법·계약방법·금액을 함께 확인한다. 1 조건: 고시금액 미만 건에서 허용 범위를 넘는 실적제한이 대상 문서에 명시된 경우다. 0 조건: 실적 문구만 있거나 고시금액 미만·예외 적용을 확인할 수 없으면 0.",
     "v3": "적용 확인: 실적 요구액과 사업예산 또는 비교 기준 금액을 확인한다. 1 조건: 대상 문서의 단일 실적 요구액이 법정 비교기준의 1배 이상임을 계산으로 확인한 경우다. 0 조건: 실적 문구나 금액만 있고 비교 기준·배수를 확인할 수 없으면 0.",
@@ -44,6 +44,23 @@ CARD_TEXT = {
 }
 
 
+# v2 adds a general applicability policy for every item whose legal predicate
+# depends on distinguishing a competition product from a general product. It
+# does not encode dev IDs, label outcomes, numeric thresholds, or product lists.
+CARD_TEXT_V2 = {
+    **CARD_TEXT_V1,
+    "v10": "부재탐지: 먼저 대회 제공 경쟁제품 고시 조회 결과와 공고의 명시 내용을 함께 보아 이 건이 경쟁제품 적용대상인지 확인한다. 1 조건: 경쟁제품 적용대상임이 확인되고, 이 대상 문서에 필요한 직접생산 조건이 명시적으로 없을 때만 1이다. 0 조건: 조회에서 경쟁제품으로 확인되지 않았으면 직접생산 문구 부재만으로 1이 될 수 없다. 조회로 확인 불가하면 경쟁제품·비경쟁제품 어느 쪽도 추측하지 말고 공고·메타의 명시 근거로만 계속 판단한다. 필요한 직접생산 조건이 있으면 0이다. 최종은 모든 문서가 1일 때만 위반이다.",
+    "v11": "부재탐지: 먼저 대회 제공 경쟁제품 고시 조회 결과와 공고의 명시 내용을 함께 보아 이 건이 경쟁제품 적용대상인지 확인한다. 1 조건: 경쟁제품 적용대상임이 확인되고, 이 대상 문서에 필요한 중소기업자 제한이 명시적으로 없을 때만 1이다. 0 조건: 조회에서 경쟁제품으로 확인되지 않았으면 중소기업자 제한 문구 부재만으로 1이 될 수 없다. 조회로 확인 불가하면 경쟁제품·비경쟁제품 어느 쪽도 추측하지 말고 공고·메타의 명시 근거로만 계속 판단한다. 필요한 제한이 있으면 0이다. 최종은 모든 문서가 1일 때만 위반이다.",
+    "v12": "적용 확인: 일반제품인지, 직접생산확인 요구가 있는지, 경쟁제품 지정 여부를 확인한다. 1 조건: 경쟁제품이 아닌 일반제품에 허용되지 않는 직접생산 제한을 실제로 요구한 경우다. 0 조건: 대회 제공 경쟁제품 고시 조회에서 경쟁제품으로 확인되었거나, 제품 분류·지정 여부·예외를 확인할 수 없으면 0.",
+    "v13": "적용 확인: 먼저 대회 제공 경쟁제품 고시 조회 결과와 공고의 명시 내용을 함께 보아 경쟁제품 적용대상인지 확인하고, 소기업·소상공인 제한을 확인한다. 1 조건: 경쟁제품 적용대상임이 확인되고 법령상 허용되지 않는 소기업·소상공인 제한을 둔 경우다. 0 조건: 조회에서 경쟁제품으로 확인되지 않았으면 소기업 문구만으로 1이 될 수 없다. 조회로 확인 불가하면 경쟁제품·비경쟁제품 어느 쪽도 추측하지 말고 공고·메타의 명시 근거로만 계속 판단한다. 예외·적용 조건을 확인할 수 없으면 0.",
+    "v14": "적용 확인: 일반물품 여부, 고시금액 이상 여부, 중소기업 제한을 함께 확인한다. 1 조건: 고시금액 이상 일반물품에 허용되지 않는 중소기업 제한을 명시한 경우다. 0 조건: 대회 제공 경쟁제품 고시 조회에서 경쟁제품으로 확인되었거나, 제한 문구만 있거나 제품 분류·금액·예외를 확인할 수 없으면 0.",
+    "v15": "적용 확인: 일반물품, 1억원 이상·고시금액 미만 구간, 소기업 제한, 판로지원 예외를 함께 확인한다. 1 조건: 해당 구간에서 허용되지 않는 소기업 제한을 둔 경우다. 0 조건: 대회 제공 경쟁제품 고시 조회에서 경쟁제품으로 확인되었거나, 금액 구간·제품 분류·예외를 확인할 수 없으면 0.",
+    "v16": "부재탐지: 1억원 이상·고시금액 미만 일반물품의 중소기업 제한 또는 판로지원 예외를 확인한다. 1 조건: 일반물품 적용대상임이 확인되고, 이 대상 문서에 필요한 제한 또는 명시적 예외가 없을 때만 1이다. 0 조건: 대회 제공 경쟁제품 고시 조회에서 경쟁제품으로 확인되었거나, 필요한 제한·예외가 있으면 0. 조회로 일반제품 여부를 확인할 수 없으면 추정하지 않는다. 최종은 모든 문서가 1일 때만 위반이다.",
+    "v17": "적용 확인: 1억원 미만 일반물품인지와 중소기업 제한을 함께 확인한다. 1 조건: 해당 구간에서 허용되지 않는 중소기업 제한을 명시한 경우다. 0 조건: 대회 제공 경쟁제품 고시 조회에서 경쟁제품으로 확인되었거나, 금액·일반물품 여부·예외를 확인할 수 없으면 0.",
+    "v18": "부재탐지: 1억원 미만 일반물품의 소기업 제한 또는 판로지원 예외를 확인한다. 1 조건: 일반물품 적용대상임이 확인되고, 이 대상 문서에 필요한 제한 또는 명시적 예외가 없을 때만 1이다. 0 조건: 대회 제공 경쟁제품 고시 조회에서 경쟁제품으로 확인되었거나, 필요한 제한·예외가 있으면 0. 조회로 일반제품 여부를 확인할 수 없으면 추정하지 않는다. 최종은 모든 문서가 1일 때만 위반이다.",
+}
+
+
 def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -51,12 +68,14 @@ def sha256(path: Path) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--item-table", default="data/raw/open/data/항목표.json")
-    parser.add_argument("--output", default="data/derived/decision_cards_v1.json")
+    parser.add_argument("--version", choices=("v1", "v2"), default="v1")
+    parser.add_argument("--output")
     args = parser.parse_args()
     item_table_path = Path(args.item_table)
     item_table = load_item_table(item_table_path)
-    if set(CARD_TEXT) != set(item_table):
-        raise ValueError("CARD_TEXT must cover exactly v1 through v24")
+    card_text = CARD_TEXT_V1 if args.version == "v1" else CARD_TEXT_V2
+    if set(card_text) != set(item_table):
+        raise ValueError("card text must cover exactly v1 through v24")
     cards = {
         item: {
             "item_name": definition["항목명"],
@@ -66,19 +85,19 @@ def main() -> int:
                 "local": definition["지방계약법"],
                 "note": definition.get("비고", ""),
             },
-            "prompt_text": CARD_TEXT[item],
+            "prompt_text": card_text[item],
         }
         for item, definition in item_table.items()
     }
     payload = {
         "schema_version": 1,
-        "artifact": "decision_cards_v1",
+        "artifact": f"decision_cards_{args.version}",
         "purpose": "conservative prompt decision policy; exact thresholds and exceptions require official RAG facts",
         "source_item_table": str(item_table_path),
         "source_item_table_sha256": sha256(item_table_path),
         "cards": cards,
     }
-    output = Path(args.output)
+    output = Path(args.output or f"data/derived/decision_cards_{args.version}.json")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(output)

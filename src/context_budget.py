@@ -124,6 +124,7 @@ def pack_contexts_to_token_budget(
     count_tokens: TokenCounter,
     prompt_budget_tokens: int,
     notice_anchor_chars: int = 4000,
+    competition_product_context: str | None = None,
 ) -> list[str]:
     """Return one full context or ordered, token-admitted split contexts.
 
@@ -132,9 +133,21 @@ def pack_contexts_to_token_budget(
     token counting finds the largest prefix that fits; characters are never used
     as the admission criterion.
     """
-    full_messages = build_messages(record, system_prompt, None)
+    full_messages = build_messages(
+        record,
+        system_prompt,
+        None,
+        competition_product_context=competition_product_context,
+    )
     if count_tokens(full_messages) <= prompt_budget_tokens:
-        return [build_messages(record, system_prompt, None)[1]["content"].split("[문서]\n", 1)[1]]
+        return [
+            build_messages(
+                record,
+                system_prompt,
+                None,
+                competition_product_context=competition_product_context,
+            )[1]["content"].split("[문서]\n", 1)[1]
+        ]
 
     order = {name: index for index, name in enumerate(DOCUMENT_ORDER)}
     documents = sorted(
@@ -159,7 +172,13 @@ def pack_contexts_to_token_budget(
 
     def fits(parts: list[str]) -> bool:
         return count_tokens(
-            build_messages(record, system_prompt, None, document_context=render(parts))
+            build_messages(
+                record,
+                system_prompt,
+                None,
+                document_context=render(parts),
+                competition_product_context=competition_product_context,
+            )
         ) <= prompt_budget_tokens
 
     # Ensure even an unusually long announcement anchor cannot block progress.
@@ -225,6 +244,7 @@ def pack_document_contexts_to_token_budget(
     count_tokens: TokenCounter,
     prompt_budget_tokens: int,
     notice_anchor_chars: int = 4000,
+    competition_product_context: str | None = None,
 ) -> list[DocumentContext]:
     """Make a pass per source document, splitting only an oversized document.
 
@@ -264,6 +284,7 @@ def pack_document_contexts_to_token_budget(
                 system_prompt,
                 None,
                 document_context=render(target, include_anchor),
+                competition_product_context=competition_product_context,
             )
         ) <= prompt_budget_tokens
 
