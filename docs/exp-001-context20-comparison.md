@@ -23,7 +23,7 @@ This verifies that the first 20 notices can safely use their full documents unde
 
 ```bash
 .venv/bin/python scripts/evaluate_prediction_subset.py
-.venv/bin/python scripts/run_experiment.py --config config.exp001-context20-full-paid.yaml
+.venv/bin/python scripts/run_experiment.py --config configs/config.exp001-context20-full-paid.yaml
 ```
 
 The 4,000-character reference was reused rather than rerun. It has the same historical paid model, prompt cap, temperature, seed, and output allowance, but not an independently repeated provider route; interpret this as a focused diagnostic, not a final benchmark.

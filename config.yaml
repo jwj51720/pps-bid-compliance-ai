@@ -1,5 +1,7 @@
+# Canonical final policy. Submission/runtime values must match
+# submission/runtime_config.json; historical experiment settings live in configs/.
 experiment:
-  id: exp-001-free-baseline
+  id: final-full-context-adaptive
   derived_data: []
 
 data:
@@ -9,25 +11,31 @@ data:
   item_table: data/항목표.json
 
 output:
-  dir: outputs/exp-001-free-baseline
+  dir: outputs/final-full-context-adaptive
 
 prompt:
-  max_document_chars: 4000
+  max_document_chars: null
+  overflow_split_enabled: true
+  max_model_len: 32768
+  output_reserve_tokens: 2500
+  notice_anchor_chars: 4000
+  mode: baseline
+  include_normalized_facts: false
 
 llm:
   provider: openrouter
-  model: google/gemma-4-26b-a4b-it:free
+  model: google/gemma-4-26b-a4b-it
   api_key_env: OPENROUTER_API_KEY
   api_url: https://openrouter.ai/api/v1/chat/completions
   temperature: 0.0
   max_tokens: 2500
   seed: 20260826
   timeout_seconds: 180
-  request_retries: 5
-  prediction_attempts: 3
+  request_retries: 3
+  prediction_attempts: 2
   provider_sort: throughput
-  require_parameters: false
-  min_request_interval_seconds: 4.0
+  require_parameters: true
+  min_request_interval_seconds: 1.0
 
 run:
   resume: true

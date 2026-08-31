@@ -16,8 +16,8 @@
 
 ```bash
 source .venv/bin/activate
-python scripts/profile_data.py --config config.yaml
-python scripts/run_experiment.py --config config.yaml
+python scripts/profile_data.py --config configs/config.exp001-first-submission.yaml
+python scripts/run_experiment.py --config configs/config.exp001-first-submission.yaml
 python -m pytest -q
 ```
 
@@ -78,9 +78,9 @@ python -m pytest -q
 
 ```bash
 python scripts/diagnose_experiment.py
-python scripts/run_experiment.py --config config.free-smoke.yaml --limit 5 --fresh
+python scripts/run_experiment.py --config configs/config.free-smoke.yaml --limit 5 --fresh
 python scripts/select_equivalence_sample.py
-python scripts/run_experiment.py --config config.free-equivalence.yaml --ids-file outputs/exp-001-free-equivalence/sample_ids.json
+python scripts/run_experiment.py --config configs/config.free-equivalence.yaml --ids-file outputs/exp-001-free-equivalence/sample_ids.json
 ```
 
 ## 결론과 다음 실험

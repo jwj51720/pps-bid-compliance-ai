@@ -22,7 +22,7 @@ This does not reject structured prompt engineering. It rejects this first, broad
 ## Reproduction
 
 ```bash
-.venv/bin/python scripts/run_experiment.py --config config.exp002a-prompt20-paid.yaml
-.venv/bin/python scripts/run_experiment.py --config config.exp002b-prompt-meta20-paid.yaml
-.venv/bin/python scripts/run_experiment.py --config config.exp002c-guided20-paid.yaml
+.venv/bin/python scripts/run_experiment.py --config configs/config.exp002a-prompt20-paid.yaml
+.venv/bin/python scripts/run_experiment.py --config configs/config.exp002b-prompt-meta20-paid.yaml
+.venv/bin/python scripts/run_experiment.py --config configs/config.exp002c-guided20-paid.yaml
 ```

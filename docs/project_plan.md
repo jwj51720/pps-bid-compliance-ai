@@ -6,11 +6,13 @@
 pps-bid-compliance-ai/
 │
 ├── config.yaml
+├── configs/              # versioned/historical experiment configs
 ├── data/
 ├── src/
 ├── scripts/
 ├── submission/
 ├── outputs/
+├── dist/                 # ignored submission zips and shared archives
 └── docs/
 ```
 
