@@ -1,0 +1,45 @@
+# Execution Contract
+
+This document fixes the boundary between common inference logic and runtime
+adapters. It applies to every future experiment and submission.
+
+## Shared pipeline (`src/`)
+
+- Load and NFC-normalize notices, preserve document order, and include metadata.
+- Construct the 24-item prompt and JSON schema.
+- Count the final chat prompt; admit one full pass or create token-admitted
+  ordered split passes.
+- Merge pass labels with OR; retain the earliest positive pass evidence.
+- Parse structured output, resolve evidence to a source substring, enforce the
+  500-character and absence-item rules, and construct/validate the 49-column CSV.
+
+## Experiment adapter
+
+- Reads root `config.yaml` only for the canonical final policy, or an explicitly
+  named versioned YAML under `configs/` for a historical/alternate experiment.
+- Uses OpenRouter or a mock client, checkpoints raw responses and usage, and
+  evaluates only when local labels are configured.
+- May set concurrency and retry policy, but cannot change shared judgment logic.
+
+## Submission adapter
+
+- Reads only `PPS_DATA_DIR`, `PPS_OUTPUT_DIR`, `PPS_MODEL_DIR`, and optionally
+  `PPS_EMBED_DIR`; it never uses network access or local absolute paths.
+- Uses offline vLLM with the fixed Gemma at `PPS_MODEL_DIR`.
+- Reads the packaged `runtime_config.json`; its prompt-policy values must match
+  root `config.yaml` before packaging.
+- Injects `runner.count_tokens()` into the shared pipeline.
+- Schedules prepared notice/pass messages in vLLM batches of **64 by default**.
+- Never evaluates against labels, writes checkpoints, or changes decisions.
+
+## Packaging gate
+
+`scripts/make_submission.py` must package `submission/script.py`,
+`submission/runtime_config.json`, `submission/requirements.txt`, and the shared
+`src/` modules, never a copied baseline. Submission zips go under `dist/`; data
+and output archives go under `dist/archives/`. Use `scripts/export_artifacts.py`
+for a portable archive: it includes required source/config/documentation plus
+`data/derived/` and `outputs/`, excludes organizer raw data, and extracts into
+one top-level directory. Before handoff, run the staged zip's
+exact `script.py --mock` against the official 10-notice fixture and validate the
+resulting CSV's rows, IDs, order, and 49 columns.

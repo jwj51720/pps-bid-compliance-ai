@@ -11,7 +11,8 @@ The goal is competition performance and reproducibility, not a production servic
 Use the deliberately small planned layout:
 
 ```text
-config.yaml           experiment parameters
+config.yaml           canonical final experiment/submission policy
+configs/              versioned and historical experiment parameters
 data/raw/             organizer-provided data
 data/derived/         generated labels, indexes, and knowledge files
 src/                  shared pipeline and evaluation code
@@ -19,10 +20,13 @@ src/external/         OpenRouter, OpenAI, and local Gemma adapters
 scripts/              experiment and packaging entry points
 submission/           thin DACON entry point and requirements
 outputs/<exp_id>/      isolated experiment artifacts
+dist/                 ignored submission zips and shareable artifact archives
 docs/                 rules, decisions, and research notes
 ```
 
-Keep `src/` flat initially (`pipeline.py`, `data.py`, `prompt.py`, `submission.py`, `evaluate.py`). Add `rules/`, `retrieval/`, or `knowledge/` only after experiments justify the separation. Local experiments and `submission/script.py` must call the same pipeline; differences belong in input paths, LLM provider, configuration, and whether evaluation runs.
+Keep `src/` flat initially (`pipeline.py`, `data.py`, `prompt.py`, `submission.py`, `evaluate.py`). Add `rules/`, `retrieval/`, or `knowledge/` only after experiments justify the separation. Root `config.yaml` is the sole canonical final policy; every non-final or historical experiment config belongs under `configs/`. Local experiments and `submission/script.py` must call the same pipeline; differences belong in input paths, LLM provider, configuration, and whether evaluation runs. The submission entrypoint must inject the evaluation runner's `count_tokens()` into that shared pipeline. Never fork or copy an official baseline into a submission archive as a shortcut: package from the tracked `submission/script.py`, `submission/runtime_config.json`, and `src/`, then mock-test the exact staged entrypoint.
+
+The shared pipeline owns prompt construction, token admission, overflow splitting, pass-result merge, parsing, evidence resolution, and CSV validation. Runtime adapters own only model transport and scheduling: experiments use the configured remote provider plus evaluation/checkpointing; submissions use offline vLLM, `PPS_*` paths, and the fixed batch policy. Keep every submission-default value in the tracked submission entrypoint/config and regression-test that staged zip, not a surrogate script.
 
 ## Environment and Commands
 
@@ -36,7 +40,7 @@ python scripts/run_experiment.py --config config.yaml
 python -m pytest
 ```
 
-Profile the official files with `python scripts/profile_data.py --config config.yaml`. Use `--mock` for a no-network pipeline smoke test and rerun the same experiment command to resume an interrupted checkpoint. Initial local Gemma experiments use OpenRouter model `google/gemma-4-26b-a4b-it:free`; select the model in versioned config, while the ignored `.env` stores only `OPENROUTER_API_KEY`. Keep provider calls inside `src/external/`.
+Profile the official files with `python scripts/profile_data.py --config config.yaml`. Use `--mock` for a no-network pipeline smoke test and rerun the same experiment command to resume an interrupted checkpoint. Use `configs/<experiment>.yaml` for a historical or alternate experiment; never overwrite root `config.yaml` to do so. The ignored `.env` stores only `OPENROUTER_API_KEY`. Keep provider calls inside `src/external/`.
 
 ## Competition-Critical Implementation Rules
 
@@ -51,7 +55,7 @@ Profile the official files with `python scripts/profile_data.py --config config.
 
 Name runs descriptively, such as `exp005_v3_rule`. Each `outputs/<exp_id>/` should preserve the exact config, predictions/submission, metrics, per-label results, errors, runtime, logs, and a short reproduction note. Compare the mean of the 24 positive-class F1 scores and report precision/recall/F1 per label; do not rely on aggregate accuracy or assume dev class frequencies match test.
 
-When asked to export data for another environment, archive only the reproducible artifacts under `data/derived/`; exclude `data/raw/`, which will be restored independently from the original source. Actual files under both data directories stay ignored by Git, while `.gitkeep` preserves their layout.
+When asked to export work for another environment, run `python scripts/export_artifacts.py`. It writes a `tar.xz` below `dist/archives/` that extracts into one top-level directory and includes the source, configs, docs, `data/derived/`, and `outputs/` needed to continue work. Exclude `data/raw/`, which will be restored independently from the original source, as well as `dist/`, `submission/build/`, caches, and machine metadata. Actual files under both data directories stay ignored by Git, while `.gitkeep` preserves their layout. Write submission zips directly under `dist/`.
 
 Use `pytest` with `tests/test_<module>.py` and `test_<behavior>`. Mock remote LLM calls. Test parsing, rules, schema-constrained output, metrics, evidence substring checks, and missing-document behavior. Regression-test corrected false positives and negatives.
 
