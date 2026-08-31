@@ -15,7 +15,12 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.data import load_item_table, load_records
+from src.data import (
+    load_competition_product_index,
+    load_decision_cards,
+    load_item_table,
+    load_records,
+)
 from src.pipeline import BaselinePipeline, parse_judgment
 from src.schema import judgment_schema
 from src.submission import prediction_rows, validate_submission, write_submission
@@ -150,21 +155,37 @@ def main() -> int:
     model_dir = os.environ["PPS_MODEL_DIR"]
     records = load_records(data_dir / "test.jsonl.gz", limit=args.limit)
     item_table = load_item_table(data_dir / "항목표.json")
+    cards_file = PROMPT_CONFIG.get("decision_cards_file")
+    decision_cards = (
+        load_decision_cards(ROOT / str(cards_file), item_table) if cards_file else None
+    )
+    products_file = PROMPT_CONFIG.get("competition_products_file")
+    competition_products = (
+        load_competition_product_index(ROOT / str(products_file)) if products_file else None
+    )
     client = MockClient() if args.mock else VLLMClient(model_dir)
     counter = None if args.mock else client.count_tokens
     pipeline = BaselinePipeline(
         item_table=item_table,
         client=client,
         max_document_chars=PROMPT_CONFIG["max_document_chars"],
+        context_strategy=PROMPT_CONFIG["context_strategy"],
         overflow_split_enabled=bool(PROMPT_CONFIG["overflow_split_enabled"]),
+        strict_document_evidence=bool(PROMPT_CONFIG["strict_document_evidence"]),
+        absence_detection_strategy=PROMPT_CONFIG["absence_detection_strategy"],
+        decision_cards=decision_cards,
+        competition_products=competition_products,
         count_tokens=counter,
         prompt_budget_tokens=MAX_MODEL_LEN - OUTPUT_RESERVE_TOKENS,
     )
     pending = []
+    contexts_by_record = []
     completions = [[] for _ in records]
     retried_malformed = 0
     for index, record in enumerate(records):
-        for context in pipeline.contexts_for_record(record):
+        contexts = pipeline.contexts_for_record(record)
+        contexts_by_record.append(contexts)
+        for context in contexts:
             pending.append((index, pipeline.messages_for_context(record, context)))
     for start in range(0, len(pending), args.batch_size):
         group = pending[start : start + args.batch_size]
@@ -176,7 +197,10 @@ def main() -> int:
         retried_malformed += retries
         for (index, _), output in zip(group, outputs):
             completions[index].append(output)
-    rows = [pipeline.finalize(record, completions[index]) for index, record in enumerate(records)]
+    rows = [
+        pipeline.finalize(record, completions[index], contexts_by_record[index])
+        for index, record in enumerate(records)
+    ]
     unrecovered = sum(len(row.parse_errors) for row in rows)
     print(
         f"[submission] malformed structured candidates retried={retried_malformed}; "

@@ -22,7 +22,7 @@ def submission_archive_path() -> Path:
     return DIST_DIR / f"pps_{timestamp}.zip"
 
 
-def verify_runtime_policy() -> None:
+def verify_runtime_policy() -> tuple[dict, dict]:
     """Refuse to package if experiment and submission prompt policies diverge."""
     canonical = yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8"))
     runtime = json.loads(
@@ -30,9 +30,16 @@ def verify_runtime_policy() -> None:
     )
     canonical_prompt = canonical["prompt"]
     runtime_prompt = runtime["prompt"]
+    canonical_cards = canonical_prompt.get("decision_cards_path")
+    runtime_cards = runtime_prompt.get("decision_cards_file")
+    canonical_products = canonical_prompt.get("competition_products_path")
+    runtime_products = runtime_prompt.get("competition_products_file")
     fields = (
         "max_document_chars",
+        "context_strategy",
         "overflow_split_enabled",
+        "strict_document_evidence",
+        "absence_detection_strategy",
         "max_model_len",
         "output_reserve_tokens",
         "notice_anchor_chars",
@@ -47,16 +54,36 @@ def verify_runtime_policy() -> None:
             "config.yaml and submission/runtime_config.json differ for: "
             + ", ".join(mismatches)
         )
+    if bool(canonical_cards) != bool(runtime_cards):
+        raise ValueError("config.yaml and submission/runtime_config.json differ for decision cards")
+    if canonical_cards and Path(str(canonical_cards)).name != runtime_cards:
+        raise ValueError("submission decision_cards_file must equal config decision_cards_path basename")
+    if bool(canonical_products) != bool(runtime_products):
+        raise ValueError("config.yaml and submission/runtime_config.json differ for competition products")
+    if canonical_products and Path(str(canonical_products)).name != runtime_products:
+        raise ValueError(
+            "submission competition_products_file must equal config competition_products_path basename"
+        )
+    return canonical, runtime
 
 
 def main() -> int:
-    verify_runtime_policy()
+    canonical, runtime = verify_runtime_policy()
     destination = submission_archive_path()
     if STAGING.exists():
         shutil.rmtree(STAGING)
     STAGING.mkdir(parents=True)
     shutil.copy2(ROOT / "submission/script.py", STAGING / "script.py")
     shutil.copy2(ROOT / "submission/runtime_config.json", STAGING / "runtime_config.json")
+    cards_file = runtime["prompt"].get("decision_cards_file")
+    if cards_file:
+        shutil.copy2(ROOT / str(canonical["prompt"]["decision_cards_path"]), STAGING / str(cards_file))
+    products_file = runtime["prompt"].get("competition_products_file")
+    if products_file:
+        shutil.copy2(
+            ROOT / str(canonical["prompt"]["competition_products_path"]),
+            STAGING / str(products_file),
+        )
     shutil.copytree(ROOT / "src", STAGING / "src", ignore=shutil.ignore_patterns("__pycache__"))
     shutil.copy2(ROOT / "submission/requirements.txt", STAGING / "requirements.txt")
     destination.parent.mkdir(parents=True, exist_ok=True)

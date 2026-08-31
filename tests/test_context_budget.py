@@ -1,6 +1,10 @@
 import json
 
-from src.context_budget import estimate_context_budget, pack_contexts_to_token_budget
+from src.context_budget import (
+    estimate_context_budget,
+    pack_contexts_to_token_budget,
+    pack_document_contexts_to_token_budget,
+)
 from src.prompt import build_messages
 
 
@@ -89,3 +93,37 @@ def test_fixed_reference_is_counted_for_every_split_pass() -> None:
     assert len(messages) > 1
     assert all(reference in value[0]["content"] for value in messages)
     assert all(count_tokens(value) <= 180 for value in messages)
+
+
+def test_full_split_merge_keeps_one_target_document_per_pass_and_splits_long_one() -> None:
+    record = {
+        "id": "N1",
+        "meta": {},
+        "dropped_doc_counts": {},
+        "docs": [
+            {"doc_id": "A1", "type": "공고문", "text": "A" * 20},
+            {"doc_id": "S1", "type": "규격서", "text": "S" * 100},
+            {"doc_id": "R1", "type": "제안요청서", "text": "R" * 10},
+        ],
+    }
+
+    def count_tokens(messages):
+        return len(messages[-1]["content"])
+
+    contexts = pack_document_contexts_to_token_budget(
+        record,
+        "system",
+        count_tokens,
+        prompt_budget_tokens=120,
+        notice_anchor_chars=5,
+    )
+
+    assert len(contexts) == 4
+    assert "[공고문:A1]" in contexts[0].text
+    assert "[규격서:S1]" in contexts[1].text
+    assert "[규격서:S1] [계속 " in contexts[2].text
+    assert "[제안요청서:R1]" in contexts[3].text
+    assert "[공고문 앵커:A1]" not in contexts[0].text
+    assert "[공고문 앵커:A1]" in contexts[1].text
+    assert contexts[1].target_text + contexts[2].target_text == "S" * 100
+    assert all(count_tokens([{"content": context.text}]) <= 120 for context in contexts)

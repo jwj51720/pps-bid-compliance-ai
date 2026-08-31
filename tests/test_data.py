@@ -3,7 +3,7 @@ from __future__ import annotations
 import gzip
 import json
 
-from src.data import load_records, profile_records
+from src.data import competition_product_fact, load_competition_product_index, load_records, profile_records
 
 
 def _record() -> dict:
@@ -37,3 +37,19 @@ def test_profile_recognizes_korean_completeness_flag(tmp_path) -> None:
     with gzip.open(path, "wt", encoding="utf-8") as handle:
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
     assert profile_records(path)["records_not_fully_observed"] == 1
+
+
+def test_competition_product_fact_uses_exact_codes_conservatively(tmp_path) -> None:
+    index_path = tmp_path / "products.json"
+    index_path.write_text(
+        json.dumps({"products": {"1111169701": {"세부품명": "잡석"}}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    products = load_competition_product_index(index_path)
+    record = _record()
+    record["meta"]["세부품명번호목록"] = "잡석[1111169701]"
+    assert competition_product_fact(record, products)["status"] == "matched"
+    record["meta"]["세부품명번호목록"] = "다른품명[9999999999]"
+    assert competition_product_fact(record, products)["status"] == "not_matched"
+    record["meta"]["세부품명번호목록"] = None
+    assert competition_product_fact(record, products)["status"] == "unknown"

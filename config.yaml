@@ -15,12 +15,17 @@ output:
 
 prompt:
   max_document_chars: null
-  overflow_split_enabled: true
+  context_strategy: single # options: single, split, full_split_merge
+  overflow_split_enabled: true # options: true, false
+  strict_document_evidence: false # options: true, false; full_split_merge only
+  absence_detection_strategy: per_pass_or # options: per_pass_or, per_pass_and; full_split_merge only
+  decision_cards_path: null # options: null, data/derived/decision_cards_v1.json
+  competition_products_path: null # options: null, data/derived/competition_products_v1.json
   max_model_len: 32768
   output_reserve_tokens: 2500
   notice_anchor_chars: 4000
-  mode: baseline
-  include_normalized_facts: false
+  mode: baseline # options: baseline, structured, guided
+  include_normalized_facts: false # options: true, false
 
 llm:
   provider: openrouter
@@ -33,10 +38,10 @@ llm:
   timeout_seconds: 180
   request_retries: 3
   prediction_attempts: 2
-  provider_sort: throughput
-  require_parameters: true
+  provider_sort: throughput # options: price, throughput, latency
+  require_parameters: true # options: true, false
   min_request_interval_seconds: 1.0
 
 run:
-  resume: true
+  resume: true # options: true, false
   concurrency: 4

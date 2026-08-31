@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from src.context_budget import DocumentContext
 from src.pipeline import (
     BaselinePipeline,
     PredictionError,
@@ -17,6 +18,7 @@ from src.prompt import (
     build_messages,
     build_split_document_contexts,
     build_system_prompt,
+    format_competition_product_context,
     normalize_notice_facts,
 )
 from src.schema import ITEMS
@@ -128,6 +130,40 @@ def test_normalized_facts_only_restate_notice_metadata() -> None:
     assert facts["추정가격원"] == 10
 
 
+def test_competition_product_fact_is_visible_but_not_evidence() -> None:
+    context = format_competition_product_context(
+        _record(),
+        {
+            "status": "matched",
+            "matched_products": [{"세부품명": "잡석"}],
+        },
+    )
+    messages = build_messages(
+        _record(),
+        "system",
+        None,
+        competition_product_context=context,
+    )
+    content = messages[-1]["content"]
+    assert "경쟁제품 고시 조회 결과" in content
+    assert "v10·v11·v13" in content
+    assert "잡석" in content
+    assert "matched_codes" not in content
+
+
+def test_competition_product_not_matched_context_hides_internal_codes() -> None:
+    record = _record()
+    record["meta"]["세부품명번호목록"] = "잡지[5510150601]"
+    context = format_competition_product_context(
+        record,
+        {"status": "not_matched", "matched_products": []},
+    )
+
+    assert "잡지" in context
+    assert "5510150601" not in context
+    assert "not_matched" not in context
+
+
 def test_split_contexts_preserve_order_anchor_and_long_document_text() -> None:
     record = _record()
     record["docs"] = [
@@ -160,6 +196,72 @@ def test_combined_pass_judgments_ors_labels_and_keeps_first_positive_evidence() 
     assert combined["v1"] == {"위반여부": 1, "근거문구": "first"}
     assert combined["v2"] == {"위반여부": 1, "근거문구": "only second"}
     assert combined["v3"] == {"위반여부": 0, "근거문구": ""}
+
+
+def test_full_split_merge_requires_token_counter() -> None:
+    item_table = {
+        item: {"항목명": item, "부재탐지": False, "국가계약법": "", "지방계약법": "", "비고": ""}
+        for item in ITEMS
+    }
+    pipeline = BaselinePipeline(
+        item_table=item_table,
+        client=None,
+        max_document_chars=None,
+        context_strategy="full_split_merge",
+    )
+
+    with pytest.raises(ValueError, match="exact tokenizer"):
+        pipeline.contexts_for_record(_record())
+
+
+def test_strict_document_evidence_rejects_anchor_only_positive() -> None:
+    class Completion:
+        model = "test"
+        latency_seconds = 0.0
+        usage = {}
+        finish_reason = "stop"
+        content = json.dumps(
+            {
+                **_judgment(),
+                "v1": {"위반여부": 1, "근거문구": "앵커에만 있는 제한"},
+            },
+            ensure_ascii=False,
+        )
+
+    item_table = {
+        item: {"항목명": item, "부재탐지": False, "국가계약법": "", "지방계약법": "", "비고": ""}
+        for item in ITEMS
+    }
+    pipeline = BaselinePipeline(
+        item_table=item_table,
+        client=None,
+        max_document_chars=None,
+        context_strategy="full_split_merge",
+        strict_document_evidence=True,
+    )
+    context = DocumentContext(
+        text="[공고문 앵커:D0]\\n앵커에만 있는 제한\\n\\n[규격서:D1]\\n대상 문서",
+        target_document_id="D1",
+        target_document_type="규격서",
+        target_text="대상 문서",
+    )
+
+    prediction = pipeline.finalize(_record(), [Completion()], [context])
+
+    assert prediction.judgment["v1"] == {"위반여부": 0, "근거문구": ""}
+
+
+def test_absence_items_use_and_while_other_items_use_or() -> None:
+    first = _judgment()
+    second = _judgment()
+    first["v1"] = {"위반여부": 1, "근거문구": "first"}
+    first["v10"] = {"위반여부": 1, "근거문구": ""}
+    second["v10"] = {"위반여부": 0, "근거문구": ""}
+
+    combined = _combine_pass_judgments([first, second], "per_pass_and")
+
+    assert combined["v1"] == {"위반여부": 1, "근거문구": "first"}
+    assert combined["v10"] == {"위반여부": 0, "근거문구": ""}
 
 
 def test_usage_number_accepts_nested_openrouter_cost() -> None:

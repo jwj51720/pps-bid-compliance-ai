@@ -45,10 +45,14 @@ class ExperimentConfig:
     max_document_chars: int | None
     context_strategy: str
     overflow_split_enabled: bool
+    strict_document_evidence: bool
+    absence_detection_strategy: str
     max_model_len: int
     output_reserve_tokens: int
     notice_anchor_chars: int
     reference_path: Path | None
+    decision_cards_path: Path | None
+    competition_products_path: Path | None
     prompt_mode: str
     include_normalized_facts: bool
     llm: LLMConfig
@@ -100,11 +104,19 @@ def load_config(path: str | Path) -> ExperimentConfig:
         ),
         context_strategy=str(prompt.get("context_strategy", "single")),
         overflow_split_enabled=bool(prompt.get("overflow_split_enabled", True)),
+        strict_document_evidence=bool(prompt.get("strict_document_evidence", False)),
+        absence_detection_strategy=str(prompt.get("absence_detection_strategy", "per_pass_or")),
         max_model_len=int(prompt.get("max_model_len", 32768)),
         output_reserve_tokens=int(prompt.get("output_reserve_tokens", 2500)),
         notice_anchor_chars=int(prompt.get("notice_anchor_chars", 4000)),
         reference_path=(base / str(prompt["reference_path"])).resolve()
         if prompt.get("reference_path")
+        else None,
+        decision_cards_path=(base / str(prompt["decision_cards_path"])).resolve()
+        if prompt.get("decision_cards_path")
+        else None,
+        competition_products_path=(base / str(prompt["competition_products_path"])).resolve()
+        if prompt.get("competition_products_path")
         else None,
         prompt_mode=str(prompt.get("mode", "baseline")),
         include_normalized_facts=bool(prompt.get("include_normalized_facts", False)),
@@ -133,10 +145,18 @@ def load_config(path: str | Path) -> ExperimentConfig:
         raise ValueError("prompt.max_document_chars must be positive")
     if config.prompt_mode not in {"baseline", "structured", "guided"}:
         raise ValueError("prompt.mode must be baseline, structured, or guided")
-    if config.context_strategy not in {"single", "split"}:
-        raise ValueError("prompt.context_strategy must be single or split")
+    if config.context_strategy not in {"single", "split", "full_split_merge"}:
+        raise ValueError("prompt.context_strategy must be single, split, or full_split_merge")
     if config.context_strategy == "split" and config.max_document_chars is None:
         raise ValueError("split context strategy requires prompt.max_document_chars")
+    if config.context_strategy == "full_split_merge" and config.max_document_chars is not None:
+        raise ValueError("full_split_merge requires prompt.max_document_chars: null")
+    if config.strict_document_evidence and config.context_strategy != "full_split_merge":
+        raise ValueError("strict_document_evidence requires full_split_merge context strategy")
+    if config.absence_detection_strategy not in {"per_pass_or", "per_pass_and"}:
+        raise ValueError("absence_detection_strategy must be per_pass_or or per_pass_and")
+    if config.absence_detection_strategy == "per_pass_and" and config.context_strategy != "full_split_merge":
+        raise ValueError("per_pass_and absence detection requires full_split_merge context strategy")
     if config.notice_anchor_chars < 0:
         raise ValueError("prompt.notice_anchor_chars must be non-negative")
     if not 0 < config.output_reserve_tokens < config.max_model_len:

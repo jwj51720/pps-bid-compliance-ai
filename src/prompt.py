@@ -10,6 +10,7 @@ from typing import Any
 from src.schema import ABSENCE_ITEMS, ITEMS
 
 DOCUMENT_ORDER = ("공고문", "규격서", "과업지시서", "제안요청서", "예외공표서")
+PRODUCT_NAME_WITH_CODE = re.compile(r"([^,\[\]]+)\[\d{10}\]")
 
 SYSTEM_HEAD = """당신은 공공 입찰공고의 법령 위반 여부를 점검한다.
 공고문, 첨부 문서, 나라장터 입력 메타를 함께 읽고 아래 24개 항목 각각의 위반 여부와 근거 문구를 판정한다.
@@ -41,11 +42,31 @@ GUIDED_GUIDANCE = """
 SYSTEM_TAIL = """출력은 JSON 객체 하나로만 작성한다. 키는 v1~v24이고 값은
 {\"위반여부\": 0 또는 1, \"근거문구\": 문자열 또는 null} 형식이다. 설명이나 머리말을 추가하지 않는다."""
 
+DOCUMENT_SCOPED_GUIDANCE = """
+
+[문서별 엄격 정부계약 컴플라이언스 판정 계약]
+이번 호출은 공고 전체를 자유롭게 판단하는 호출이 아니다. [문서] 영역에서
+`[공고문:...]`, `[규격서:...]`, `[과업지시서:...]`, `[제안요청서:...]`,
+`[예외공표서:...]` 중 하나로 표시된 **대상 문서**만 위반 근거를 찾는 심사 대상이다.
+`[공고문 앵커:...]`는 같은 공고를 알아보기 위한 보조 문맥일 뿐이며, 대상 문서가
+아니다. 앵커, metadata, 공식 참고자료만을 근거로 위반여부를 1로 하면 안 된다.
+
+정부계약 컴플라이언스 위반은 추측이나 위험 신호가 아니라, 해당 항목의 법적 요건을
+실제로 충족하는 명시적 제한·요구·불일치여야 한다. 다음 절차를 항목마다 따른다.
+1. 먼저 대상 문서 안에서 항목에 해당하는 정확한 문장을 찾는다.
+2. 그 문장이 해당 v 항목의 모든 핵심 조건을 실제로 충족하는지 metadata와 항목 설명으로 확인한다.
+3. 조건이 하나라도 불명확하거나, 문구가 앵커·다른 문서·metadata에만 있거나, 단순 키워드·일반 관행·의심에 그치면 0으로 둔다.
+4. non-absence 항목을 1로 둘 때는 반드시 대상 문서 안의 변경 없는 연속 부분문자열을 근거문구로 복사한다. 대상 문서에서 그 문구를 복사할 수 없으면 반드시 0이다.
+5. [부재탐지] 항목은 이 대상 문서에 필요한 문구·조건이 없을 때만 1, 있으면 0으로 둔다. 최종 병합은 모든 문서가 1일 때만 위반으로 처리하므로, 한 문서에서라도 필요한 조건을 확인하면 반드시 0으로 둔다. 근거문구는 null이다.
+"""
+
 
 def build_system_prompt(
     item_table: dict[str, dict[str, Any]],
     mode: str = "baseline",
     reference_text: str | None = None,
+    document_scoped: bool = False,
+    decision_cards: dict[str, dict[str, Any]] | None = None,
 ) -> str:
     lines = []
     for item in ITEMS:
@@ -62,7 +83,21 @@ def build_system_prompt(
         else:
             lines.append(f"- {item}: {definition['항목명']}{absence}{note}")
     guidance = STRUCTURED_GUIDANCE if mode == "structured" else GUIDED_GUIDANCE if mode == "guided" else ""
-    prompt = f"{SYSTEM_HEAD}\n" + "\n".join(lines) + f"\n{guidance}\n{SYSTEM_TAIL}"
+    scope_guidance = DOCUMENT_SCOPED_GUIDANCE if document_scoped else ""
+    card_guidance = ""
+    if decision_cards:
+        card_guidance = (
+            "\n\n[항목별 상세 판정 카드]\n"
+            "각 카드의 1 조건을 모두 만족할 때만 1이다. 카드의 0 조건 하나라도 해당하거나 "
+            "확인할 수 없으면 0이다. 카드의 법령 참조는 판단 범위이고, 근거문구는 언제나 "
+            "공고/첨부문서 원문에서만 인용한다.\n"
+            + "\n\n".join(
+                f"[{item} | {decision_cards[item]['item_name']}]\n"
+                f"{decision_cards[item]['prompt_text']}"
+                for item in ITEMS
+            )
+        )
+    prompt = f"{SYSTEM_HEAD}\n" + "\n".join(lines) + f"\n{guidance}{scope_guidance}{card_guidance}\n{SYSTEM_TAIL}"
     if reference_text:
         prompt += (
             "\n\n[공식 참고 법령·고시]\n"
@@ -217,6 +252,7 @@ def build_messages(
     max_document_chars: int | None,
     include_normalized_facts: bool = False,
     document_context: str | None = None,
+    competition_product_context: str | None = None,
 ) -> list[dict[str, str]]:
     metadata = json.dumps(record["meta"], ensure_ascii=False, sort_keys=True, indent=2)
     facts = ""
@@ -224,6 +260,11 @@ def build_messages(
         facts = (
             "\n\n[정규화된 공고 사실 — 원본 메타에서만 생성]\n"
             + json.dumps(normalize_notice_facts(record["meta"]), ensure_ascii=False, indent=2)
+        )
+    if competition_product_context is not None:
+        facts += (
+            "\n\n[대회 제공 경쟁제품 고시 조회 결과]\n"
+            + competition_product_context
         )
     user_prompt = (
         f"[공고 ID] {record['id']}\n\n"
@@ -234,6 +275,46 @@ def build_messages(
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
+
+
+def format_competition_product_context(
+    record: dict[str, Any], fact: dict[str, Any]
+) -> str:
+    """Translate exact CSV lookup facts into concise, model-facing Korean.
+
+    The raw fact keeps codes and source IDs for auditability. This layer does
+    not expose implementation state names or identifiers to the model.
+    """
+    status = fact["status"]
+    if status == "matched":
+        names = ", ".join(product["세부품명"] for product in fact["matched_products"])
+        finding = (
+            "이 공고에서 확인된 세부품명이 대회 제공 중소기업자간 경쟁제품 고시에 "
+            f"등재되어 있습니다: {names}."
+        )
+    elif status == "not_matched":
+        raw_value = str(record["meta"].get("세부품명번호목록") or "")
+        names = [name.strip() for name in PRODUCT_NAME_WITH_CODE.findall(raw_value)]
+        description = f"(기재 세부품명: {', '.join(names)})" if names else ""
+        finding = (
+            "나라장터 메타에 세부품명이 기재되어 있으나, 대회 제공 경쟁제품 고시에서 "
+            f"정확히 일치하는 경쟁제품을 확인하지 못했습니다. {description}"
+        ).strip()
+    elif status == "unknown":
+        finding = (
+            "나라장터 메타와 공고 문서에서 경쟁제품 고시와 정확히 대조할 수 있는 "
+            "세부품명 식별정보를 확인하지 못했습니다."
+        )
+    else:
+        raise ValueError(f"unknown competition product status: {status}")
+    return (
+        f"{finding}\n"
+        "이 조회 결과는 v10·v11·v13의 경쟁제품 적용대상 확인에만 사용합니다. "
+        "경쟁제품으로 확인되지 않았거나 확인할 수 없으면, 경쟁제품이라고 추측하여 "
+        "위반으로 판단하지 마십시오. 경쟁제품으로 확인된 경우에도 해당 항목의 다른 "
+        "조건을 모두 확인해야 합니다. v16·v18의 일반제품 판단에는 경쟁제품으로 확인된 "
+        "품목을 사용하지 마십시오. 이 조회 결과는 제출 근거문구가 아니므로 인용하지 마십시오."
+    )
 
 
 def normalize_notice_facts(meta: dict[str, Any]) -> dict[str, Any]:

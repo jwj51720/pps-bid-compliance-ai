@@ -24,7 +24,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.config import ExperimentConfig, load_config
-from src.data import load_item_table, load_records
+from src.data import (
+    load_competition_product_index,
+    load_decision_cards,
+    load_item_table,
+    load_records,
+)
 from src.evaluate import evaluate_submission, write_rows
 from src.external.openrouter import MockClient, OpenRouterClient
 from src.pipeline import BaselinePipeline, Prediction, PredictionError, judgment_to_row
@@ -130,6 +135,33 @@ def _load_selected_ids(path: str | None) -> list[str] | None:
     return ids
 
 
+def _write_input_examples_markdown(path: Path, entries: list[dict[str, Any]]) -> None:
+    """Write inspectable final chat text without JSONL transport wrappers."""
+    lines = ["# Final Model Input Examples", "", "The fenced blocks below are the exact message contents sent to the model.", ""]
+    for entry in entries:
+        lines.extend(
+            [
+                f"## {entry['id']} — pass {entry['pass_index']}",
+                "",
+                f"Tokenizer input tokens: {entry['token_count']}",
+                "",
+                "### System message",
+                "",
+                "````text",
+                entry["messages"][0]["content"],
+                "````",
+                "",
+                "### User message",
+                "",
+                "````text",
+                entry["messages"][1]["content"],
+                "````",
+                "",
+            ]
+        )
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
 def _make_client(config: ExperimentConfig, mock: bool):
     if mock:
         return MockClient()
@@ -153,10 +185,12 @@ def _make_client(config: ExperimentConfig, mock: bool):
 
 def _make_token_counter(config: ExperimentConfig, mock: bool):
     if (
-        mock
-        or not config.overflow_split_enabled
-        or config.max_document_chars is not None
+        config.max_document_chars is not None
         or config.context_strategy == "split"
+        or (
+            config.context_strategy == "single"
+            and not config.overflow_split_enabled
+        )
     ):
         return None
     from transformers import AutoTokenizer
@@ -208,8 +242,15 @@ def main() -> int:
         action="store_true",
         help="write every final chat message/pass to inputs.jsonl before model calls",
     )
+    parser.add_argument(
+        "--dump-inputs-markdown",
+        action="store_true",
+        help="also write exact final message text to input_examples.md (requires --dump-inputs)",
+    )
     parser.add_argument("--fresh", action="store_true", help="discard the existing prediction checkpoint")
     args = parser.parse_args()
+    if args.dump_inputs_markdown and not args.dump_inputs:
+        parser.error("--dump-inputs-markdown requires --dump-inputs")
 
     load_dotenv(ROOT / ".env")
     config = load_config(args.config)
@@ -259,6 +300,16 @@ def main() -> int:
     elif effective_limit is not None:
         records = records[:effective_limit]
     item_table = load_item_table(config.data.item_table_path)
+    decision_cards = (
+        load_decision_cards(config.decision_cards_path, item_table)
+        if config.decision_cards_path
+        else None
+    )
+    competition_products = (
+        load_competition_product_index(config.competition_products_path)
+        if config.competition_products_path
+        else None
+    )
     client = _make_client(config, args.mock)
     reference_text = (
         config.reference_path.read_text(encoding="utf-8") if config.reference_path else None
@@ -272,6 +323,10 @@ def main() -> int:
         context_strategy=config.context_strategy,
         notice_anchor_chars=config.notice_anchor_chars,
         overflow_split_enabled=config.overflow_split_enabled,
+        strict_document_evidence=config.strict_document_evidence,
+        absence_detection_strategy=config.absence_detection_strategy,
+        decision_cards=decision_cards,
+        competition_products=competition_products,
         count_tokens=_make_token_counter(config, args.mock),
         prompt_budget_tokens=config.max_model_len - config.output_reserve_tokens,
         reference_text=reference_text,
@@ -279,26 +334,29 @@ def main() -> int:
     shutil.copy2(config.path, output_dir / "config.yaml")
     if config.reference_path:
         shutil.copy2(config.reference_path, output_dir / "reference_context.txt")
+    if config.decision_cards_path:
+        shutil.copy2(config.decision_cards_path, output_dir / "decision_cards.json")
+    if config.competition_products_path:
+        shutil.copy2(config.competition_products_path, output_dir / "competition_products.json")
     if args.dump_inputs:
         dump_path = output_dir / "inputs.jsonl"
+        input_entries: list[dict[str, Any]] = []
         with dump_path.open("w", encoding="utf-8") as handle:
             for record in records:
                 for pass_index, context in enumerate(pipeline.contexts_for_record(record), 1):
                     messages = pipeline.messages_for_context(record, context)
-                    handle.write(
-                        json.dumps(
-                            {
-                                "id": record["id"],
-                                "pass_index": pass_index,
-                                "token_count": pipeline.count_tokens(messages)
-                                if pipeline.count_tokens
-                                else None,
-                                "messages": messages,
-                            },
-                            ensure_ascii=False,
-                        )
-                        + "\n"
-                    )
+                    entry = {
+                        "id": record["id"],
+                        "pass_index": pass_index,
+                        "token_count": pipeline.count_tokens(messages)
+                        if pipeline.count_tokens
+                        else None,
+                        "messages": messages,
+                    }
+                    input_entries.append(entry)
+                    handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        if args.dump_inputs_markdown:
+            _write_input_examples_markdown(output_dir / "input_examples.md", input_entries)
     started = time.monotonic()
     failures: list[dict[str, str]] = []
     logger.info(
@@ -419,6 +477,18 @@ def main() -> int:
         if config.reference_path
         else None,
         "reference_sha256": _sha256(config.reference_path) if config.reference_path else None,
+        "decision_cards_path": str(config.decision_cards_path.relative_to(ROOT))
+        if config.decision_cards_path
+        else None,
+        "decision_cards_sha256": _sha256(config.decision_cards_path)
+        if config.decision_cards_path
+        else None,
+        "competition_products_path": str(config.competition_products_path.relative_to(ROOT))
+        if config.competition_products_path
+        else None,
+        "competition_products_sha256": _sha256(config.competition_products_path)
+        if config.competition_products_path
+        else None,
         "llm_provider": "mock" if args.mock else config.llm.provider,
         "model": getattr(client, "model", config.llm.model),
         "rag_enabled": False,

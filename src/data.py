@@ -5,11 +5,15 @@ from __future__ import annotations
 import csv
 import gzip
 import json
+import re
 import statistics
 import unicodedata
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable, Iterator
+
+PRODUCT_CODE = re.compile(r"\[(\d{10})\]")
+DOCUMENT_CODE = re.compile(r"(?<!\d)(\d{10})(?!\d)")
 
 REQUIRED_RECORD_KEYS = {
     "id",
@@ -91,6 +95,75 @@ def load_item_table(path: str | Path) -> dict[str, dict[str, Any]]:
     if not isinstance(items, dict) or set(items) != {f"v{i}" for i in range(1, 25)}:
         raise ValueError("item table must define exactly v1 through v24")
     return items
+
+
+def load_decision_cards(
+    path: str | Path,
+    item_table: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Load versioned prompt policy cards tied exactly to the official items."""
+    with Path(path).open(encoding="utf-8") as handle:
+        payload = json.load(handle)
+    cards = payload.get("cards") if isinstance(payload, dict) else None
+    if not isinstance(cards, dict) or set(cards) != set(item_table):
+        raise ValueError("decision cards must define exactly the item-table v1 through v24 keys")
+    for item, card in cards.items():
+        if not isinstance(card, dict):
+            raise ValueError(f"decision card must be an object: {item}")
+        if card.get("item_name") != item_table[item]["항목명"]:
+            raise ValueError(f"decision card item_name does not match item table: {item}")
+        if not isinstance(card.get("prompt_text"), str) or not card["prompt_text"].strip():
+            raise ValueError(f"decision card prompt_text must be non-empty: {item}")
+    return cards
+
+
+def load_competition_product_index(path: str | Path) -> dict[str, dict[str, str]]:
+    """Load an exact-code index derived from the organizer's product CSV."""
+    with Path(path).open(encoding="utf-8") as handle:
+        payload = json.load(handle)
+    products = payload.get("products") if isinstance(payload, dict) else None
+    if not isinstance(products, dict) or not products:
+        raise ValueError("competition product index must contain a non-empty products mapping")
+    for code, value in products.items():
+        if not isinstance(code, str) or not re.fullmatch(r"\d{10}", code):
+            raise ValueError("competition product index has an invalid detail product code")
+        if not isinstance(value, dict) or not isinstance(value.get("세부품명"), str):
+            raise ValueError("competition product index entry must contain 세부품명")
+    return products
+
+
+def competition_product_fact(
+    record: dict[str, Any], products: dict[str, dict[str, str]]
+) -> dict[str, Any]:
+    """Return a conservative organizer-data-only product applicability fact.
+
+    Metadata codes establish both match and known non-match. Document codes are
+    used only to establish a positive exact CSV match: an arbitrary ten-digit
+    number in prose must not turn an unknown notice into a known non-match.
+    """
+    metadata_value = str(record["meta"].get("세부품명번호목록") or "")
+    metadata_codes = sorted(set(PRODUCT_CODE.findall(metadata_value)))
+    document_matches: dict[str, list[str]] = defaultdict(list)
+    for document in record["docs"]:
+        for code in set(DOCUMENT_CODE.findall(document["text"])) & set(products):
+            document_matches[code].append(document["doc_id"])
+    matched_codes = sorted((set(metadata_codes) | set(document_matches)) & set(products))
+    if matched_codes:
+        status = "matched"
+    elif metadata_codes:
+        status = "not_matched"
+    else:
+        status = "unknown"
+    return {
+        "status": status,
+        "metadata_codes": metadata_codes,
+        "matched_codes": matched_codes,
+        "matched_products": [
+            {"세부품명번호": code, "세부품명": products[code]["세부품명"]}
+            for code in matched_codes
+        ],
+        "document_match_doc_ids": {code: sorted(ids) for code, ids in document_matches.items()},
+    }
 
 
 def load_csv(path: str | Path) -> list[dict[str, str]]:

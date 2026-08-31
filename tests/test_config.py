@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from src.config import load_config
 
 
@@ -108,3 +110,62 @@ run: {resume: true, concurrency: 1}
     assert loaded.data.root == tmp_path / "data"
     assert loaded.output_dir == tmp_path / "outputs/test"
     assert loaded.reference_path == reference
+
+
+def test_full_split_merge_requires_full_document_token_mode(tmp_path: Path) -> None:
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        """
+experiment: {id: test}
+data: {root: data, input: input.jsonl, item_table: items.json}
+output: {dir: outputs/test}
+prompt: {max_document_chars: null, context_strategy: full_split_merge}
+llm:
+  provider: openrouter
+  model: google/gemma-4-26b-a4b-it:free
+  api_key_env: OPENROUTER_API_KEY
+  api_url: https://openrouter.ai/api/v1/chat/completions
+  temperature: 0
+  max_tokens: 100
+  seed: 1
+  timeout_seconds: 10
+  request_retries: 1
+  prediction_attempts: 1
+  provider_sort: throughput
+  require_parameters: false
+run: {resume: true, concurrency: 1}
+""",
+        encoding="utf-8",
+    )
+
+    assert load_config(config).context_strategy == "full_split_merge"
+
+
+def test_strict_document_evidence_rejects_non_document_split_mode(tmp_path: Path) -> None:
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        """
+experiment: {id: test}
+data: {root: data, input: input.jsonl, item_table: items.json}
+output: {dir: outputs/test}
+prompt: {max_document_chars: null, strict_document_evidence: true}
+llm:
+  provider: openrouter
+  model: google/gemma-4-26b-a4b-it:free
+  api_key_env: OPENROUTER_API_KEY
+  api_url: https://openrouter.ai/api/v1/chat/completions
+  temperature: 0
+  max_tokens: 100
+  seed: 1
+  timeout_seconds: 10
+  request_retries: 1
+  prediction_attempts: 1
+  provider_sort: throughput
+  require_parameters: false
+run: {resume: true, concurrency: 1}
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="strict_document_evidence"):
+        load_config(config)
