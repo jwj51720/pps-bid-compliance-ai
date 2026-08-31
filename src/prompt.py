@@ -99,11 +99,112 @@ def build_document_context(record: dict[str, Any], max_chars: int | None) -> str
     return "\n\n".join(chunks)
 
 
+def _ordered_documents(record: dict[str, Any]) -> list[dict[str, Any]]:
+    order = {name: index for index, name in enumerate(DOCUMENT_ORDER)}
+    return sorted(
+        record["docs"],
+        key=lambda document: (order.get(document["type"], len(order)), document["doc_id"]),
+    )
+
+
+def build_split_document_contexts(
+    record: dict[str, Any],
+    max_chars: int,
+    notice_anchor_chars: int = 4000,
+) -> list[str]:
+    """Pack ordered documents into independently readable bounded contexts.
+
+    The character limit is an experiment-time surrogate only. Submission code
+    must replace it with the supplied Gemma tokenizer's exact token count.
+    Every pass begins with a short announcement anchor when one is available;
+    document fragments retain their source type and ID so a positive finding can
+    be traced to its pass. A document longer than the remaining payload budget
+    is split rather than silently omitted.
+    """
+    if max_chars < 1:
+        raise ValueError("max_chars must be positive")
+    documents = _ordered_documents(record)
+    announcements = [document for document in documents if document["type"] == "공고문"]
+    anchor = ""
+    if announcements and notice_anchor_chars:
+        document = announcements[0]
+        header = f"[공고문 앵커:{document['doc_id']}]\n"
+        body_limit = max(0, min(notice_anchor_chars, max_chars - len(header)))
+        anchor = header + document["text"][:body_limit]
+
+    # Include every source document in order. The announcement anchor is context
+    # only; its full text remains part of the ordered payload.
+    fragments: list[tuple[str, str]] = []
+    for document in documents:
+        header = f"[{document['type']}:{document['doc_id']}]\n"
+        text = document["text"]
+        fragments.append((header, text))
+
+    contexts: list[str] = []
+    current: list[str] = []
+    used = 0
+    anchor_prefix = (anchor + "\n\n") if anchor else ""
+    payload_limit = max_chars - len(anchor_prefix)
+    if payload_limit <= 0:
+        # A tiny configured limit must still make forward progress.
+        anchor_prefix = ""
+        payload_limit = max_chars
+
+    def flush() -> None:
+        nonlocal current, used
+        if current:
+            contexts.append(anchor_prefix + "\n\n".join(current))
+            current = []
+            used = 0
+
+    for header, text in fragments:
+        available_for_body = payload_limit - len(header)
+        if available_for_body <= 0:
+            raise ValueError("max_chars is too small to include a document header")
+        offset = 0
+        while offset < len(text) or (not text and offset == 0):
+            separator_chars = 2 if current else 0
+            remaining = payload_limit - used - separator_chars - len(header)
+            if remaining <= 0:
+                flush()
+                continue
+            if offset == 0 and len(text) <= remaining:
+                current.append(header + text)
+                used += separator_chars + len(header) + len(text)
+                offset = len(text)
+                continue
+            if offset == 0 and current:
+                flush()
+                continue
+            take = min(remaining, len(text) - offset)
+            if take <= 0:
+                flush()
+                continue
+            continuation = "" if offset == 0 else f" [계속 {offset}]"
+            fragment_header = header.rstrip("\n") + continuation + "\n"
+            separator_chars = 2 if current else 0
+            body_room = payload_limit - used - separator_chars - len(fragment_header)
+            if body_room <= 0:
+                flush()
+                continue
+            take = min(body_room, len(text) - offset)
+            current.append(fragment_header + text[offset : offset + take])
+            used += separator_chars + len(fragment_header) + take
+            offset += take
+            if offset < len(text):
+                flush()
+            if not text:
+                offset = 1
+    flush()
+    return contexts
+
+
 def build_messages(
     record: dict[str, Any],
     system_prompt: str,
     max_document_chars: int | None,
     include_normalized_facts: bool = False,
+    document_context: str | None = None,
 ) -> list[dict[str, str]]:
     metadata = json.dumps(record["meta"], ensure_ascii=False, sort_keys=True, indent=2)
     facts = ""
@@ -115,7 +216,7 @@ def build_messages(
     user_prompt = (
         f"[공고 ID] {record['id']}\n\n"
         f"[나라장터 입력 메타]\n{metadata}{facts}\n\n"
-        f"[문서]\n{build_document_context(record, max_document_chars)}"
+        f"[문서]\n{document_context if document_context is not None else build_document_context(record, max_document_chars)}"
     )
     return [
         {"role": "system", "content": system_prompt},

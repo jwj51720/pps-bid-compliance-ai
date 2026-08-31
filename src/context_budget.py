@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import statistics
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from src.data import load_item_table
-from src.prompt import build_messages, build_system_prompt
+from src.prompt import DOCUMENT_ORDER, build_messages, build_system_prompt
+
+TokenCounter = Callable[[list[dict[str, str]]], int]
 
 
 def estimate_context_budget(
@@ -103,3 +105,104 @@ def _quantile(values: list[float], probability: float) -> float:
     upper = min(lower + 1, len(values) - 1)
     weight = position - lower
     return values[lower] * (1 - weight) + values[upper] * weight
+
+
+def pack_contexts_to_token_budget(
+    record: dict[str, Any],
+    system_prompt: str,
+    count_tokens: TokenCounter,
+    prompt_budget_tokens: int,
+    notice_anchor_chars: int = 4000,
+) -> list[str]:
+    """Return one full context or ordered, token-admitted split contexts.
+
+    Every returned context is counted with the same final system/user messages.
+    An overflowing source document is split at a character boundary only after
+    token counting finds the largest prefix that fits; characters are never used
+    as the admission criterion.
+    """
+    full_messages = build_messages(record, system_prompt, None)
+    if count_tokens(full_messages) <= prompt_budget_tokens:
+        return [build_messages(record, system_prompt, None)[1]["content"].split("[문서]\n", 1)[1]]
+
+    order = {name: index for index, name in enumerate(DOCUMENT_ORDER)}
+    documents = sorted(
+        record["docs"],
+        key=lambda document: (order.get(document["type"], len(order)), document["doc_id"]),
+    )
+    announcement = next(document for document in documents if document["type"] == "공고문")
+    anchor = announcement["text"][:notice_anchor_chars]
+    anchor_header = f"[공고문 앵커:{announcement['doc_id']}]\n"
+
+    unavailable = record.get("dropped_doc_counts") or {}
+    unavailable_text = ""
+    if unavailable:
+        unavailable_text = "\n\n[미수록 문서] " + ", ".join(
+            f"{name} {count}건" for name, count in sorted(unavailable.items())
+        )
+
+    def render(parts: list[str]) -> str:
+        prefix = anchor_header + anchor if anchor else ""
+        body = "\n\n".join(parts)
+        return "\n\n".join(value for value in (prefix, body) if value) + unavailable_text
+
+    def fits(parts: list[str]) -> bool:
+        return count_tokens(
+            build_messages(record, system_prompt, None, document_context=render(parts))
+        ) <= prompt_budget_tokens
+
+    # Ensure even an unusually long announcement anchor cannot block progress.
+    if not fits([]):
+        low, high = 0, len(anchor)
+        while low < high:
+            middle = (low + high + 1) // 2
+            anchor = announcement["text"][:middle]
+            if fits([]):
+                low = middle
+            else:
+                high = middle - 1
+        anchor = announcement["text"][:low]
+        if not fits([]):
+            raise ValueError("metadata and prompt exceed token budget before documents")
+
+    contexts: list[str] = []
+    current: list[str] = []
+
+    def flush() -> None:
+        nonlocal current
+        if current:
+            contexts.append(render(current))
+            current = []
+
+    for document in documents:
+        header = f"[{document['type']}:{document['doc_id']}]\n"
+        text = document["text"]
+        offset = 0
+        while offset < len(text) or (not text and offset == 0):
+            suffix = "" if offset == 0 else f" [계속 {offset}]"
+            fragment_header = header.rstrip("\n") + suffix + "\n"
+            remaining = text[offset:]
+            candidate = current + [fragment_header + remaining]
+            if fits(candidate):
+                current = candidate
+                offset = len(text) if text else 1
+                continue
+            if current:
+                flush()
+                continue
+            low, high = 1, len(remaining)
+            best = 0
+            while low <= high:
+                middle = (low + high) // 2
+                if fits([fragment_header + remaining[:middle]]):
+                    best = middle
+                    low = middle + 1
+                else:
+                    high = middle - 1
+            if best == 0:
+                raise ValueError(f"document header cannot fit token budget: {document['doc_id']}")
+            current = [fragment_header + remaining[:best]]
+            offset += best
+            flush()
+    flush()
+    return contexts

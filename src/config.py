@@ -43,6 +43,11 @@ class ExperimentConfig:
     data: DataConfig
     output_dir: Path
     max_document_chars: int | None
+    context_strategy: str
+    overflow_split_enabled: bool
+    max_model_len: int
+    output_reserve_tokens: int
+    notice_anchor_chars: int
     prompt_mode: str
     include_normalized_facts: bool
     llm: LLMConfig
@@ -89,6 +94,11 @@ def load_config(path: str | Path) -> ExperimentConfig:
             if prompt.get("max_document_chars") is not None
             else None
         ),
+        context_strategy=str(prompt.get("context_strategy", "single")),
+        overflow_split_enabled=bool(prompt.get("overflow_split_enabled", True)),
+        max_model_len=int(prompt.get("max_model_len", 32768)),
+        output_reserve_tokens=int(prompt.get("output_reserve_tokens", 2500)),
+        notice_anchor_chars=int(prompt.get("notice_anchor_chars", 4000)),
         prompt_mode=str(prompt.get("mode", "baseline")),
         include_normalized_facts=bool(prompt.get("include_normalized_facts", False)),
         llm=LLMConfig(
@@ -116,6 +126,14 @@ def load_config(path: str | Path) -> ExperimentConfig:
         raise ValueError("prompt.max_document_chars must be positive")
     if config.prompt_mode not in {"baseline", "structured", "guided"}:
         raise ValueError("prompt.mode must be baseline, structured, or guided")
+    if config.context_strategy not in {"single", "split"}:
+        raise ValueError("prompt.context_strategy must be single or split")
+    if config.context_strategy == "split" and config.max_document_chars is None:
+        raise ValueError("split context strategy requires prompt.max_document_chars")
+    if config.notice_anchor_chars < 0:
+        raise ValueError("prompt.notice_anchor_chars must be non-negative")
+    if not 0 < config.output_reserve_tokens < config.max_model_len:
+        raise ValueError("prompt.output_reserve_tokens must be within prompt.max_model_len")
     if config.concurrency < 1:
         raise ValueError("run.concurrency must be positive")
     if config.local_limit is not None and config.local_limit < 1:

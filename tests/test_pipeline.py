@@ -4,8 +4,14 @@ import json
 
 import pytest
 
-from src.pipeline import PredictionError, parse_judgment, postprocess_judgment
-from src.prompt import build_document_context, build_messages, build_system_prompt, normalize_notice_facts
+from src.pipeline import _combine_pass_judgments, _usage_number, PredictionError, parse_judgment, postprocess_judgment
+from src.prompt import (
+    build_document_context,
+    build_messages,
+    build_split_document_contexts,
+    build_system_prompt,
+    normalize_notice_facts,
+)
 from src.schema import ITEMS
 
 
@@ -91,3 +97,42 @@ def test_normalized_facts_only_restate_notice_metadata() -> None:
 
     assert facts["세부품명번호"] == ["5030990101"]
     assert facts["추정가격원"] == 10
+
+
+def test_split_contexts_preserve_order_anchor_and_long_document_text() -> None:
+    record = _record()
+    record["docs"] = [
+        {"doc_id": "R1", "type": "제안요청서", "text": "R" * 80},
+        {"doc_id": "N1", "type": "공고문", "text": "NOTICE" * 10},
+        {"doc_id": "S1", "type": "규격서", "text": "SPEC" * 10},
+    ]
+
+    contexts = build_split_document_contexts(record, max_chars=70, notice_anchor_chars=12)
+
+    assert len(contexts) > 1
+    assert all("[공고문 앵커:N1]" in context for context in contexts)
+    payload = "".join(context.replace("[공고문 앵커:N1]\nNOTICENOTICE", "") for context in contexts)
+    assert "[공고문:N1]" in payload
+    assert "[규격서:S1]" in payload
+    assert "[제안요청서:R1]" in payload
+    assert payload.index("[공고문:N1]") < payload.index("[규격서:S1]") < payload.index("[제안요청서:R1]")
+    assert payload.count("R") >= 80
+
+
+def test_combined_pass_judgments_ors_labels_and_keeps_first_positive_evidence() -> None:
+    first = _judgment()
+    second = _judgment()
+    first["v1"] = {"위반여부": 1, "근거문구": "first"}
+    second["v1"] = {"위반여부": 1, "근거문구": "second"}
+    second["v2"] = {"위반여부": 1, "근거문구": "only second"}
+
+    combined = _combine_pass_judgments([first, second])
+
+    assert combined["v1"] == {"위반여부": 1, "근거문구": "first"}
+    assert combined["v2"] == {"위반여부": 1, "근거문구": "only second"}
+    assert combined["v3"] == {"위반여부": 0, "근거문구": ""}
+
+
+def test_usage_number_accepts_nested_openrouter_cost() -> None:
+    assert _usage_number({"cost": 0.0123}) == 0.0123
+    assert _usage_number({"unexpected": "value"}) == 0.0

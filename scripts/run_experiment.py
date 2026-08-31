@@ -95,6 +95,7 @@ def _prediction_to_json(prediction: Prediction) -> dict[str, Any]:
         "latency_seconds": prediction.latency_seconds,
         "usage": prediction.usage,
         "finish_reason": prediction.finish_reason,
+        "pass_judgments": list(prediction.pass_judgments),
     }
 
 
@@ -146,6 +147,29 @@ def _make_client(config: ExperimentConfig, mock: bool):
         require_parameters=config.llm.require_parameters,
         min_request_interval_seconds=config.llm.min_request_interval_seconds,
     )
+
+
+def _make_token_counter(config: ExperimentConfig, mock: bool):
+    if (
+        mock
+        or not config.overflow_split_enabled
+        or config.max_document_chars is not None
+        or config.context_strategy == "split"
+    ):
+        return None
+    from transformers import AutoTokenizer
+
+    tokenizer_source = os.environ.get("PPS_MODEL_DIR") or config.llm.model
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_source)
+
+    def count_tokens(messages: list[dict[str, str]]) -> int:
+        encoded = tokenizer.apply_chat_template(
+            messages, tokenize=True, add_generation_prompt=True
+        )
+        token_ids = encoded["input_ids"] if hasattr(encoded, "keys") else encoded
+        return len(token_ids)
+
+    return count_tokens
 
 
 def _predict_with_retries(
@@ -235,6 +259,11 @@ def main() -> int:
         max_document_chars=config.max_document_chars,
         prompt_mode=config.prompt_mode,
         include_normalized_facts=config.include_normalized_facts,
+        context_strategy=config.context_strategy,
+        notice_anchor_chars=config.notice_anchor_chars,
+        overflow_split_enabled=config.overflow_split_enabled,
+        count_tokens=_make_token_counter(config, args.mock),
+        prompt_budget_tokens=config.max_model_len - config.output_reserve_tokens,
     )
     shutil.copy2(config.path, output_dir / "config.yaml")
     started = time.monotonic()

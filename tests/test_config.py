@@ -67,3 +67,6 @@ run: {resume: true, concurrency: 1, local_limit: 20}
 
     assert loaded.max_document_chars is None
     assert loaded.local_limit == 20
+    assert loaded.overflow_split_enabled is True
+    assert loaded.max_model_len == 32768
+    assert loaded.output_reserve_tokens == 2500

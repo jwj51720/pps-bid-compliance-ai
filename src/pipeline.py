@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from src.data import full_document_text
-from src.external.openrouter import Completion
-from src.prompt import build_messages, build_system_prompt
+from src.context_budget import TokenCounter, pack_contexts_to_token_budget
+from src.prompt import build_messages, build_split_document_contexts, build_system_prompt
 from src.schema import ABSENCE_ITEMS, EVIDENCE_MAX_CHARS, ITEMS, judgment_schema
 
 JSON_FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
@@ -21,7 +21,7 @@ class CompletionClient(Protocol):
         self,
         messages: list[dict[str, str]],
         response_schema: dict[str, Any],
-    ) -> Completion: ...
+    ) -> Any: ...
 
 
 class PredictionError(RuntimeError):
@@ -41,6 +41,7 @@ class Prediction:
     latency_seconds: float
     usage: dict[str, Any]
     finish_reason: str | None = None
+    pass_judgments: tuple[dict[str, dict[str, Any]], ...] = ()
 
 
 def extract_json(text: str) -> Any:
@@ -161,32 +162,124 @@ class BaselinePipeline:
         max_document_chars: int | None,
         prompt_mode: str = "baseline",
         include_normalized_facts: bool = False,
+        context_strategy: str = "single",
+        notice_anchor_chars: int = 4000,
+        overflow_split_enabled: bool = True,
+        count_tokens: TokenCounter | None = None,
+        prompt_budget_tokens: int = 30268,
     ) -> None:
         self.client = client
         self.max_document_chars = max_document_chars
         self.include_normalized_facts = include_normalized_facts
+        self.context_strategy = context_strategy
+        self.notice_anchor_chars = notice_anchor_chars
+        self.overflow_split_enabled = overflow_split_enabled
+        self.count_tokens = count_tokens
+        self.prompt_budget_tokens = prompt_budget_tokens
         self.system_prompt = build_system_prompt(item_table, mode=prompt_mode)
         self.response_schema = judgment_schema()
 
     def predict(self, record: dict[str, Any]) -> Prediction:
-        messages = build_messages(
-            record,
-            self.system_prompt,
-            self.max_document_chars,
-            include_normalized_facts=self.include_normalized_facts,
+        contexts = self.contexts_for_record(record)
+        completions: list[Any] = []
+        for context in contexts:
+            completion = self.client.complete(
+                self.messages_for_context(record, context), self.response_schema
+            )
+            completions.append(completion)
+        return self.finalize(record, completions)
+
+    def contexts_for_record(self, record: dict[str, Any]) -> list[str | None]:
+        forced_contexts: list[str | None] = (
+            build_split_document_contexts(
+                record, self.max_document_chars or 0, self.notice_anchor_chars
+            )
+            if self.context_strategy == "split"
+            else [None]
         )
-        completion = self.client.complete(messages, self.response_schema)
-        try:
-            parsed = parse_judgment(completion.content)
-        except PredictionError as exc:
-            raise PredictionError(str(exc), raw_response=completion.content) from exc
-        judgment = postprocess_judgment(parsed, record)
+        if self.context_strategy == "split":
+            return forced_contexts
+        elif (
+            self.overflow_split_enabled
+            and self.max_document_chars is None
+            and self.count_tokens is not None
+        ):
+            return pack_contexts_to_token_budget(
+                record,
+                self.system_prompt,
+                self.count_tokens,
+                self.prompt_budget_tokens,
+                self.notice_anchor_chars,
+            )
+        return forced_contexts
+
+    def messages_for_context(
+        self, record: dict[str, Any], context: str | None
+    ) -> list[dict[str, str]]:
+        return build_messages(
+            record, self.system_prompt, self.max_document_chars,
+            include_normalized_facts=self.include_normalized_facts, document_context=context,
+        )
+
+    def finalize(self, record: dict[str, Any], completions: list[Any]) -> Prediction:
+        judgments: list[dict[str, dict[str, Any]]] = []
+        for completion in completions:
+            try:
+                parsed = parse_judgment(completion.content)
+            except PredictionError as exc:
+                raise PredictionError(str(exc), raw_response=completion.content) from exc
+            judgments.append(postprocess_judgment(parsed, record))
+        judgment = _combine_pass_judgments(judgments)
+        completion = completions[0]
         return Prediction(
             record_id=record["id"],
             judgment=judgment,
             raw_response=completion.content,
             model=completion.model,
-            latency_seconds=completion.latency_seconds,
-            usage=completion.usage,
+            latency_seconds=sum(value.latency_seconds for value in completions),
+            usage=_combined_usage(completions),
             finish_reason=completion.finish_reason,
+            pass_judgments=tuple(judgments),
         )
+
+
+def _combined_usage(completions: list[Any]) -> dict[str, Any]:
+    keys = {key for completion in completions for key in completion.usage}
+    return {
+        key: sum(_usage_number(completion.usage.get(key, 0)) for completion in completions)
+        for key in keys
+    }
+
+
+def _usage_number(value: Any) -> float:
+    """Normalize OpenRouter usage values, including nested cost objects."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    if isinstance(value, dict):
+        for key in ("cost", "total_cost", "total"):
+            nested = value.get(key)
+            if isinstance(nested, (int, float)) and not isinstance(nested, bool):
+                return float(nested)
+    return 0.0
+
+
+def _combine_pass_judgments(
+    judgments: list[dict[str, dict[str, Any]]],
+) -> dict[str, dict[str, Any]]:
+    """OR pass decisions, retaining the earliest valid positive evidence.
+
+    Fixed document ordering means the first positive is the memo's ``11`` case:
+    a finding visible in both passes is attributed to the earlier pass. ``01``
+    and ``10`` retain their sole positive pass; only ``00`` becomes negative.
+    """
+    if not judgments:
+        raise ValueError("at least one pass judgment is required")
+    combined: dict[str, dict[str, Any]] = {}
+    for item in ITEMS:
+        positives = [judgment[item] for judgment in judgments if judgment[item]["위반여부"] == 1]
+        if not positives:
+            combined[item] = {"위반여부": 0, "근거문구": ""}
+            continue
+        selected = positives[0]
+        combined[item] = {"위반여부": 1, "근거문구": selected["근거문구"]}
+    return combined

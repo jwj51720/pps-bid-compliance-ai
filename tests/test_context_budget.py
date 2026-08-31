@@ -1,6 +1,6 @@
 import json
 
-from src.context_budget import estimate_context_budget
+from src.context_budget import estimate_context_budget, pack_contexts_to_token_budget
 
 
 def test_estimates_full_document_prompt_against_reserved_output(tmp_path):
@@ -33,3 +33,29 @@ def test_estimates_full_document_prompt_against_reserved_output(tmp_path):
     assert result["prompt_budget_tokens"] == 80
     assert result["record_count"] == 1
     assert result["records"][0]["full_prompt_characters"] > result["records"][0]["current_prompt_characters"]
+
+
+def test_token_budget_packer_splits_long_document_and_keeps_all_text() -> None:
+    record = {
+        "id": "N1",
+        "docs": [
+            {"doc_id": "N", "type": "공고문", "text": "N" * 20},
+            {"doc_id": "R", "type": "제안요청서", "text": "R" * 160},
+        ],
+        "meta": {},
+        "dropped_doc_counts": {},
+        "input_completeness": {},
+        "anon_applied": False,
+        "assembly_policy_version": "test",
+    }
+
+    def count_tokens(messages):
+        return len(messages[-1]["content"].split("[문서]\n", 1)[1])
+
+    contexts = pack_contexts_to_token_budget(
+        record, "system", count_tokens, prompt_budget_tokens=100, notice_anchor_chars=10
+    )
+
+    assert len(contexts) > 1
+    assert all(count_tokens([{"content": f"[문서]\n{context}"}]) <= 100 for context in contexts)
+    assert sum(context.count("R") for context in contexts) >= 160
