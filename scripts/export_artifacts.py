@@ -25,10 +25,11 @@ INCLUDE_PATHS = (
     "scripts",
     "submission",
     "tests",
+    "data/raw",
     "data/derived",
     "outputs",
 )
-EXCLUDED_PARTS = {"__pycache__", "build", ".DS_Store"}
+EXCLUDED_PARTS = {"__pycache__", ".DS_Store", ".git", ".venv", ".pytest_cache"}
 
 
 def should_include(path: Path) -> bool:
@@ -43,6 +44,9 @@ def files_to_archive() -> list[Path]:
             files.append(source)
         elif source.is_dir():
             files.extend(path for path in source.rglob("*") if path.is_file() and should_include(path))
+    # Submission zip files are untracked delivery artifacts. Include them, but
+    # never include dist/archives: doing so would recursively archive archives.
+    files.extend(path for path in (ROOT / "dist").glob("*.zip") if path.is_file())
     return sorted(files)
 
 
@@ -69,9 +73,11 @@ def main() -> int:
         "created_at_kst": datetime.now(ZoneInfo("Asia/Seoul")).isoformat(),
         "included_roots": list(INCLUDE_PATHS),
         "excluded": [
-            "data/raw",
-            "dist",
-            "submission/build",
+            ".env",
+            ".git",
+            ".venv",
+            ".pytest_cache",
+            "dist/archives (recursive archive exclusion)",
             "__pycache__",
             ".DS_Store",
         ],
