@@ -59,7 +59,7 @@ When asked to export work for another environment, run `python scripts/export_ar
 
 Use `pytest` with `tests/test_<module>.py` and `test_<behavior>`. Mock remote LLM calls. Test parsing, rules, schema-constrained output, malformed/empty structured-output recovery, metrics, evidence substring checks, and missing-document behavior. Regression-test corrected false positives and negatives.
 
-Before packaging, validate `output/submission.csv`: exactly 49 ordered columns (`id`, `v1`-`v24`, `e1`-`e24`), unique complete IDs, integer 0/1 labels, UTF-8/NFC text, valid evidence, and the expected row count. The self-contained `submit.zip` must include `script.py`, `requirements.txt`, code, and only permitted static assets; verify the 2 GB compressed, 8 GB extracted, 10-minute install, and 2-hour inference limits.
+Before packaging, validate `output/submission.csv`: exactly 49 ordered columns (`id`, `v1`-`v24`, `e1`-`e24`), unique complete IDs, integer 0/1 labels, UTF-8/NFC text, valid evidence, and the expected row count. The self-contained submission archive must include `script.py`, `requirements.txt`, code, and only permitted static assets; name it `pps_YYYYMMDD_HHMMSS.zip` (30 characters or fewer) and verify the 2 GB compressed, 8 GB extracted, 10-minute install, and 2-hour inference limits.
 
 ## Style, Commits, and Data Safety
 

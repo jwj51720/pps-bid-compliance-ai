@@ -6,13 +6,20 @@ from __future__ import annotations
 import json
 import shutil
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 STAGING = ROOT / "submission/build/final_full_context_adaptive"
-DIST = ROOT / "dist/final_full_context_adaptive_submit.zip"
+DIST_DIR = ROOT / "dist"
+
+
+def submission_archive_path() -> Path:
+    """Return a DACON-safe, timestamped archive name (well below 30 chars)."""
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return DIST_DIR / f"pps_{timestamp}.zip"
 
 
 def verify_runtime_policy() -> None:
@@ -44,6 +51,7 @@ def verify_runtime_policy() -> None:
 
 def main() -> int:
     verify_runtime_policy()
+    destination = submission_archive_path()
     if STAGING.exists():
         shutil.rmtree(STAGING)
     STAGING.mkdir(parents=True)
@@ -51,12 +59,12 @@ def main() -> int:
     shutil.copy2(ROOT / "submission/runtime_config.json", STAGING / "runtime_config.json")
     shutil.copytree(ROOT / "src", STAGING / "src", ignore=shutil.ignore_patterns("__pycache__"))
     shutil.copy2(ROOT / "submission/requirements.txt", STAGING / "requirements.txt")
-    DIST.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(DIST, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(STAGING.rglob("*")):
             if path.is_file():
                 archive.write(path, path.relative_to(STAGING))
-    print(DIST)
+    print(destination)
     return 0
 
 
