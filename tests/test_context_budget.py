@@ -1,6 +1,7 @@
 import json
 
 from src.context_budget import estimate_context_budget, pack_contexts_to_token_budget
+from src.prompt import build_messages
 
 
 def test_estimates_full_document_prompt_against_reserved_output(tmp_path):
@@ -59,3 +60,32 @@ def test_token_budget_packer_splits_long_document_and_keeps_all_text() -> None:
     assert len(contexts) > 1
     assert all(count_tokens([{"content": f"[문서]\n{context}"}]) <= 100 for context in contexts)
     assert sum(context.count("R") for context in contexts) >= 160
+
+
+def test_fixed_reference_is_counted_for_every_split_pass() -> None:
+    record = {
+        "id": "N1",
+        "docs": [
+            {"doc_id": "N", "type": "공고문", "text": "N" * 20},
+            {"doc_id": "R", "type": "제안요청서", "text": "R" * 160},
+        ],
+        "meta": {},
+        "dropped_doc_counts": {},
+        "input_completeness": {},
+        "anon_applied": False,
+        "assembly_policy_version": "test",
+    }
+    reference = "LAW" * 20
+    system_prompt = "system\n" + reference
+
+    def count_tokens(messages):
+        return sum(len(message["content"]) for message in messages)
+
+    contexts = pack_contexts_to_token_budget(
+        record, system_prompt, count_tokens, prompt_budget_tokens=180, notice_anchor_chars=0
+    )
+    messages = [build_messages(record, system_prompt, None, document_context=context) for context in contexts]
+
+    assert len(messages) > 1
+    assert all(reference in value[0]["content"] for value in messages)
+    assert all(count_tokens(value) <= 180 for value in messages)

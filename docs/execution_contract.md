@@ -7,11 +7,16 @@ adapters. It applies to every future experiment and submission.
 
 - Load and NFC-normalize notices, preserve document order, and include metadata.
 - Construct the 24-item prompt and JSON schema.
-- Count the final chat prompt; admit one full pass or create token-admitted
-  ordered split passes.
+- Include every selected official-reference chunk verbatim in the final system
+  prompt, then count the final chat prompt. Admit one full pass or create
+  token-admitted ordered split passes of notice documents only. If the fixed
+  prompt itself cannot fit, fail clearly; retrieval must reduce its selected
+  chunks rather than truncate a reference.
 - Merge pass labels with OR; retain the earliest positive pass evidence.
 - Parse structured output, resolve evidence to a source substring, enforce the
   500-character and absence-item rules, and construct/validate the 49-column CSV.
+  An unusable model candidate is recorded with its raw response and contributes
+  an all-negative result for that pass; it must never abort rows already inferred.
 
 ## Experiment adapter
 

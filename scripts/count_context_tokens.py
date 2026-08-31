@@ -15,6 +15,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.data import load_item_table, load_records
+from src.context_budget import pack_contexts_to_token_budget
 from src.prompt import build_messages, build_system_prompt
 
 DEFAULT_TOKENIZER = "google/gemma-4-26B-A4B-it"
@@ -40,6 +41,8 @@ def main() -> int:
     parser.add_argument("--max-model-len", type=int, default=32768)
     parser.add_argument("--output-reserve-tokens", type=int, default=2500)
     parser.add_argument("--output", default="outputs/exp-003-token-counts/full_context.json")
+    parser.add_argument("--reference", help="fixed official reference text included verbatim in every system prompt")
+    parser.add_argument("--dump-inputs", help="write final prompt messages for visual inspection")
     args = parser.parse_args()
     if not 0 < args.output_reserve_tokens < args.max_model_len:
         raise ValueError("output reserve must be positive and smaller than max model length")
@@ -52,36 +55,69 @@ def main() -> int:
     tokenizer_source = args.tokenizer or os.environ.get("PPS_MODEL_DIR") or DEFAULT_TOKENIZER
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_source)
     item_table = load_item_table(args.item_table)
-    system_prompt = build_system_prompt(item_table)
+    reference_text = Path(args.reference).read_text(encoding="utf-8") if args.reference else None
+    system_prompt = build_system_prompt(item_table, reference_text=reference_text)
     prompt_budget = args.max_model_len - args.output_reserve_tokens
     rows = []
+    input_rows = []
     for record in load_records(args.records):
         messages = build_messages(record, system_prompt, max_document_chars=None)
         prompt_tokens = _count_messages(tokenizer, messages)
+        contexts = pack_contexts_to_token_budget(
+            record,
+            system_prompt,
+            lambda candidate: _count_messages(tokenizer, candidate),
+            prompt_budget,
+        )
+        pass_messages = [
+            build_messages(record, system_prompt, None, document_context=context)
+            for context in contexts
+        ]
+        pass_prompt_tokens = [_count_messages(tokenizer, value) for value in pass_messages]
         rows.append(
             {
                 "id": record["id"],
-                "prompt_tokens": prompt_tokens,
+                "full_prompt_tokens": prompt_tokens,
                 "fits_prompt_budget": prompt_tokens <= prompt_budget,
                 "overflow_tokens": max(0, prompt_tokens - prompt_budget),
+                "pass_count": len(pass_messages),
+                "pass_prompt_tokens": pass_prompt_tokens,
             }
         )
-    rows.sort(key=lambda row: (-row["prompt_tokens"], row["id"]))
+        if args.dump_inputs:
+            input_rows.extend(
+                {
+                    "id": record["id"],
+                    "pass_index": index,
+                    "token_count": pass_prompt_tokens[index - 1],
+                    "messages": value,
+                }
+                for index, value in enumerate(pass_messages, 1)
+            )
+    rows.sort(key=lambda row: (-row["full_prompt_tokens"], row["id"]))
     result = {
         "method": "Gemma tokenizer.apply_chat_template on final system/user messages",
         "tokenizer": str(tokenizer_source),
         "max_model_len": args.max_model_len,
         "output_reserve_tokens": args.output_reserve_tokens,
         "prompt_budget_tokens": prompt_budget,
+        "reference": str(args.reference) if args.reference else None,
         "record_count": len(rows),
         "fit_count": sum(row["fits_prompt_budget"] for row in rows),
         "overflow_count": sum(not row["fits_prompt_budget"] for row in rows),
         "overflow_ids": [row["id"] for row in rows if not row["fits_prompt_budget"]],
+        "multi_pass_count": sum(row["pass_count"] > 1 for row in rows),
         "rows": rows,
     }
     destination = Path(args.output)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if args.dump_inputs:
+        input_destination = Path(args.dump_inputs)
+        input_destination.parent.mkdir(parents=True, exist_ok=True)
+        with input_destination.open("w", encoding="utf-8") as handle:
+            for value in input_rows:
+                handle.write(json.dumps(value, ensure_ascii=False) + "\n")
     print(destination)
     return 0
 

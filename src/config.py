@@ -48,6 +48,7 @@ class ExperimentConfig:
     max_model_len: int
     output_reserve_tokens: int
     notice_anchor_chars: int
+    reference_path: Path | None
     prompt_mode: str
     include_normalized_facts: bool
     llm: LLMConfig
@@ -74,7 +75,10 @@ def load_config(path: str | Path) -> ExperimentConfig:
     llm = _mapping(raw.get("llm"), "llm")
     run = _mapping(raw.get("run", {}), "run")
 
-    base = config_path.parent
+    # Root config lives at the repository root, while historical/experimental
+    # configs live directly below configs/.  Both retain repository-relative
+    # data and output paths.
+    base = config_path.parent.parent if config_path.parent.name == "configs" else config_path.parent
     root = (base / str(data["root"])).resolve()
     labels_value = data.get("labels")
     config = ExperimentConfig(
@@ -99,6 +103,9 @@ def load_config(path: str | Path) -> ExperimentConfig:
         max_model_len=int(prompt.get("max_model_len", 32768)),
         output_reserve_tokens=int(prompt.get("output_reserve_tokens", 2500)),
         notice_anchor_chars=int(prompt.get("notice_anchor_chars", 4000)),
+        reference_path=(base / str(prompt["reference_path"])).resolve()
+        if prompt.get("reference_path")
+        else None,
         prompt_mode=str(prompt.get("mode", "baseline")),
         include_normalized_facts=bool(prompt.get("include_normalized_facts", False)),
         llm=LLMConfig(

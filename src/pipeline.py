@@ -167,6 +167,7 @@ class BaselinePipeline:
         overflow_split_enabled: bool = True,
         count_tokens: TokenCounter | None = None,
         prompt_budget_tokens: int = 30268,
+        reference_text: str | None = None,
     ) -> None:
         self.client = client
         self.max_document_chars = max_document_chars

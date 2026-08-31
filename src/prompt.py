@@ -42,7 +42,11 @@ SYSTEM_TAIL = """출력은 JSON 객체 하나로만 작성한다. 키는 v1~v24�
 {\"위반여부\": 0 또는 1, \"근거문구\": 문자열 또는 null} 형식이다. 설명이나 머리말을 추가하지 않는다."""
 
 
-def build_system_prompt(item_table: dict[str, dict[str, Any]], mode: str = "baseline") -> str:
+def build_system_prompt(
+    item_table: dict[str, dict[str, Any]],
+    mode: str = "baseline",
+    reference_text: str | None = None,
+) -> str:
     lines = []
     for item in ITEMS:
         definition = item_table[item]
@@ -58,7 +62,15 @@ def build_system_prompt(item_table: dict[str, dict[str, Any]], mode: str = "base
         else:
             lines.append(f"- {item}: {definition['항목명']}{absence}{note}")
     guidance = STRUCTURED_GUIDANCE if mode == "structured" else GUIDED_GUIDANCE if mode == "guided" else ""
-    return f"{SYSTEM_HEAD}\n" + "\n".join(lines) + f"\n{guidance}\n{SYSTEM_TAIL}"
+    prompt = f"{SYSTEM_HEAD}\n" + "\n".join(lines) + f"\n{guidance}\n{SYSTEM_TAIL}"
+    if reference_text:
+        prompt += (
+            "\n\n[공식 참고 법령·고시]\n"
+            "아래 자료는 제공된 공식 법령 패키지에서 그대로 추출한 판정 참고자료다. "
+            "문서 본문과 메타에 적용해 판단하되, 근거문구에는 공고문·첨부문서 원문만 인용한다.\n"
+            + reference_text
+        )
+    return prompt
 
 
 def build_document_context(record: dict[str, Any], max_chars: int | None) -> str:

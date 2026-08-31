@@ -67,6 +67,7 @@ def _run_signature(
         "effective_model": "mock" if mock else config.llm.model,
         "input_sha256": _sha256(config.data.input_path),
         "item_table_sha256": _sha256(config.data.item_table_path),
+        "reference_sha256": _sha256(config.reference_path) if config.reference_path else None,
         "source_sha256": _source_hashes(),
         "selection": {"limit": limit, "ids": selected_ids},
     }
@@ -201,6 +202,11 @@ def main() -> int:
     parser.add_argument("--limit", type=int)
     parser.add_argument("--ids-file", help="JSON list, or object with ids, selecting input records")
     parser.add_argument("--mock", action="store_true")
+    parser.add_argument(
+        "--dump-inputs",
+        action="store_true",
+        help="write every final chat message/pass to inputs.jsonl before model calls",
+    )
     parser.add_argument("--fresh", action="store_true", help="discard the existing prediction checkpoint")
     args = parser.parse_args()
 
@@ -253,6 +259,9 @@ def main() -> int:
         records = records[:effective_limit]
     item_table = load_item_table(config.data.item_table_path)
     client = _make_client(config, args.mock)
+    reference_text = (
+        config.reference_path.read_text(encoding="utf-8") if config.reference_path else None
+    )
     pipeline = BaselinePipeline(
         item_table=item_table,
         client=client,

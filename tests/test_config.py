@@ -70,3 +70,41 @@ run: {resume: true, concurrency: 1, local_limit: 20}
     assert loaded.overflow_split_enabled is True
     assert loaded.max_model_len == 32768
     assert loaded.output_reserve_tokens == 2500
+
+
+def test_configs_directory_keeps_repository_relative_paths(tmp_path: Path) -> None:
+    config_dir = tmp_path / "configs"
+    config_dir.mkdir()
+    reference = tmp_path / "data" / "derived" / "reference.txt"
+    reference.parent.mkdir(parents=True)
+    reference.write_text("official reference", encoding="utf-8")
+    config = config_dir / "probe.yaml"
+    config.write_text(
+        """
+experiment: {id: test}
+data: {root: data, input: input.jsonl, item_table: items.json}
+output: {dir: outputs/test}
+prompt: {max_document_chars: null, reference_path: data/derived/reference.txt}
+llm:
+  provider: openrouter
+  model: google/gemma-4-26b-a4b-it
+  api_key_env: OPENROUTER_API_KEY
+  api_url: https://openrouter.ai/api/v1/chat/completions
+  temperature: 0
+  max_tokens: 100
+  seed: 1
+  timeout_seconds: 10
+  request_retries: 1
+  prediction_attempts: 1
+  provider_sort: throughput
+  require_parameters: true
+run: {resume: true, concurrency: 1}
+""",
+        encoding="utf-8",
+    )
+
+    loaded = load_config(config)
+
+    assert loaded.data.root == tmp_path / "data"
+    assert loaded.output_dir == tmp_path / "outputs/test"
+    assert loaded.reference_path == reference
