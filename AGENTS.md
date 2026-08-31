@@ -72,4 +72,6 @@ Use Python, four-space indentation, PEP 8, type hints at module boundaries, `sna
 
 When explicitly asked to commit, inspect all changes first and split sequential commits by responsibility. Use concise imperative subjects; experiment commits may use `exp005: add v3 threshold rule`. Pull requests should state the hypothesis, validation commands, metric/runtime deltas, and any rule or packaging impact.
 
+When explicitly asked to leave a handoff, create `docs/handoff/YYYYMMDD_HHMMSS_<mac-or-linux>_HANDOFF.md` using the local environment and current local timestamp. A handoff records the day's changes and commits, experiments/configs/results, reasoning and rejected assumptions, current canonical-versus-experiment policy status, exact continuation steps, and links to relevant tracked files or ignored output/data artifacts. It must be sufficient for another environment to continue without repeating known mistakes. Keep it free of secrets and raw competition data; `scripts/export_artifacts.py` includes `docs/` for transfer.
+
 Never commit API keys, `.env`, competition data, generated submissions, caches, or prohibited model weights. Do not maintain a tracked environment template; document variable names without placeholder files when needed.
