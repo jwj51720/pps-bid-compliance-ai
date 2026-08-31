@@ -16,7 +16,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.data import load_item_table, load_records
-from src.pipeline import BaselinePipeline
+from src.pipeline import BaselinePipeline, parse_judgment
 from src.schema import judgment_schema
 from src.submission import prediction_rows, validate_submission, write_submission
 
@@ -101,7 +101,42 @@ class VLLMClient:
     def complete_batch(self, batch, response_schema):
         del response_schema
         outputs = self.llm.chat(batch, sampling_params=self.sampling_params, use_tqdm=False)
-        return [Completion(content=output.outputs[0].text if output.outputs else "", model=self.model, latency_seconds=0.0, usage={}) for output in outputs]
+        return [
+            Completion(
+                content=output.outputs[0].text if output.outputs else "",
+                model=self.model,
+                latency_seconds=0.0,
+                usage={},
+                finish_reason=(output.outputs[0].finish_reason if output.outputs else None),
+            )
+            for output in outputs
+        ]
+
+
+def _invalid_json(completion: Completion) -> bool:
+    try:
+        parse_judgment(completion.content)
+    except Exception:
+        return True
+    return False
+
+
+def _complete_group_with_json_retries(client, messages_batch, response_schema):
+    """Retry only malformed structured candidates; preserve a row for every pass."""
+    outputs = list(client.complete_batch(messages_batch, response_schema))
+    if len(outputs) != len(messages_batch):
+        raise RuntimeError(
+            f"vLLM returned {len(outputs)} outputs for a batch of {len(messages_batch)}"
+        )
+    retry_count = 0
+    for index, output in enumerate(outputs):
+        if not _invalid_json(output):
+            continue
+        retry_count += 1
+        replacement = client.complete(messages_batch[index], response_schema)
+        if not _invalid_json(replacement):
+            outputs[index] = replacement
+    return outputs, retry_count
 
 
 def main() -> int:
@@ -127,15 +162,28 @@ def main() -> int:
     )
     pending = []
     completions = [[] for _ in records]
+    retried_malformed = 0
     for index, record in enumerate(records):
         for context in pipeline.contexts_for_record(record):
             pending.append((index, pipeline.messages_for_context(record, context)))
     for start in range(0, len(pending), args.batch_size):
         group = pending[start : start + args.batch_size]
-        outputs = client.complete_batch([messages for _, messages in group], pipeline.response_schema)
+        outputs, retries = _complete_group_with_json_retries(
+            client,
+            [messages for _, messages in group],
+            pipeline.response_schema,
+        )
+        retried_malformed += retries
         for (index, _), output in zip(group, outputs):
             completions[index].append(output)
     rows = [pipeline.finalize(record, completions[index]) for index, record in enumerate(records)]
+    unrecovered = sum(len(row.parse_errors) for row in rows)
+    print(
+        f"[submission] malformed structured candidates retried={retried_malformed}; "
+        f"unrecovered passes defaulted_to_zero={unrecovered}",
+        file=sys.stderr,
+        flush=True,
+    )
     destination = output_dir / "submission.csv"
     write_submission(prediction_rows(rows), destination)
     validation = validate_submission(destination, records)

@@ -97,6 +97,7 @@ def _prediction_to_json(prediction: Prediction) -> dict[str, Any]:
         "usage": prediction.usage,
         "finish_reason": prediction.finish_reason,
         "pass_judgments": list(prediction.pass_judgments),
+        "parse_errors": list(prediction.parse_errors),
     }
 
 
@@ -273,8 +274,31 @@ def main() -> int:
         overflow_split_enabled=config.overflow_split_enabled,
         count_tokens=_make_token_counter(config, args.mock),
         prompt_budget_tokens=config.max_model_len - config.output_reserve_tokens,
+        reference_text=reference_text,
     )
     shutil.copy2(config.path, output_dir / "config.yaml")
+    if config.reference_path:
+        shutil.copy2(config.reference_path, output_dir / "reference_context.txt")
+    if args.dump_inputs:
+        dump_path = output_dir / "inputs.jsonl"
+        with dump_path.open("w", encoding="utf-8") as handle:
+            for record in records:
+                for pass_index, context in enumerate(pipeline.contexts_for_record(record), 1):
+                    messages = pipeline.messages_for_context(record, context)
+                    handle.write(
+                        json.dumps(
+                            {
+                                "id": record["id"],
+                                "pass_index": pass_index,
+                                "token_count": pipeline.count_tokens(messages)
+                                if pipeline.count_tokens
+                                else None,
+                                "messages": messages,
+                            },
+                            ensure_ascii=False,
+                        )
+                        + "\n"
+                    )
     started = time.monotonic()
     failures: list[dict[str, str]] = []
     logger.info(
@@ -391,6 +415,10 @@ def main() -> int:
         "input_count": len(records),
         "local_limit": config.local_limit,
         "derived_data": list(config.derived_data),
+        "reference_path": str(config.reference_path.relative_to(ROOT))
+        if config.reference_path
+        else None,
+        "reference_sha256": _sha256(config.reference_path) if config.reference_path else None,
         "llm_provider": "mock" if args.mock else config.llm.provider,
         "model": getattr(client, "model", config.llm.model),
         "rag_enabled": False,

@@ -35,6 +35,9 @@ adapters. It applies to every future experiment and submission.
   root `config.yaml` before packaging.
 - Injects `runner.count_tokens()` into the shared pipeline.
 - Schedules prepared notice/pass messages in vLLM batches of **64 by default**.
+- Validates each structured candidate before finalization and retries malformed
+  candidates once individually. It logs the retry count and any pass that still
+  required the shared all-negative fallback.
 - Never evaluates against labels, writes checkpoints, or changes decisions.
 
 ## Packaging gate
@@ -48,3 +51,7 @@ for a portable archive: it includes required source/config/documentation plus
 one top-level directory. Before handoff, run the staged zip's
 exact `script.py --mock` against the official 10-notice fixture and validate the
 resulting CSV's rows, IDs, order, and 49 columns.
+
+Submission archive names use `pps_YYYYMMDD_HHMMSS.zip` in local execution time.
+This keeps each archive below DACON's 30-character filename limit while making
+the creation time explicit.

@@ -32,6 +32,14 @@ class PredictionError(RuntimeError):
         self.raw_response = raw_response
 
 
+def zero_judgment() -> dict[str, dict[str, Any]]:
+    """Return a submission-safe judgment for a single unusable model pass."""
+    return {
+        item: {"위반여부": 0, "근거문구": None}
+        for item in ITEMS
+    }
+
+
 @dataclass(frozen=True)
 class Prediction:
     record_id: str
@@ -42,6 +50,7 @@ class Prediction:
     usage: dict[str, Any]
     finish_reason: str | None = None
     pass_judgments: tuple[dict[str, dict[str, Any]], ...] = ()
+    parse_errors: tuple[dict[str, Any], ...] = ()
 
 
 def extract_json(text: str) -> Any:
@@ -177,7 +186,9 @@ class BaselinePipeline:
         self.overflow_split_enabled = overflow_split_enabled
         self.count_tokens = count_tokens
         self.prompt_budget_tokens = prompt_budget_tokens
-        self.system_prompt = build_system_prompt(item_table, mode=prompt_mode)
+        self.system_prompt = build_system_prompt(
+            item_table, mode=prompt_mode, reference_text=reference_text
+        )
         self.response_schema = judgment_schema()
 
     def predict(self, record: dict[str, Any]) -> Prediction:
@@ -224,11 +235,23 @@ class BaselinePipeline:
 
     def finalize(self, record: dict[str, Any], completions: list[Any]) -> Prediction:
         judgments: list[dict[str, dict[str, Any]]] = []
-        for completion in completions:
+        parse_errors: list[dict[str, Any]] = []
+        for pass_index, completion in enumerate(completions, 1):
             try:
                 parsed = parse_judgment(completion.content)
             except PredictionError as exc:
-                raise PredictionError(str(exc), raw_response=completion.content) from exc
+                # Structured decoding is the normal path, but vLLM can still return
+                # an empty/incomplete candidate. Never discard every completed notice
+                # because one pass is unusable; it is equivalent to an all-negative
+                # pass and is recorded for reproducibility.
+                parsed = zero_judgment()
+                parse_errors.append(
+                    {
+                        "pass_index": pass_index,
+                        "error": str(exc),
+                        "raw_response": completion.content,
+                    }
+                )
             judgments.append(postprocess_judgment(parsed, record))
         judgment = _combine_pass_judgments(judgments)
         completion = completions[0]
@@ -241,6 +264,7 @@ class BaselinePipeline:
             usage=_combined_usage(completions),
             finish_reason=completion.finish_reason,
             pass_judgments=tuple(judgments),
+            parse_errors=tuple(parse_errors),
         )
 
 

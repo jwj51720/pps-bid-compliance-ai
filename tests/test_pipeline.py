@@ -4,7 +4,14 @@ import json
 
 import pytest
 
-from src.pipeline import _combine_pass_judgments, _usage_number, PredictionError, parse_judgment, postprocess_judgment
+from src.pipeline import (
+    BaselinePipeline,
+    PredictionError,
+    _combine_pass_judgments,
+    _usage_number,
+    parse_judgment,
+    postprocess_judgment,
+)
 from src.prompt import (
     build_document_context,
     build_messages,
@@ -40,6 +47,28 @@ def test_parse_judgment_accepts_fenced_json() -> None:
     expected = _judgment()
     parsed = parse_judgment(f"```json\n{json.dumps(expected, ensure_ascii=False)}\n```")
     assert parsed == expected
+
+
+def test_finalize_defaults_only_an_invalid_pass_to_zero_and_records_it() -> None:
+    class Completion:
+        content = "not JSON"
+        model = "test"
+        latency_seconds = 0.0
+        usage = {}
+        finish_reason = "length"
+
+    item_table = {
+        item: {"항목명": item, "부재탐지": False, "국가계약법": "", "지방계약법": "", "비고": ""}
+        for item in ITEMS
+    }
+    pipeline = BaselinePipeline(item_table=item_table, client=None, max_document_chars=None)
+
+    prediction = pipeline.finalize(_record(), [Completion()])
+
+    assert all(cell["위반여부"] == 0 for cell in prediction.judgment.values())
+    assert prediction.parse_errors == (
+        {"pass_index": 1, "error": "model response is not valid JSON", "raw_response": "not JSON"},
+    )
 
 
 def test_postprocess_keeps_only_exact_source_evidence() -> None:

@@ -57,7 +57,7 @@ Name runs descriptively, such as `exp005_v3_rule`. Each `outputs/<exp_id>/` shou
 
 When asked to export work for another environment, run `python scripts/export_artifacts.py`. It writes a `tar.xz` below `dist/archives/` that extracts into one top-level directory and includes the source, configs, docs, `data/derived/`, and `outputs/` needed to continue work. Exclude `data/raw/`, which will be restored independently from the original source, as well as `dist/`, `submission/build/`, caches, and machine metadata. Actual files under both data directories stay ignored by Git, while `.gitkeep` preserves their layout. Write submission zips directly under `dist/`.
 
-Use `pytest` with `tests/test_<module>.py` and `test_<behavior>`. Mock remote LLM calls. Test parsing, rules, schema-constrained output, metrics, evidence substring checks, and missing-document behavior. Regression-test corrected false positives and negatives.
+Use `pytest` with `tests/test_<module>.py` and `test_<behavior>`. Mock remote LLM calls. Test parsing, rules, schema-constrained output, malformed/empty structured-output recovery, metrics, evidence substring checks, and missing-document behavior. Regression-test corrected false positives and negatives.
 
 Before packaging, validate `output/submission.csv`: exactly 49 ordered columns (`id`, `v1`-`v24`, `e1`-`e24`), unique complete IDs, integer 0/1 labels, UTF-8/NFC text, valid evidence, and the expected row count. The self-contained `submit.zip` must include `script.py`, `requirements.txt`, code, and only permitted static assets; verify the 2 GB compressed, 8 GB extracted, 10-minute install, and 2-hour inference limits.
 
