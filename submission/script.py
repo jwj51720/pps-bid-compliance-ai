@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""DACON entrypoint for the shared adaptive full-context pipeline."""
+"""DACON entrypoint for the shared EXP-014 full-split pipeline."""
 
 from __future__ import annotations
 
@@ -44,6 +44,14 @@ class Completion:
 
 class MockClient:
     model = "mock"
+
+    def count_tokens(self, messages: list[dict[str, str]]) -> int:
+        """Deterministic mock-only admission counter for staged zip tests.
+
+        Production always injects vLLM's Gemma tokenizer. This fallback merely
+        lets `script.py --mock` exercise full-split routing without a model.
+        """
+        return sum(len(message["content"]) for message in messages)
 
     def complete(self, messages, response_schema) -> Completion:
         import json
@@ -164,11 +172,13 @@ def main() -> int:
         load_competition_product_index(ROOT / str(products_file)) if products_file else None
     )
     client = MockClient() if args.mock else VLLMClient(model_dir)
-    counter = None if args.mock else client.count_tokens
+    counter = client.count_tokens
     pipeline = BaselinePipeline(
         item_table=item_table,
         client=client,
         max_document_chars=PROMPT_CONFIG["max_document_chars"],
+        prompt_mode=str(PROMPT_CONFIG["mode"]),
+        include_normalized_facts=bool(PROMPT_CONFIG["include_normalized_facts"]),
         context_strategy=PROMPT_CONFIG["context_strategy"],
         overflow_split_enabled=bool(PROMPT_CONFIG["overflow_split_enabled"]),
         strict_document_evidence=bool(PROMPT_CONFIG["strict_document_evidence"]),

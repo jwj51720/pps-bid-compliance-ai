@@ -34,7 +34,7 @@ adapters. It applies to every future experiment and submission.
 - Reads the packaged `runtime_config.json`; its prompt-policy values must match
   root `config.yaml` before packaging.
 - Injects `runner.count_tokens()` into the shared pipeline.
-- Schedules prepared notice/pass messages in vLLM batches of **64 by default**.
+- Schedules prepared notice/pass messages in vLLM batches of **128 by default**.
 - Validates each structured candidate before finalization and retries malformed
   candidates once individually. It logs the retry count and any pass that still
   required the shared all-negative fallback.
@@ -46,9 +46,10 @@ adapters. It applies to every future experiment and submission.
 `submission/runtime_config.json`, `submission/requirements.txt`, and the shared
 `src/` modules, never a copied baseline. Submission zips go under `dist/`; data
 and output archives go under `dist/archives/`. Use `scripts/export_artifacts.py`
-for a portable archive: it includes required source/config/documentation plus
-`data/derived/` and `outputs/`, excludes organizer raw data, and extracts into
-one top-level directory. Before handoff, run the staged zip's
+for a portable archive: it includes source/config/documentation, raw and derived
+data, outputs, staged submission builds, and submission zips; it excludes `.env`,
+Git metadata, environments/caches, and `dist/archives/` to avoid recursive
+archives, and extracts into one top-level directory. Before handoff, run the staged zip's
 exact `script.py --mock` against the official 10-notice fixture and validate the
 resulting CSV's rows, IDs, order, and 49 columns.
 

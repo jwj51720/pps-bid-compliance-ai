@@ -1,8 +1,8 @@
 # Canonical final policy. Submission/runtime values must match
 # submission/runtime_config.json; historical experiment settings live in configs/.
 experiment:
-  id: final-full-context-adaptive
-  derived_data: []
+  id: final-exp014-full-split-cards-v2-products
+  derived_data: [decision_cards_v2, competition_products_v1]
 
 data:
   root: data/raw/open
@@ -11,16 +11,16 @@ data:
   item_table: data/항목표.json
 
 output:
-  dir: outputs/final-full-context-adaptive
+  dir: outputs/final-exp014-full-split-cards-v2-products
 
 prompt:
   max_document_chars: null
-  context_strategy: single # options: single, split, full_split_merge
+  context_strategy: full_split_merge # options: single, split, full_split_merge
   overflow_split_enabled: true # options: true, false
-  strict_document_evidence: false # options: true, false; full_split_merge only
-  absence_detection_strategy: per_pass_or # options: per_pass_or, per_pass_and; full_split_merge only
-  decision_cards_path: null # options: null, data/derived/decision_cards_v1.json
-  competition_products_path: null # options: null, data/derived/competition_products_v1.json
+  strict_document_evidence: true # options: true, false; full_split_merge only
+  absence_detection_strategy: per_pass_and # options: per_pass_or, per_pass_and; full_split_merge only
+  decision_cards_path: data/derived/decision_cards_v2.json # options: null, data/derived/decision_cards_v1.json, data/derived/decision_cards_v2.json
+  competition_products_path: data/derived/competition_products_v1.json # options: null, data/derived/competition_products_v1.json
   max_model_len: 32768
   output_reserve_tokens: 2500
   notice_anchor_chars: 4000

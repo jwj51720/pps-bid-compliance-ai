@@ -74,3 +74,14 @@ def test_submission_retries_a_malformed_structured_candidate() -> None:
 
     assert retries == 1
     assert outputs[0].content == valid
+
+
+def test_submission_mock_client_has_a_full_split_admission_counter() -> None:
+    script_path = Path(__file__).resolve().parents[1] / "submission" / "script.py"
+    spec = importlib.util.spec_from_file_location("submission_script_mock_counter", script_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    assert module.MockClient().count_tokens([{"content": "가나다"}]) == 3

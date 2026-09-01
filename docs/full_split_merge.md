@@ -3,8 +3,8 @@
 ## 목적
 
 `prompt.context_strategy: full_split_merge`는 문서 길이가 초과한 공고만
-분할하는 기본 `single` 모드와 달리, 공고의 모든 실제 source document를
-독립적으로 판정하는 비교용 입력 전략이다. 한 호출에서 24개 `v/e`를 모두
+분할하는 `single` 모드와 달리, 공고의 모든 실제 source document를
+독립적으로 판정하는 입력 전략이다. 한 호출에서 24개 `v/e`를 모두
 생성하고, pass 결과는 항목별 OR로 병합한다.
 
 ## 입력 단위와 병합
@@ -43,5 +43,5 @@ metadata, 고정 참고문서, 앵커까지 포함한 **최종 Gemma chat templa
 `scripts/make_submission.py`는 `context_strategy`를 포함한 prompt 정책이
 `submission/runtime_config.json`과 정확히 같지 않으면 zip 생성을 거부한다.
 따라서 실험에서 이 모드를 평가해 채택하려면 두 파일의 같은 필드를 함께 바꾼다.
-기본값은 비용·처리량을 보존하는 `single`이며, `full_split_merge`는 별도 실험
-결과가 기본값 변경을 뒷받침할 때만 채택한다.
+현재 canonical 정책은 EXP-014 결과에 따라 `full_split_merge`, strict document
+evidence, absence AND, decision card v2, 경쟁제품 적용성 문맥을 사용한다.

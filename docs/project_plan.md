@@ -36,10 +36,11 @@ src/
 ## 문서 입력 전략 옵션
 
 최종 정책은 `config.yaml`의 `prompt.context_strategy`와 제출용
-`submission/runtime_config.json`이 함께 정한다. 기본 `single`은 전체 문서가
+`submission/runtime_config.json`이 함께 정한다. `single`은 전체 문서가
 Gemma의 정확한 tokenizer 예산에 맞으면 한 번에 넣고, 초과할 때에만 순서대로
-문서를 묶어 여러 pass로 나눈다. `full_split_merge`는 비교 실험을 위한 별도
-옵션으로, 각 실제 source document를 독립 pass로 넣고 결과를 OR-merge한다.
+문서를 묶어 여러 pass로 나눈다. `full_split_merge`는 각 실제 source document를
+독립 pass로 넣고 결과를 OR-merge한다. 현재 canonical 정책은 EXP-014 결과에 따라
+후자를 사용한다.
 비공고문 pass에는 동일 공고임을 유지하기 위한 짧은 공고문 앵커와 메타데이터가
 함께 들어간다. 어느 모드든 한 source document 자체가 예산을 넘을 때에만 해당
 문서를 exact tokenizer 기준으로 잘라 연속 pass로 보낸다.
