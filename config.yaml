@@ -9,6 +9,7 @@ data:
   input: dev.jsonl.gz
   labels: dev_labels.csv
   item_table: data/항목표.json
+  fast_panel_ids_path: configs/dev_fast_panel_v1.json # default local fast gate; submission does not read this field
 
 output:
   dir: outputs/final-exp014-full-split-cards-v2-products

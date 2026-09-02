@@ -5,6 +5,9 @@
 Read `docs/project_description.md`, `docs/project_plan.md`, and `docs/memo.md` before changing the pipeline or submission package. They define the competition rules, current structure, and team agreements. When `memo.md` or another policy/architecture document changes, review this guide in the same change and synchronize any affected instructions.
 
 The goal is competition performance and reproducibility, not a production service. Favor direct, inspectable code and avoid speculative abstractions.
+Do not generalize a suspected merge or prompting issue into a multi-item schema, rule, or extra-call framework without first showing that the item’s truth condition cannot be represented by the existing pipeline. Start with the smallest affected item and validate its accuracy, malformed-output rate, and runtime before changing the canonical policy.
+Before a paid experiment, verify that every component required by its stated hypothesis is implemented and selected by the experiment config; validate source coverage/provenance, exact tokenizer admission, mock execution, and isolated output paths. Label an intentionally partial run as a diagnostic probe, never as the result of the complete strategy.
+Use the versioned `configs/dev_fast_panel_v*.json` local fast cohort rather than file-order first-N records. A fast-panel result ranks candidates only; do not promote a canonical policy without dev-200 confirmation.
 
 ## Project Structure
 

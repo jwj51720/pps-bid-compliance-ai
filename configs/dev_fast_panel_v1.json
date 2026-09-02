@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "dev_fast_panel_v1",
+  "purpose": "Fixed 20-notice local fast gate for experiment ranking. It is not a substitute for dev-200 confirmation.",
+  "selection_contract": [
+    "Selected using dev labels, contract-law profile, and total document-length quartiles only; historical model predictions and scores were not selection inputs.",
+    "Every v1-v24 has at least one positive example; the panel has 8 national-contract and 12 local-contract notices, matching dev-200.",
+    "Each total-document-length quartile contributes five notices.",
+    "This ordered list is frozen at v1. Do not change it based on subsequent experiment outcomes; validate any canonical-policy change on dev-200."
+  ],
+  "ids": [
+    "PPS-DEV-062", "PPS-DEV-049", "PPS-DEV-042", "PPS-DEV-072", "PPS-DEV-036",
+    "PPS-DEV-051", "PPS-DEV-058", "PPS-DEV-069", "PPS-DEV-039", "PPS-DEV-131",
+    "PPS-DEV-141", "PPS-DEV-26", "PPS-DEV-199", "PPS-DEV-191", "PPS-DEV-32",
+    "PPS-DEV-169", "PPS-DEV-30", "PPS-DEV-165", "PPS-DEV-197", "PPS-DEV-194"
+  ],
+  "selection_summary": {
+    "record_count": 20,
+    "positive_label_count": 38,
+    "national_contract_count": 8,
+    "local_contract_count": 12,
+    "document_length_quartile_counts": [5, 5, 5, 5],
+    "positive_count_by_item": {
+      "v1": 3, "v2": 3, "v3": 3, "v4": 3, "v5": 1, "v6": 1,
+      "v7": 2, "v8": 1, "v9": 1, "v10": 2, "v11": 1, "v12": 1,
+      "v13": 1, "v14": 2, "v15": 1, "v16": 1, "v17": 1, "v18": 1,
+      "v19": 1, "v20": 1, "v21": 2, "v22": 1, "v23": 1, "v24": 3
+    }
+  }
+}

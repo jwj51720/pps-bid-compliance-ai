@@ -88,6 +88,27 @@ def load_records(path: str | Path, limit: int | None = None) -> list[dict[str, A
     return records
 
 
+def load_record_id_panel(path: str | Path) -> list[str]:
+    """Load an ordered, versioned local-evaluation record panel."""
+    source = Path(path)
+    payload = json.loads(source.read_text(encoding="utf-8"))
+    ids = payload.get("ids") if isinstance(payload, dict) else payload
+    if not isinstance(ids, list) or not ids or not all(isinstance(value, str) for value in ids):
+        raise ValueError("record ID panel must contain a non-empty JSON string list or an object with ids")
+    if len(ids) != len(set(ids)):
+        raise ValueError("record ID panel contains duplicate IDs")
+    return ids
+
+
+def select_records_by_id(records: list[dict[str, Any]], ids: list[str]) -> list[dict[str, Any]]:
+    """Select records in the panel's fixed order, rejecting stale IDs."""
+    records_by_id = {record["id"]: record for record in records}
+    missing_ids = [record_id for record_id in ids if record_id not in records_by_id]
+    if missing_ids:
+        raise ValueError(f"record ID panel contains IDs absent from input: {missing_ids[:10]}")
+    return [records_by_id[record_id] for record_id in ids]
+
+
 def load_item_table(path: str | Path) -> dict[str, dict[str, Any]]:
     with Path(path).open(encoding="utf-8") as handle:
         data = json.load(handle)
@@ -114,6 +135,8 @@ def load_decision_cards(
             raise ValueError(f"decision card item_name does not match item table: {item}")
         if not isinstance(card.get("prompt_text"), str) or not card["prompt_text"].strip():
             raise ValueError(f"decision card prompt_text must be non-empty: {item}")
+        if "merge_contract" in card and not isinstance(card["merge_contract"], dict):
+            raise ValueError(f"decision card merge_contract must be an object: {item}")
     return cards
 
 

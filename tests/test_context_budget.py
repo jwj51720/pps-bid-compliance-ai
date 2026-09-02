@@ -58,11 +58,11 @@ def test_token_budget_packer_splits_long_document_and_keeps_all_text() -> None:
         return len(messages[-1]["content"].split("[문서]\n", 1)[1])
 
     contexts = pack_contexts_to_token_budget(
-        record, "system", count_tokens, prompt_budget_tokens=100, notice_anchor_chars=10
+        record, "system", count_tokens, prompt_budget_tokens=200, notice_anchor_chars=10
     )
 
     assert len(contexts) > 1
-    assert all(count_tokens([{"content": f"[문서]\n{context}"}]) <= 100 for context in contexts)
+    assert all(count_tokens([{"content": f"[문서]\n{context}"}]) <= 200 for context in contexts)
     assert sum(context.count("R") for context in contexts) >= 160
 
 
@@ -86,13 +86,13 @@ def test_fixed_reference_is_counted_for_every_split_pass() -> None:
         return sum(len(message["content"]) for message in messages)
 
     contexts = pack_contexts_to_token_budget(
-        record, system_prompt, count_tokens, prompt_budget_tokens=180, notice_anchor_chars=0
+        record, system_prompt, count_tokens, prompt_budget_tokens=350, notice_anchor_chars=0
     )
     messages = [build_messages(record, system_prompt, None, document_context=context) for context in contexts]
 
     assert len(messages) > 1
     assert all(reference in value[0]["content"] for value in messages)
-    assert all(count_tokens(value) <= 180 for value in messages)
+    assert all(count_tokens(value) <= 350 for value in messages)
 
 
 def test_full_split_merge_keeps_one_target_document_per_pass_and_splits_long_one() -> None:
@@ -114,7 +114,7 @@ def test_full_split_merge_keeps_one_target_document_per_pass_and_splits_long_one
         record,
         "system",
         count_tokens,
-        prompt_budget_tokens=120,
+        prompt_budget_tokens=250,
         notice_anchor_chars=5,
     )
 
@@ -126,7 +126,7 @@ def test_full_split_merge_keeps_one_target_document_per_pass_and_splits_long_one
     assert "[공고문 앵커:A1]" not in contexts[0].text
     assert "[공고문 앵커:A1]" in contexts[1].text
     assert contexts[1].target_text + contexts[2].target_text == "S" * 100
-    assert all(count_tokens([{"content": context.text}]) <= 120 for context in contexts)
+    assert all(count_tokens([{"content": context.text}]) <= 250 for context in contexts)
 
 
 def test_full_split_budget_counts_product_context_in_every_pass() -> None:
@@ -147,7 +147,7 @@ def test_full_split_budget_counts_product_context_in_every_pass() -> None:
         record,
         "system",
         count_tokens,
-        prompt_budget_tokens=150,
+        prompt_budget_tokens=300,
         competition_product_context=product_context,
     )
     messages = [
@@ -162,4 +162,4 @@ def test_full_split_budget_counts_product_context_in_every_pass() -> None:
     ]
 
     assert len(contexts) > 1
-    assert all(count_tokens(message) <= 150 for message in messages)
+    assert all(count_tokens(message) <= 300 for message in messages)

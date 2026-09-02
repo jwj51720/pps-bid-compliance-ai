@@ -50,6 +50,8 @@ Gemma의 정확한 tokenizer 예산에 맞으면 한 번에 넣고, 초과할 �
 컴플라이언스 판정 절차를 명확히 설명하고, Python은 non-absence positive의 evidence가
 대상 문서 조각 안에 없으면 OR 병합 전 0으로 강등한다. 부재탐지 5개 항목은 문서마다
 “필요 조건이 없음”을 판단한 뒤 모든 pass가 1일 때만 최종 1이 되는 AND 결합을 쓴다.
+non-absence는 원칙적으로 OR이며, 문서 간에 실적제한과 지역제한이라는 두 사실을 함께
+확인해야 하는 v8만 최소 상태 관찰을 결합하는 별도 ablation으로 둔다.
 
 이 선택은 실험 전용 로직이 아니다. `src.pipeline.BaselinePipeline`이 두 환경의
 공통 구현이며, 패키징은 두 config의 관련 필드가 일치하지 않으면 실패한다.
@@ -61,5 +63,12 @@ Gemma의 정확한 tokenizer 예산에 맞으면 한 번에 넣고, 초과할 �
 그리고 `data/`도 `raw/`와 `derived/`만 둬서, `derived/` 안에는 향후 `law_wiki.md`, chunk, embedding, self-label 결과 등 무엇이든 넣을 수 있게 열어뒀습니다.
 
 가장 중요한 **실험과 제출이 같은 pipeline을 실행한다**는 원칙은 그대로 유지했습니다.
+
+## Fast evaluation panel
+
+파일 순서의 첫 20건은 v17~v24 positive를 전혀 포함하지 않아 Macro-F1 fast gate로 사용하지
+않는다. 기본 local fast cohort는 `configs/dev_fast_panel_v1.json`의 고정 20건이다. 모든 v의
+positive를 최소 하나 포함하고, 계약법 비율과 문서 길이 사분위를 dev-200에 맞춘다. fast panel은
+후보 순위·방향 확인용일 뿐 canonical 정책 변경은 반드시 dev-200에서 확인한다.
 
 * 처음에는 local gemma는 사용하지 않습니다. openrouter(./memo.md) 접근으로 시도합니다.

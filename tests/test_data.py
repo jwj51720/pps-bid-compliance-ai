@@ -3,7 +3,14 @@ from __future__ import annotations
 import gzip
 import json
 
-from src.data import competition_product_fact, load_competition_product_index, load_records, profile_records
+from src.data import (
+    competition_product_fact,
+    load_competition_product_index,
+    load_record_id_panel,
+    load_records,
+    profile_records,
+    select_records_by_id,
+)
 
 
 def _record() -> dict:
@@ -37,6 +44,16 @@ def test_profile_recognizes_korean_completeness_flag(tmp_path) -> None:
     with gzip.open(path, "wt", encoding="utf-8") as handle:
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
     assert profile_records(path)["records_not_fully_observed"] == 1
+
+
+def test_record_id_panel_preserves_order(tmp_path) -> None:
+    panel = tmp_path / "panel.json"
+    panel.write_text(json.dumps({"ids": ["PPS-2", "PPS-1"]}), encoding="utf-8")
+    records = [_record(), {**_record(), "id": "PPS-2"}]
+
+    selected = select_records_by_id(records, load_record_id_panel(panel))
+
+    assert [record["id"] for record in selected] == ["PPS-2", "PPS-1"]
 
 
 def test_competition_product_fact_uses_exact_codes_conservatively(tmp_path) -> None:

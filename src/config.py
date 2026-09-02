@@ -15,6 +15,7 @@ class DataConfig:
     input_path: Path
     labels_path: Path | None
     item_table_path: Path
+    fast_panel_ids_path: Path | None
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,8 @@ class LLMConfig:
     provider_sort: str
     require_parameters: bool
     min_request_interval_seconds: float
+    tokenizer_source: str | None
+    reasoning_effort: str | None
 
 
 @dataclass(frozen=True)
@@ -51,10 +54,17 @@ class ExperimentConfig:
     output_reserve_tokens: int
     notice_anchor_chars: int
     reference_path: Path | None
+    reference_bundle_dir: Path | None
+    reference_routing: str | None
     decision_cards_path: Path | None
     competition_products_path: Path | None
     prompt_mode: str
     include_normalized_facts: bool
+    v8_composite_merge_enabled: bool
+    v8_composite_merge_mode: str
+    candidate_detection: bool
+    active_items: tuple[str, ...]
+    prompt_layout: str
     llm: LLMConfig
     resume: bool
     concurrency: int
@@ -78,6 +88,7 @@ def load_config(path: str | Path) -> ExperimentConfig:
     prompt = _mapping(raw.get("prompt"), "prompt")
     llm = _mapping(raw.get("llm"), "llm")
     run = _mapping(raw.get("run", {}), "run")
+    v8_composite_merge = _mapping(raw.get("v8_composite_merge", {}), "v8_composite_merge")
 
     # Root config lives at the repository root, while historical/experimental
     # configs live directly below configs/.  Both retain repository-relative
@@ -95,6 +106,9 @@ def load_config(path: str | Path) -> ExperimentConfig:
             input_path=root / str(data["input"]),
             labels_path=(root / str(labels_value)) if labels_value else None,
             item_table_path=root / str(data["item_table"]),
+            fast_panel_ids_path=(base / str(data["fast_panel_ids_path"])).resolve()
+            if data.get("fast_panel_ids_path")
+            else None,
         ),
         output_dir=(base / str(output["dir"])).resolve(),
         max_document_chars=(
@@ -112,6 +126,11 @@ def load_config(path: str | Path) -> ExperimentConfig:
         reference_path=(base / str(prompt["reference_path"])).resolve()
         if prompt.get("reference_path")
         else None,
+        reference_bundle_dir=(base / str(prompt["reference_bundle_dir"])).resolve()
+        if prompt.get("reference_bundle_dir")
+        else None,
+        reference_routing=(str(prompt["reference_routing"])
+                           if prompt.get("reference_routing") else None),
         decision_cards_path=(base / str(prompt["decision_cards_path"])).resolve()
         if prompt.get("decision_cards_path")
         else None,
@@ -120,6 +139,11 @@ def load_config(path: str | Path) -> ExperimentConfig:
         else None,
         prompt_mode=str(prompt.get("mode", "baseline")),
         include_normalized_facts=bool(prompt.get("include_normalized_facts", False)),
+        v8_composite_merge_enabled=bool(v8_composite_merge.get("enabled", False)),
+        v8_composite_merge_mode=str(v8_composite_merge.get("mode", "fallback_or")),
+        candidate_detection=bool(prompt.get("candidate_detection", False)),
+        active_items=tuple(str(item) for item in prompt.get("active_items", (f"v{i}" for i in range(1, 25)))),
+        prompt_layout=str(prompt.get("layout", "plain")),
         llm=LLMConfig(
             provider=str(llm["provider"]),
             model=str(llm["model"]),
@@ -134,29 +158,56 @@ def load_config(path: str | Path) -> ExperimentConfig:
             provider_sort=str(llm.get("provider_sort", "price")),
             require_parameters=bool(llm.get("require_parameters", True)),
             min_request_interval_seconds=float(llm.get("min_request_interval_seconds", 0)),
+            tokenizer_source=(str(llm["tokenizer_source"])
+                              if llm.get("tokenizer_source") else None),
+            reasoning_effort=(str(llm["reasoning_effort"])
+                              if llm.get("reasoning_effort") else None),
         ),
         resume=bool(run.get("resume", True)),
         concurrency=int(run.get("concurrency", 1)),
         local_limit=int(run["local_limit"]) if run.get("local_limit") is not None else None,
     )
-    if config.llm.provider != "openrouter":
+    if config.llm.provider not in {"openrouter", "openai"}:
         raise ValueError(f"unsupported local provider: {config.llm.provider}")
     if config.max_document_chars is not None and config.max_document_chars < 1:
         raise ValueError("prompt.max_document_chars must be positive")
+    if config.data.fast_panel_ids_path and not config.data.fast_panel_ids_path.is_file():
+        raise ValueError("data.fast_panel_ids_path must point to an existing file")
     if config.prompt_mode not in {"baseline", "structured", "guided"}:
         raise ValueError("prompt.mode must be baseline, structured, or guided")
+    if config.prompt_layout not in {"plain", "markdown", "markdown_v2"}:
+        raise ValueError("prompt.layout must be plain, markdown, or markdown_v2")
+    expected_items = {f"v{i}" for i in range(1, 25)}
+    if not config.active_items or any(item not in expected_items for item in config.active_items):
+        raise ValueError("prompt.active_items must be a non-empty subset of v1..v24")
+    if len(config.active_items) != len(set(config.active_items)):
+        raise ValueError("prompt.active_items must not contain duplicates")
     if config.context_strategy not in {"single", "split", "full_split_merge"}:
         raise ValueError("prompt.context_strategy must be single, split, or full_split_merge")
     if config.context_strategy == "split" and config.max_document_chars is None:
         raise ValueError("split context strategy requires prompt.max_document_chars")
     if config.context_strategy == "full_split_merge" and config.max_document_chars is not None:
         raise ValueError("full_split_merge requires prompt.max_document_chars: null")
+    if config.reference_path and config.reference_bundle_dir:
+        raise ValueError("reference_path and reference_bundle_dir are mutually exclusive")
+    if config.reference_bundle_dir and config.reference_routing not in {
+        "metadata_v1", "metadata_profile_group_v2"
+    }:
+        raise ValueError(
+            "reference_bundle_dir requires prompt.reference_routing: metadata_v1 or metadata_profile_group_v2"
+        )
+    if config.reference_routing and not config.reference_bundle_dir:
+        raise ValueError("prompt.reference_routing requires reference_bundle_dir")
     if config.strict_document_evidence and config.context_strategy != "full_split_merge":
         raise ValueError("strict_document_evidence requires full_split_merge context strategy")
     if config.absence_detection_strategy not in {"per_pass_or", "per_pass_and"}:
         raise ValueError("absence_detection_strategy must be per_pass_or or per_pass_and")
     if config.absence_detection_strategy == "per_pass_and" and config.context_strategy != "full_split_merge":
         raise ValueError("per_pass_and absence detection requires full_split_merge context strategy")
+    if config.v8_composite_merge_enabled and "v8" not in config.active_items:
+        raise ValueError("v8_composite_merge.enabled requires prompt.active_items to include v8")
+    if config.v8_composite_merge_mode not in {"fallback_or", "strict_conjunction"}:
+        raise ValueError("v8_composite_merge.mode must be fallback_or or strict_conjunction")
     if config.notice_anchor_chars < 0:
         raise ValueError("prompt.notice_anchor_chars must be non-negative")
     if not 0 < config.output_reserve_tokens < config.max_model_len:
@@ -169,4 +220,8 @@ def load_config(path: str | Path) -> ExperimentConfig:
         raise ValueError("llm.provider_sort must be price, throughput, or latency")
     if config.llm.min_request_interval_seconds < 0:
         raise ValueError("llm.min_request_interval_seconds must be non-negative")
+    if config.llm.reasoning_effort and config.llm.reasoning_effort not in {
+        "none", "low", "medium", "high", "xhigh", "max"
+    }:
+        raise ValueError("llm.reasoning_effort must be a supported GPT-5.6 effort")
     return config

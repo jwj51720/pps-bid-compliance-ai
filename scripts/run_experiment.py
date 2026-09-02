@@ -28,10 +28,14 @@ from src.data import (
     load_competition_product_index,
     load_decision_cards,
     load_item_table,
+    load_record_id_panel,
     load_records,
+    select_records_by_id,
 )
 from src.evaluate import evaluate_submission, write_rows
 from src.external.openrouter import MockClient, OpenRouterClient
+from src.external.openai import OpenAIClient
+from src.law_bundles import MetadataLawBundleRouter
 from src.pipeline import BaselinePipeline, Prediction, PredictionError, judgment_to_row
 from src.submission import validate_submission, write_submission
 
@@ -60,6 +64,16 @@ def _source_hashes() -> dict[str, str]:
     return {str(path.relative_to(ROOT)): _sha256(path) for path in paths}
 
 
+def _tree_hashes(path: Path | None) -> dict[str, str] | None:
+    if path is None:
+        return None
+    return {
+        str(value.relative_to(ROOT)): _sha256(value)
+        for value in sorted(path.rglob("*"))
+        if value.is_file()
+    }
+
+
 def _run_signature(
     config: ExperimentConfig,
     mock: bool,
@@ -73,6 +87,7 @@ def _run_signature(
         "input_sha256": _sha256(config.data.input_path),
         "item_table_sha256": _sha256(config.data.item_table_path),
         "reference_sha256": _sha256(config.reference_path) if config.reference_path else None,
+        "reference_bundle_sha256": _tree_hashes(config.reference_bundle_dir),
         "source_sha256": _source_hashes(),
         "selection": {"limit": limit, "ids": selected_ids},
     }
@@ -102,6 +117,7 @@ def _prediction_to_json(prediction: Prediction) -> dict[str, Any]:
         "usage": prediction.usage,
         "finish_reason": prediction.finish_reason,
         "pass_judgments": list(prediction.pass_judgments),
+        "v8_observations": list(prediction.v8_observations),
         "parse_errors": list(prediction.parse_errors),
     }
 
@@ -122,26 +138,13 @@ def _load_checkpoint(path: Path) -> dict[str, dict[str, Any]]:
     return checkpoint
 
 
-def _load_selected_ids(path: str | None) -> list[str] | None:
-    if path is None:
-        return None
-    source = Path(path)
-    value = json.loads(source.read_text(encoding="utf-8"))
-    ids = value.get("ids") if isinstance(value, dict) else value
-    if not isinstance(ids, list) or not ids or not all(isinstance(item, str) for item in ids):
-        raise ValueError("IDs file must contain a non-empty JSON string list or an object with ids")
-    if len(ids) != len(set(ids)):
-        raise ValueError("IDs file contains duplicate IDs")
-    return ids
-
-
 def _write_input_examples_markdown(path: Path, entries: list[dict[str, Any]]) -> None:
     """Write inspectable final chat text without JSONL transport wrappers."""
-    lines = ["# Final Model Input Examples", "", "The fenced blocks below are the exact message contents sent to the model.", ""]
+    lines = ["# 모델 입력 예시", "", "아래 fenced block만 모델에 실제로 전달한 메시지 내용입니다.", ""]
     for entry in entries:
         lines.extend(
             [
-                f"## {entry['id']} — pass {entry['pass_index']}",
+                f"## {entry['id']} — 문서 조각 {entry['pass_index']}",
                 "",
                 f"Tokenizer input tokens: {entry['token_count']}",
                 "",
@@ -168,6 +171,17 @@ def _make_client(config: ExperimentConfig, mock: bool):
     api_key = os.environ.get(config.llm.api_key_env, "")
     if not api_key:
         raise RuntimeError(f"missing environment variable: {config.llm.api_key_env}")
+    if config.llm.provider == "openai":
+        return OpenAIClient(
+            api_key=api_key,
+            api_url=config.llm.api_url,
+            model=config.llm.model,
+            max_tokens=config.llm.max_tokens,
+            timeout_seconds=config.llm.timeout_seconds,
+            request_retries=config.llm.request_retries,
+            min_request_interval_seconds=config.llm.min_request_interval_seconds,
+            reasoning_effort=config.llm.reasoning_effort,
+        )
     return OpenRouterClient(
         api_key=api_key,
         api_url=config.llm.api_url,
@@ -195,7 +209,11 @@ def _make_token_counter(config: ExperimentConfig, mock: bool):
         return None
     from transformers import AutoTokenizer
 
-    tokenizer_source = os.environ.get("PPS_MODEL_DIR") or config.llm.model
+    tokenizer_source = (
+        config.llm.tokenizer_source
+        or os.environ.get("PPS_MODEL_DIR")
+        or config.llm.model
+    )
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_source)
 
     def count_tokens(messages: list[dict[str, str]]) -> int:
@@ -248,9 +266,12 @@ def main() -> int:
         help="also write exact final message text to input_examples.md (requires --dump-inputs)",
     )
     parser.add_argument("--fresh", action="store_true", help="discard the existing prediction checkpoint")
+    parser.add_argument("--input-example-limit", type=int, default=3)
     args = parser.parse_args()
     if args.dump_inputs_markdown and not args.dump_inputs:
         parser.error("--dump-inputs-markdown requires --dump-inputs")
+    if args.input_example_limit < 1:
+        parser.error("--input-example-limit must be positive")
 
     load_dotenv(ROOT / ".env")
     config = load_config(args.config)
@@ -266,11 +287,19 @@ def main() -> int:
         checkpoint_meta_path.unlink()
     if args.fresh and failed_response_path.exists():
         failed_response_path.unlink()
-    selected_ids = _load_selected_ids(args.ids_file)
+    selected_ids = (
+        load_record_id_panel(args.ids_file)
+        if args.ids_file
+        else (
+            load_record_id_panel(config.data.fast_panel_ids_path)
+            if config.data.fast_panel_ids_path
+            else None
+        )
+    )
     effective_limit = args.limit if args.limit is not None else config.local_limit
     if selected_ids is not None and effective_limit is not None:
         source = "--limit" if args.limit is not None else "run.local_limit"
-        raise ValueError(f"--ids-file and {source} are mutually exclusive")
+        raise ValueError(f"record ID panel and {source} are mutually exclusive")
     if args.limit is not None and config.local_limit is not None:
         logger.info("command-line --limit overrides run.local_limit=%d", config.local_limit)
     run_signature = _run_signature(
@@ -292,11 +321,7 @@ def main() -> int:
     checkpoint = _load_checkpoint(checkpoint_path) if config.resume else {}
     records = load_records(config.data.input_path)
     if selected_ids is not None:
-        records_by_id = {record["id"]: record for record in records}
-        missing_ids = [record_id for record_id in selected_ids if record_id not in records_by_id]
-        if missing_ids:
-            raise ValueError(f"IDs file contains IDs absent from input: {missing_ids[:10]}")
-        records = [records_by_id[record_id] for record_id in selected_ids]
+        records = select_records_by_id(records, selected_ids)
     elif effective_limit is not None:
         records = records[:effective_limit]
     item_table = load_item_table(config.data.item_table_path)
@@ -314,6 +339,11 @@ def main() -> int:
     reference_text = (
         config.reference_path.read_text(encoding="utf-8") if config.reference_path else None
     )
+    law_bundle_router = (
+        MetadataLawBundleRouter(config.reference_bundle_dir)
+        if config.reference_bundle_dir
+        else None
+    )
     pipeline = BaselinePipeline(
         item_table=item_table,
         client=client,
@@ -330,10 +360,27 @@ def main() -> int:
         count_tokens=_make_token_counter(config, args.mock),
         prompt_budget_tokens=config.max_model_len - config.output_reserve_tokens,
         reference_text=reference_text,
+        law_bundle_router=law_bundle_router,
+        v8_composite_merge_enabled=config.v8_composite_merge_enabled,
+        v8_composite_merge_mode=config.v8_composite_merge_mode,
+        candidate_detection=config.candidate_detection,
+        active_items=config.active_items,
+        prompt_layout=config.prompt_layout,
     )
     shutil.copy2(config.path, output_dir / "config.yaml")
     if config.reference_path:
         shutil.copy2(config.reference_path, output_dir / "reference_context.txt")
+    if config.reference_bundle_dir:
+        shutil.copytree(config.reference_bundle_dir, output_dir / "law_bundles", dirs_exist_ok=True)
+        (output_dir / "law_bundle_routing.json").write_text(
+            json.dumps(
+                [law_bundle_router.audit_row(record) for record in records],
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
     if config.decision_cards_path:
         shutil.copy2(config.decision_cards_path, output_dir / "decision_cards.json")
     if config.competition_products_path:
@@ -356,7 +403,9 @@ def main() -> int:
                     input_entries.append(entry)
                     handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
         if args.dump_inputs_markdown:
-            _write_input_examples_markdown(output_dir / "input_examples.md", input_entries)
+            _write_input_examples_markdown(
+                output_dir / "input_examples.md", input_entries[:args.input_example_limit]
+            )
     started = time.monotonic()
     failures: list[dict[str, str]] = []
     logger.info(
@@ -472,11 +521,18 @@ def main() -> int:
         "source_sha256": _source_hashes(),
         "input_count": len(records),
         "local_limit": config.local_limit,
+        "fast_panel_ids_path": str(config.data.fast_panel_ids_path.relative_to(ROOT))
+        if config.data.fast_panel_ids_path
+        else None,
         "derived_data": list(config.derived_data),
         "reference_path": str(config.reference_path.relative_to(ROOT))
         if config.reference_path
         else None,
         "reference_sha256": _sha256(config.reference_path) if config.reference_path else None,
+        "reference_bundle_dir": str(config.reference_bundle_dir.relative_to(ROOT))
+        if config.reference_bundle_dir
+        else None,
+        "reference_bundle_sha256": _tree_hashes(config.reference_bundle_dir),
         "decision_cards_path": str(config.decision_cards_path.relative_to(ROOT))
         if config.decision_cards_path
         else None,
@@ -491,7 +547,7 @@ def main() -> int:
         else None,
         "llm_provider": "mock" if args.mock else config.llm.provider,
         "model": getattr(client, "model", config.llm.model),
-        "rag_enabled": False,
+        "rag_enabled": bool(config.reference_path or config.reference_bundle_dir),
         "created_at": datetime.now(timezone.utc).isoformat(),
         "runtime_seconds": round(time.monotonic() - started, 3),
         "usage": usage,

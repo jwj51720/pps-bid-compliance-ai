@@ -112,6 +112,39 @@ run: {resume: true, concurrency: 1}
     assert loaded.reference_path == reference
 
 
+def test_fast_panel_path_is_resolved_from_configs_directory(tmp_path: Path) -> None:
+    config_dir = tmp_path / "configs"
+    config_dir.mkdir()
+    panel = config_dir / "panel.json"
+    panel.write_text('{"ids": ["PPS-1"]}', encoding="utf-8")
+    config = config_dir / "probe.yaml"
+    config.write_text(
+        """
+experiment: {id: test}
+data: {root: data, input: input.jsonl, item_table: items.json, fast_panel_ids_path: configs/panel.json}
+output: {dir: outputs/test}
+prompt: {max_document_chars: null}
+llm:
+  provider: openrouter
+  model: google/gemma-4-26b-a4b-it
+  api_key_env: OPENROUTER_API_KEY
+  api_url: https://openrouter.ai/api/v1/chat/completions
+  temperature: 0
+  max_tokens: 100
+  seed: 1
+  timeout_seconds: 10
+  request_retries: 1
+  prediction_attempts: 1
+  provider_sort: throughput
+  require_parameters: true
+run: {resume: true, concurrency: 1}
+""",
+        encoding="utf-8",
+    )
+
+    assert load_config(config).data.fast_panel_ids_path == panel
+
+
 def test_full_split_merge_requires_full_document_token_mode(tmp_path: Path) -> None:
     config = tmp_path / "config.yaml"
     config.write_text(

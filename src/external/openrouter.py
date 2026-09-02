@@ -157,9 +157,9 @@ class MockClient:
     ) -> Completion:
         import json
 
-        del messages, response_schema
-        content = json.dumps(
-            {f"v{i}": {"위반여부": 0, "근거문구": None} for i in range(1, 25)},
-            ensure_ascii=False,
-        )
+        del messages
+        payload = {f"v{i}": {"위반여부": 0, "근거문구": None} for i in range(1, 25)}
+        if "v8병합관찰" in response_schema.get("properties", {}):
+            payload["v8병합관찰"] = {"상태": "검토", "관찰근거문구": None}
+        content = json.dumps(payload, ensure_ascii=False)
         return Completion(content=content, model=self.model, latency_seconds=0.0, usage={})

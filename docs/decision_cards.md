@@ -38,3 +38,10 @@ v2는 경쟁제품/일반제품 적용성 원칙을 제품분류 관련 항목 �
 다른 환경 공유에는 `scripts/export_artifacts.py`가 포함하는 derived artifact archive를
 사용한다. 카드에 새 법적 숫자나 예외를 추가할 때는 대회 제공 법령/고시 원문 출처와
 추출 근거를 함께 기록한다.
+
+`legal_micro_v1`은 raw-law RAG의 대조 실험용 카드다. `v2`의 제품 적용성 원칙을
+유지하되, `docs/legal_reference_mapping.md`에 검증된 organizer 법령 조문의
+**판정 순서만** 짧게 재서술한다. 법령 원문·새 금액 임계값·새 품목 사실은 넣지 않는다.
+따라서 이 카드는 “법령 원문을 더 넣으면 좋아지는가”가 아니라 “짧은 법령상 적용
+조건을 카드로 명시하면 Gemma가 더 일관되게 적용하는가”를 검증한다. EXP030은
+EXP027과 같은 12-group/full-split 조건에서 이 카드 파일만 바꾼 비교다.

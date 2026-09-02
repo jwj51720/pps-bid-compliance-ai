@@ -9,6 +9,13 @@
 4. 데이터 export: data/는 ignore지만, 다른 환경에서 바로 이어갈 수 있도록 export에는 `data/raw/`와 `data/derived/`, outputs, submission 및 `dist/`의 제출 zip을 포함한다. `.env`, Git metadata, 가상환경·캐시·기기 메타데이터와 `dist/archives/`의 기존 archive는 제외한다. export 압축을 다운로드해 다른 환경에 직접 공유한다.
 5. 핸드오프 남기기: 명시적으로 요청되면 `docs/handoff/YYYYMMDD_HHMMSS_<mac-or-linux>_HANDOFF.md`를 작성한다. 이 환경의 당일 변경·커밋·실험/결과·사고 흐름·실패/주의사항·다음 단계와 관련 산출물 링크를 기록한다. 다른 환경이 같은 실수를 반복하지 않고 이어갈 수 있을 정도로 작성하되, API 키·raw 데이터는 넣지 않는다.
 
+# 설계 절제 원칙
+- 관찰값·후처리·추가 호출은 실제 항목의 진리조건이 기존 pipeline으로 표현되지 않는 것이 확인된 경우에만 추가한다. 판정이 어렵거나 dev에서 오류가 보인다는 이유만으로 여러 항목의 출력 schema·merge를 한꺼번에 바꾸지 않는다.
+- 기본값은 non-absence OR, 부재탐지 5개 AND다. 문서 간 결합이 필요한 것으로 확인된 v8만 별도 상태를 추가하며, 나머지는 명시적 반례와 재현 가능한 실험 전까지 기본 결합을 유지한다.
+- 새 구조는 먼저 최소 출력·최소 호출로 구현하고 mock과 작은 dev 평가로 효과·형식오류·runtime을 확인한다. 성능 또는 안정성 이득이 확인되기 전에는 canonical 제출 정책을 바꾸지 않는다.
+- 실험을 실행하기 전에는 실험 가설의 필수 구성요소가 모두 코드와 configuration에 구현되었는지, 입력 artifact의 coverage와 provenance가 완결됐는지, tokenizer admission·mock·평가 산출물 경로가 준비됐는지를 점검한다. 일부만 구현된 probe는 명확히 별도 진단으로 이름 붙이며, 완결 전략의 성과로 보고하지 않는다.
+- 파일 순서 first-20은 fast gate로 사용하지 않는다. 기본 fast 평가에는 `configs/dev_fast_panel_v1.json`을 사용하며, 이 패널은 고정·버전관리한다. 패널 점수는 dev-200 확인을 대체하거나 canonical 정책 변경의 근거가 될 수 없다.
+
 # openrouter에서 사용할 모델
 openrouter gemma4 model (free)
 https://openrouter.ai/google/gemma-4-26b-a4b-it:free

@@ -1,0 +1,51 @@
+# EXP050: EXP049 decoding-only probe. Temperature is intentionally the sole
+# change; it is not a submission-default candidate unless repeated results and
+# offline vLLM parity support it.
+experiment:
+  id: exp-050-four-group-gemma4-fast-panel-v1-card-v4-temp05
+  derived_data: [decision_cards_v4, competition_products_v1, dev_fast_panel_v1]
+data:
+  root: data/raw/open
+  input: dev.jsonl.gz
+  labels: dev_labels.csv
+  item_table: data/항목표.json
+  fast_panel_ids_path: configs/dev_fast_panel_v1.json
+output:
+  dir: outputs/exp-050-four-group-gemma4-fast-panel-v1-card-v4-temp05
+grouped_run:
+  grouping: four_way
+  reference_mode: none
+  reference_navigation: none
+prompt:
+  max_document_chars: null
+  context_strategy: full_split_merge
+  overflow_split_enabled: true
+  strict_document_evidence: true
+  absence_detection_strategy: per_pass_and
+  decision_cards_path: data/derived/decision_cards_v4.json
+  competition_products_path: data/derived/competition_products_v1.json
+  layout: markdown_v2
+  max_model_len: 32768
+  output_reserve_tokens: 2500
+  notice_anchor_chars: 4000
+  mode: baseline
+  include_normalized_facts: false
+llm:
+  provider: openrouter
+  model: google/gemma-4-26b-a4b-it
+  api_key_env: OPENROUTER_API_KEY
+  api_url: https://openrouter.ai/api/v1/chat/completions
+  tokenizer_source: google/gemma-4-26b-a4b-it
+  temperature: 0.5
+  max_tokens: 2500
+  seed: 20260826
+  timeout_seconds: 180
+  request_retries: 3
+  prediction_attempts: 2
+  provider_sort: throughput
+  require_parameters: true
+  min_request_interval_seconds: 1.0
+run:
+  resume: true
+  concurrency: 4
+  local_limit: null

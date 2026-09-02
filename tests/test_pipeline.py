@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -9,8 +10,10 @@ from src.pipeline import (
     BaselinePipeline,
     PredictionError,
     _combine_pass_judgments,
+    _merge_notice_judgments,
     _usage_number,
     parse_judgment,
+    parse_pass_response,
     postprocess_judgment,
 )
 from src.prompt import (
@@ -19,9 +22,11 @@ from src.prompt import (
     build_split_document_contexts,
     build_system_prompt,
     format_competition_product_context,
+    format_v24_comparison_context,
     normalize_notice_facts,
 )
-from src.schema import ITEMS
+from src.schema import ITEMS, judgment_schema
+from src.law_bundles import MetadataLawBundleRouter
 
 
 def _record(text: str = "서울특별시에 본사를 둔 업체로 제한한다") -> dict:
@@ -45,10 +50,45 @@ def test_parse_judgment_requires_every_item() -> None:
         parse_judgment('{"v1": {"위반여부": 0, "근거문구": null}}')
 
 
+def test_group_schema_and_parser_require_only_requested_items() -> None:
+    items = ("v2", "v3")
+    payload = {item: {"위반여부": 0, "근거문구": None} for item in items}
+    assert parse_judgment(json.dumps(payload), items) == payload
+    assert judgment_schema(items=items)["required"] == ["v2", "v3"]
+
+
+def test_metadata_law_router_uses_only_contract_metadata(tmp_path: Path) -> None:
+    bundles = {}
+    for profile in (
+        "national_complete", "local_general_complete", "local_small_complete",
+        "local_negotiated_complete", "local_small_negotiated_complete",
+    ):
+        path = tmp_path / f"{profile}.txt"
+        text = f"reference for {profile}\n"
+        path.write_text(text, encoding="utf-8")
+        import hashlib
+        bundles[profile] = {
+            "path": str(path), "sha256": hashlib.sha256(text.encode()).hexdigest(), "chunks": [],
+        }
+    (tmp_path / "manifest.json").write_text(json.dumps({"bundles": bundles}), encoding="utf-8")
+    router = MetadataLawBundleRouter(tmp_path)
+    assert router.route({"id": "n", "meta": {"적용계약법": "국가계약법"}}).profile == "national_complete"
+    assert router.route({"id": "s", "meta": {"적용계약법": "지방계약법", "계약방법": "수의계약"}}).profile == "local_small_complete"
+    assert router.route({"id": "h", "meta": {"적용계약법": "지방계약법", "낙찰방법": "협상에의한계약"}}).profile == "local_negotiated_complete"
+
+
 def test_parse_judgment_accepts_fenced_json() -> None:
     expected = _judgment()
     parsed = parse_judgment(f"```json\n{json.dumps(expected, ensure_ascii=False)}\n```")
     assert parsed == expected
+
+
+def test_v8_composite_response_requires_closed_observation_states() -> None:
+    payload = _judgment()
+    payload["v8병합관찰"] = {"상태": "실적", "관찰근거문구": "실적 제한"}
+    judgment, observation = parse_pass_response(json.dumps(payload, ensure_ascii=False), True)
+    assert judgment == _judgment()
+    assert observation["상태"] == "실적"
 
 
 def test_finalize_defaults_only_an_invalid_pass_to_zero_and_records_it() -> None:
@@ -122,6 +162,59 @@ def test_structured_prompt_uses_full_item_table_without_reference_data() -> None
     assert "판정 원칙:" in prompt
 
 
+def test_markdown_prompt_layout_changes_presentation_not_active_items() -> None:
+    item_table = {
+        item: {"항목명": item, "부재탐지": False, "국가계약법": "", "지방계약법": "", "비고": ""}
+        for item in ITEMS
+    }
+    prompt = build_system_prompt(item_table, active_items=("v2", "v3"), layout="markdown")
+    assert "# 역할" in prompt
+    assert "# 판정 항목" in prompt
+    assert "v2" in prompt and "v3" in prompt
+    assert "- v1:" not in prompt
+
+
+def test_markdown_user_message_separates_metadata_and_target_document() -> None:
+    message = build_messages(
+        _record(), "system", None, document_context="[공고문:D0]\n본문", markdown_sections=True
+    )[1]["content"]
+    assert "# 나라장터 입력 메타데이터" in message
+    assert "# 공고 자료" in message
+    assert "```json" in message
+    assert "공고 ID" not in message
+    assert "# 출력" in message
+
+
+def test_markdown_v2_ends_with_exact_json_contract_after_references() -> None:
+    item_table = {
+        item: {"항목명": item, "부재탐지": False, "국가계약법": "", "지방계약법": "", "비고": ""}
+        for item in ITEMS
+    }
+    prompt = build_system_prompt(
+        item_table, active_items=("v1",), layout="markdown_v2", reference_text="법령 원문"
+    )
+    assert "# 판정 순서" in prompt
+    assert "# 참고 법령·고시 — 판정 기준" in prompt
+    assert prompt.rfind("# 출력 형식") > prompt.rfind("법령 원문")
+
+
+def test_decision_card_conditions_are_rendered_as_separate_bullets() -> None:
+    item_table = {"v1": {"항목명": "항목 1", "비고": ""}}
+    cards = {
+        "v1": {
+            "item_name": "항목 1",
+            "prompt_text": "적용 확인: A. 1 조건: B. 0 조건: C.",
+        }
+    }
+    prompt = build_system_prompt(
+        item_table, decision_cards=cards, active_items=("v1",), layout="markdown_v2"
+    )
+    assert "  - 적용 확인: A." in prompt
+    assert "  - 1 조건: B." in prompt
+    assert "  - 0 조건: C." in prompt
+    assert "공식 참고자료 안내" not in prompt
+
+
 def test_normalized_facts_only_restate_notice_metadata() -> None:
     meta = {"세부품명번호목록": "과일류[5030990101]", "입찰추정가격": 10}
     facts = normalize_notice_facts(meta)
@@ -162,6 +255,58 @@ def test_competition_product_not_matched_context_hides_internal_codes() -> None:
     assert "잡지" in context
     assert "5510150601" not in context
     assert "not_matched" not in context
+
+
+def test_unknown_product_lookup_is_not_rendered_as_a_negative_applicability_fact() -> None:
+    context = format_competition_product_context(
+        _record(), {"status": "unknown", "matched_products": []}, ("v10", "v16")
+    )
+
+    assert "비경쟁제품 또는 비적용이라는 판정이 아니라" in context
+    assert "조회 불가만으로 0 또는 1을 정하지 말고" in context
+
+
+def test_v24_checklist_restates_only_comparable_metadata_fields() -> None:
+    record = _record()
+    record["meta"] = {
+        "배정예산금액": 100,
+        "입찰추정가격": 90,
+        "계약방법": "제한경쟁",
+        "낙찰방법": "협상에의한계약",
+        "지역제한여부": "Y",
+        "제한지역코드목록": "서울",
+        "업종제한여부": "N",
+        "면허업종제한목록": "",
+        "무관한필드": "노출되면 안 됨",
+    }
+    context = format_v24_comparison_context(record)
+
+    assert "제한 문구가 존재한다는 사실만으로 불일치가 되지 않는다" in context
+    assert "계약방법" in context
+    assert "무관한필드" not in context
+
+
+def test_product_context_is_omitted_for_an_unrelated_v_group() -> None:
+    item_table = {
+        item: {"항목명": item, "부재탐지": False, "국가계약법": "", "지방계약법": "", "비고": ""}
+        for item in ITEMS
+    }
+    record = _record()
+    record["meta"]["세부품명번호목록"] = "잡석[8014199001]"
+    products = {"8014199001": {"세부품명": "잡석"}}
+
+    unrelated = BaselinePipeline(
+        item_table=item_table, client=None, max_document_chars=None,
+        competition_products=products, active_items=("v1",),
+    )
+    relevant = BaselinePipeline(
+        item_table=item_table, client=None, max_document_chars=None,
+        competition_products=products, active_items=("v10",),
+    )
+
+    assert unrelated.competition_product_context_for_record(record) is None
+    assert "v10" in (relevant.competition_product_context_for_record(record) or "")
+    assert "v16" not in (relevant.competition_product_context_for_record(record) or "")
 
 
 def test_split_contexts_preserve_order_anchor_and_long_document_text() -> None:
@@ -262,6 +407,38 @@ def test_absence_items_use_and_while_other_items_use_or() -> None:
 
     assert combined["v1"] == {"위반여부": 1, "근거문구": "first"}
     assert combined["v10"] == {"위반여부": 0, "근거문구": ""}
+
+
+def test_v8_composite_merge_requires_both_document_local_facts() -> None:
+    first = _judgment()
+    observations = [
+        {
+            "doc_id": "D0",
+            "document_type": "공고문",
+            "상태": "실적",
+            "관찰근거문구": "실적 제한",
+        },
+        {
+            "doc_id": "D1",
+            "document_type": "규격서",
+            "상태": "지역",
+            "관찰근거문구": "서울 소재 업체",
+        },
+    ]
+    merged = _merge_notice_judgments(_record(), [first, _judgment()], observations, "per_pass_and", True)
+    assert merged["v8"] == {"위반여부": 1, "근거문구": "실적 제한"}
+    assert merged["v10"]["위반여부"] == 0
+
+
+def test_v8_strict_conjunction_rejects_ordinary_or_positive() -> None:
+    first = _judgment()
+    first["v8"] = {"위반여부": 1, "근거문구": "실적 제한"}
+
+    merged = _merge_notice_judgments(
+        _record(), [first], [], "per_pass_and", True, "strict_conjunction"
+    )
+
+    assert merged["v8"] == {"위반여부": 0, "근거문구": ""}
 
 
 def test_usage_number_accepts_nested_openrouter_cost() -> None:
