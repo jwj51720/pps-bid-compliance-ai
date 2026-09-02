@@ -69,6 +69,8 @@ Use `pytest` with `tests/test_<module>.py` and `test_<behavior>`. Mock remote LL
 
 Before packaging, validate `output/submission.csv`: exactly 49 ordered columns (`id`, `v1`-`v24`, `e1`-`e24`), unique complete IDs, integer 0/1 labels, UTF-8/NFC text, valid evidence, and the expected row count. The self-contained submission archive must include `script.py`, `requirements.txt`, code, and only permitted static assets; name it `pps_YYYYMMDD_HHMMSS.zip` (30 characters or fewer) and verify the 2 GB compressed, 8 GB extracted, 10-minute install, and 2-hour inference limits.
 
+For every submission candidate, record the exact tokenizer-admitted document-context count by document type and the resulting call count after item grouping (`contexts × groups`). Batch size does not reduce that total. Treat full-document splitting plus v-item grouping as a runtime-risk ablation, not a default; retain a single-call/adaptive-overflow baseline and require evidence of both quality and runtime benefit before submitting the multiplicative design.
+
 ## Style, Commits, and Data Safety
 
 Use Python, four-space indentation, PEP 8, type hints at module boundaries, `snake_case` functions/files, `PascalCase` classes, and `UPPER_SNAKE_CASE` constants. Prefer focused functions over factories, registries, manager classes, or catch-all `utils.py` files.
