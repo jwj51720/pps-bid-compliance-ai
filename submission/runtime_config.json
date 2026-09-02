@@ -16,6 +16,7 @@
   "runtime": {
     "seed": 20260826,
     "batch_size": 128,
+    "batch_retries": 2,
     "gpu_memory_utilization": 0.92,
     "quantization_env": "PPS_QUANT",
     "default_quantization": "int8_per_channel_weight_only"

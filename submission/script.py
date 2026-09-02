@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""DACON entrypoint for the shared EXP-014 full-split pipeline."""
+"""DACON entrypoint for the configured shared full-split pipeline."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,8 @@ from src.data import (
     load_records,
 )
 from src.pipeline import BaselinePipeline, parse_judgment
+from src.pipeline import judgment_to_row, zero_judgment
+from src.legal_groups import groups_for_scheme
 from src.schema import judgment_schema
 from src.submission import prediction_rows, validate_submission, write_submission
 
@@ -134,19 +137,51 @@ def _invalid_json(completion: Completion) -> bool:
     return False
 
 
-def _complete_group_with_json_retries(client, messages_batch, response_schema):
-    """Retry only malformed structured candidates; preserve a row for every pass."""
-    outputs = list(client.complete_batch(messages_batch, response_schema))
-    if len(outputs) != len(messages_batch):
-        raise RuntimeError(
-            f"vLLM returned {len(outputs)} outputs for a batch of {len(messages_batch)}"
-        )
+def _complete_batch_with_retries(
+    client,
+    messages_batch: list[list[dict[str, str]]],
+    response_schema: dict[str, Any],
+    batch_retries: int,
+) -> list[Completion]:
+    """Retry a transient vLLM batch failure without losing pass alignment."""
+    last_error: Exception | None = None
+    for attempt in range(batch_retries + 1):
+        try:
+            outputs = list(client.complete_batch(messages_batch, response_schema))
+            if len(outputs) != len(messages_batch):
+                raise RuntimeError(
+                    f"vLLM returned {len(outputs)} outputs for a batch of "
+                    f"{len(messages_batch)}"
+                )
+            return outputs
+        except Exception as exc:
+            last_error = exc
+            if attempt == batch_retries:
+                break
+            time.sleep(min(8.0, 2.0**attempt))
+    raise RuntimeError(
+        f"vLLM batch failed after {batch_retries + 1} attempts: {last_error}"
+    ) from last_error
+
+
+def _complete_group_with_json_retries(
+    client,
+    messages_batch: list[list[dict[str, str]]],
+    response_schema: dict[str, Any],
+    batch_retries: int,
+):
+    """Retry malformed JSON once per pass after resilient batch completion."""
+    outputs = _complete_batch_with_retries(
+        client, messages_batch, response_schema, batch_retries
+    )
     retry_count = 0
     for index, output in enumerate(outputs):
         if not _invalid_json(output):
             continue
         retry_count += 1
-        replacement = client.complete(messages_batch[index], response_schema)
+        replacement = _complete_batch_with_retries(
+            client, [messages_batch[index]], response_schema, batch_retries
+        )[0]
         if not _invalid_json(replacement):
             outputs[index] = replacement
     return outputs, retry_count
@@ -173,45 +208,94 @@ def main() -> int:
     )
     client = MockClient() if args.mock else VLLMClient(model_dir)
     counter = client.count_tokens
-    pipeline = BaselinePipeline(
-        item_table=item_table,
-        client=client,
-        max_document_chars=PROMPT_CONFIG["max_document_chars"],
-        prompt_mode=str(PROMPT_CONFIG["mode"]),
-        include_normalized_facts=bool(PROMPT_CONFIG["include_normalized_facts"]),
-        context_strategy=PROMPT_CONFIG["context_strategy"],
-        overflow_split_enabled=bool(PROMPT_CONFIG["overflow_split_enabled"]),
-        strict_document_evidence=bool(PROMPT_CONFIG["strict_document_evidence"]),
-        absence_detection_strategy=PROMPT_CONFIG["absence_detection_strategy"],
-        decision_cards=decision_cards,
-        competition_products=competition_products,
-        count_tokens=counter,
-        prompt_budget_tokens=MAX_MODEL_LEN - OUTPUT_RESERVE_TOKENS,
-    )
-    pending = []
-    contexts_by_record = []
-    completions = [[] for _ in records]
-    retried_malformed = 0
-    for index, record in enumerate(records):
-        contexts = pipeline.contexts_for_record(record)
-        contexts_by_record.append(contexts)
-        for context in contexts:
-            pending.append((index, pipeline.messages_for_context(record, context)))
-    for start in range(0, len(pending), args.batch_size):
-        group = pending[start : start + args.batch_size]
-        outputs, retries = _complete_group_with_json_retries(
-            client,
-            [messages for _, messages in group],
-            pipeline.response_schema,
+    grouping = str(RUNTIME.get("grouping", "all"))
+    batch_retries = int(RUNTIME.get("batch_retries", 2))
+    if batch_retries < 0:
+        raise ValueError("runtime.batch_retries must be non-negative")
+    groups = groups_for_scheme(grouping) if grouping != "all" else ()
+
+    def make_pipeline(active_items=None) -> BaselinePipeline:
+        return BaselinePipeline(
+            item_table=item_table,
+            client=client,
+            max_document_chars=PROMPT_CONFIG["max_document_chars"],
+            prompt_mode=str(PROMPT_CONFIG["mode"]),
+            include_normalized_facts=bool(PROMPT_CONFIG["include_normalized_facts"]),
+            context_strategy=PROMPT_CONFIG["context_strategy"],
+            overflow_split_enabled=bool(PROMPT_CONFIG["overflow_split_enabled"]),
+            strict_document_evidence=bool(PROMPT_CONFIG["strict_document_evidence"]),
+            absence_detection_strategy=PROMPT_CONFIG["absence_detection_strategy"],
+            decision_cards=decision_cards,
+            competition_products=competition_products,
+            count_tokens=counter,
+            prompt_budget_tokens=MAX_MODEL_LEN - OUTPUT_RESERVE_TOKENS,
+            active_items=active_items or tuple(f"v{i}" for i in range(1, 25)),
+            prompt_layout=str(PROMPT_CONFIG.get("layout", "plain")),
         )
-        retried_malformed += retries
-        for (index, _), output in zip(group, outputs):
-            completions[index].append(output)
-    rows = [
-        pipeline.finalize(record, completions[index], contexts_by_record[index])
-        for index, record in enumerate(records)
-    ]
-    unrecovered = sum(len(row.parse_errors) for row in rows)
+    pipeline = make_pipeline()
+    retried_malformed = 0
+
+    if not groups:
+        pending = []
+        contexts_by_record = []
+        completions = [[] for _ in records]
+        for index, record in enumerate(records):
+            contexts = pipeline.contexts_for_record(record)
+            contexts_by_record.append(contexts)
+            for context in contexts:
+                pending.append((index, pipeline.messages_for_context(record, context)))
+        for start in range(0, len(pending), args.batch_size):
+            batch = pending[start : start + args.batch_size]
+            outputs, retries = _complete_group_with_json_retries(
+                client,
+                [messages for _, messages in batch],
+                pipeline.response_schema,
+                batch_retries,
+            )
+            retried_malformed += retries
+            for (index, _), output in zip(batch, outputs):
+                completions[index].append(output)
+        rows = [pipeline.finalize(record, completions[index], contexts_by_record[index]) for index, record in enumerate(records)]
+        output_rows = prediction_rows(rows)
+        unrecovered = sum(len(row.parse_errors) for row in rows)
+    else:
+        group_pipelines = {group.group_id: make_pipeline(group.items) for group in groups}
+        grouped_contexts = {}
+        grouped_completions = {}
+        for group in groups:
+            group_pipeline = group_pipelines[group.group_id]
+            pending = []
+            for index, record in enumerate(records):
+                contexts = group_pipeline.contexts_for_record(record)
+                grouped_contexts[index, group.group_id] = contexts
+                grouped_completions[index, group.group_id] = []
+                for context in contexts:
+                    pending.append((index, group_pipeline.messages_for_context(record, context)))
+            for start in range(0, len(pending), args.batch_size):
+                batch = pending[start : start + args.batch_size]
+                outputs, retries = _complete_group_with_json_retries(
+                    client,
+                    [messages for _, messages in batch],
+                    group_pipeline.response_schema,
+                    batch_retries,
+                )
+                retried_malformed += retries
+                for (index, _), output in zip(batch, outputs):
+                    grouped_completions[index, group.group_id].append(output)
+        output_rows = []
+        unrecovered = 0
+        for index, record in enumerate(records):
+            judgment = zero_judgment()
+            for group in groups:
+                result = group_pipelines[group.group_id].finalize(
+                    record,
+                    grouped_completions[index, group.group_id],
+                    grouped_contexts[index, group.group_id],
+                )
+                unrecovered += len(result.parse_errors)
+                for item in group.items:
+                    judgment[item] = result.judgment[item]
+            output_rows.append(judgment_to_row(record["id"], judgment))
     print(
         f"[submission] malformed structured candidates retried={retried_malformed}; "
         f"unrecovered passes defaulted_to_zero={unrecovered}",
@@ -219,7 +303,7 @@ def main() -> int:
         flush=True,
     )
     destination = output_dir / "submission.csv"
-    write_submission(prediction_rows(rows), destination)
+    write_submission(output_rows, destination)
     validation = validate_submission(destination, records)
     if not validation.passed:
         raise RuntimeError("submission validation failed: " + "; ".join(validation.errors[:5]))

@@ -42,7 +42,10 @@ adapters. It applies to every future experiment and submission.
 
 ## Packaging gate
 
-`scripts/make_submission.py` must package `submission/script.py`,
+`scripts/make_submission.py` must package the canonical policy. Experimental
+submission packages require their own named packager that validates its pinned
+experiment config against its pinned runtime config; EXP044 uses
+`scripts/make_exp044_submission.py`. Every packager must package `submission/script.py`,
 `submission/runtime_config.json`, `submission/requirements.txt`, and the shared
 `src/` modules, never a copied baseline. Submission zips go under `dist/`; data
 and output archives go under `dist/archives/`. Use `scripts/export_artifacts.py`
