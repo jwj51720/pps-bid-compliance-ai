@@ -15,6 +15,8 @@
 - 새 구조는 먼저 최소 출력·최소 호출로 구현하고 mock과 작은 dev 평가로 효과·형식오류·runtime을 확인한다. 성능 또는 안정성 이득이 확인되기 전에는 canonical 제출 정책을 바꾸지 않는다.
 - 실험을 실행하기 전에는 실험 가설의 필수 구성요소가 모두 코드와 configuration에 구현되었는지, 입력 artifact의 coverage와 provenance가 완결됐는지, tokenizer admission·mock·평가 산출물 경로가 준비됐는지를 점검한다. 일부만 구현된 probe는 명확히 별도 진단으로 이름 붙이며, 완결 전략의 성과로 보고하지 않는다.
 - 파일 순서 first-20은 fast gate로 사용하지 않는다. 기본 fast 평가에는 `configs/dev_fast_panel_v1.json`을 사용하며, 이 패널은 고정·버전관리한다. 패널 점수는 dev-200 확인을 대체하거나 canonical 정책 변경의 근거가 될 수 없다.
+- **변경 통제:** 기존 세팅의 일부만 바꾸는 실험은 `experiment.base_config`와 `allowed_policy_changes`를 config에 기록하고 `scripts/preflight_experiment.py`로 effective prompt·LLM·group execution policy의 차이를 확인한다. 선언하지 않은 차이가 있으면 유료 실행하지 않는다. prompt, output schema, merge, RAG, card를 한 실험에서 함께 바꾸지 않는다.
+- **재실행 안전성:** 실행 구조(v grouping, reference mode/navigation)는 runner CLI 관례가 아니라 `grouped_run` 등 versioned config에 기록한다. 결함이 확인된 실험은 `lifecycle: invalidated`로 보존하되 loader가 재실행을 거부하게 하고, 결과를 후보 비교·제출 근거로 쓰지 않는다.
 
 # openrouter에서 사용할 모델
 openrouter gemma4 model (free)

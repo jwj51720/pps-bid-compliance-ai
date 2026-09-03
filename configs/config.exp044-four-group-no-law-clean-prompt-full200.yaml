@@ -44,3 +44,7 @@ run:
   resume: true
   concurrency: 4
   local_limit: null
+grouped_run:
+  grouping: four_way
+  reference_mode: none
+  reference_navigation: per_item
