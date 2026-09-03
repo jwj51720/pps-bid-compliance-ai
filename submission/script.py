@@ -59,12 +59,32 @@ class MockClient:
     def complete(self, messages, response_schema) -> Completion:
         import json
 
-        del messages, response_schema
+        del messages
+        properties = response_schema["properties"]
+        sparse = "판정" in properties and "발췌" in properties
+        label_properties = properties["판정"]["properties"] if sparse else properties
+        first_item = next(iter(label_properties))
+        labels_only = label_properties[first_item]["type"] == "integer"
+        anchor_mode = not labels_only and "판단어구" in label_properties[first_item]["properties"]
+        content = (
+            {
+                "판정": {item: 0 for item in label_properties},
+                "발췌": [],
+                "부재검토": {
+                    item: "필수조건_확인"
+                    for item in label_properties
+                    if item in {"v10", "v11", "v16", "v18", "v20"}
+                },
+            }
+            if sparse
+            else {item: 0 for item in label_properties}
+            if labels_only
+            else {item: {"위반여부": 0, "판단어구": None} for item in label_properties}
+            if anchor_mode
+            else {item: {"위반여부": 0, "근거문구": None} for item in label_properties}
+        )
         return Completion(
-            content=json.dumps(
-                {f"v{i}": {"위반여부": 0, "근거문구": None} for i in range(1, 25)},
-                ensure_ascii=False,
-            ),
+            content=json.dumps(content, ensure_ascii=False),
             model=self.model,
             latency_seconds=0.0,
             usage={},
@@ -99,7 +119,9 @@ class VLLMClient:
             max_tokens=OUTPUT_RESERVE_TOKENS,
             seed=SEED,
             structured_outputs=StructuredOutputsParams(
-                json=judgment_schema(), disable_any_whitespace=True
+                json=judgment_schema(
+                    output_mode=str(PROMPT_CONFIG.get("output_mode", "labels_and_evidence"))
+                ), disable_any_whitespace=True
             ),
         )
         self.model = model_dir
@@ -131,7 +153,10 @@ class VLLMClient:
 
 def _invalid_json(completion: Completion) -> bool:
     try:
-        parse_judgment(completion.content)
+        parse_judgment(
+            completion.content,
+            output_mode=str(PROMPT_CONFIG.get("output_mode", "labels_and_evidence")),
+        )
     except Exception:
         return True
     return False
@@ -231,6 +256,7 @@ def main() -> int:
             prompt_budget_tokens=MAX_MODEL_LEN - OUTPUT_RESERVE_TOKENS,
             active_items=active_items or tuple(f"v{i}" for i in range(1, 25)),
             prompt_layout=str(PROMPT_CONFIG.get("layout", "plain")),
+            output_mode=str(PROMPT_CONFIG.get("output_mode", "labels_and_evidence")),
         )
     pipeline = make_pipeline()
     retried_malformed = 0

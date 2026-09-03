@@ -4,6 +4,7 @@
     "context_strategy": "full_split_merge",
     "overflow_split_enabled": true,
     "strict_document_evidence": true,
+    "output_mode": "labels_and_evidence",
     "absence_detection_strategy": "per_pass_and",
     "decision_cards_file": "decision_cards_v2.json",
     "competition_products_file": "competition_products_v1.json",

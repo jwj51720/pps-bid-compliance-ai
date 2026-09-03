@@ -19,6 +19,7 @@ prompt:
   context_strategy: full_split_merge # options: single, split, full_split_merge
   overflow_split_enabled: true # options: true, false
   strict_document_evidence: true # options: true, false; full_split_merge only
+  output_mode: labels_and_evidence # options: labels_and_evidence, labels_only, labels_and_anchor, labels_and_sparse_evidence
   absence_detection_strategy: per_pass_and # options: per_pass_or, per_pass_and; full_split_merge only
   decision_cards_path: data/derived/decision_cards_v2.json # options: null, data/derived/decision_cards_v1.json, data/derived/decision_cards_v2.json
   competition_products_path: data/derived/competition_products_v1.json # options: null, data/derived/competition_products_v1.json

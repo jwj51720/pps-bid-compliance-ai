@@ -366,6 +366,7 @@ def main() -> int:
         candidate_detection=config.candidate_detection,
         active_items=config.active_items,
         prompt_layout=config.prompt_layout,
+        output_mode=config.output_mode,
     )
     shutil.copy2(config.path, output_dir / "config.yaml")
     if config.reference_path:

@@ -57,6 +57,52 @@ def test_group_schema_and_parser_require_only_requested_items() -> None:
     assert judgment_schema(items=items)["required"] == ["v2", "v3"]
 
 
+def test_labels_only_schema_parser_and_postprocess_have_no_evidence() -> None:
+    items = ("v1", "v2")
+    payload = {"v1": 1, "v2": 0}
+    schema = judgment_schema(items=items, output_mode="labels_only")
+    assert schema["properties"]["v1"] == {"type": "integer", "enum": [0, 1]}
+    parsed = parse_judgment(json.dumps(payload), items, output_mode="labels_only")
+    result = postprocess_judgment(parsed, _record(), items=items, output_mode="labels_only")
+    assert result == {"v1": {"위반여부": 1, "근거문구": ""}, "v2": {"위반여부": 0, "근거문구": ""}}
+
+
+def test_sparse_evidence_is_serialization_only_and_never_overrides_labels() -> None:
+    items = ("v1", "v10")
+    payload = {
+        "판정": {"v1": 1, "v10": 1},
+        "발췌": [{"항목": "v1", "근거문구": "서울특별시에 본사를 둔 업체"}],
+        "부재검토": {"v10": "필수조건_확인"},
+    }
+    parsed = parse_judgment(
+        json.dumps(payload, ensure_ascii=False), items, output_mode="labels_and_sparse_evidence"
+    )
+    assert parsed["v1"] == {"위반여부": 1, "근거문구": "서울특별시에 본사를 둔 업체"}
+    # The review is audit information. It must not change the final label.
+    assert parsed["v10"] == {"위반여부": 1, "근거문구": None}
+    schema = judgment_schema(items=items, output_mode="labels_and_sparse_evidence")
+    assert schema["required"] == ["판정", "발췌", "부재검토"]
+
+
+def test_labels_only_messages_do_not_request_evidence_output() -> None:
+    item_table = {"v1": {"항목명": "항목 1", "비고": ""}}
+    prompt = build_system_prompt(item_table, active_items=("v1",), output_mode="labels_only")
+    message = build_messages(_record(), prompt, None, output_mode="labels_only")[1]["content"]
+    assert "근거문구" not in prompt
+    assert "근거문구" not in message
+    assert "인용" not in message
+    assert "법적 요건을 모두 충족하는 명시적 제한·요구·불일치" in prompt
+    assert "[부재탐지] 항목은 필요한 문구와 조건이 공고 자료 전체에 없을 때만 1" in prompt
+    assert "메타데이터 값만으로 1을 정하지 말고" in message
+
+
+def test_evidence_mode_keeps_plain_card_source_instruction() -> None:
+    item_table = {"v1": {"항목명": "항목 1", "비고": ""}}
+    cards = {"v1": {"item_name": "항목 1", "prompt_text": "1 조건: A. 0 조건: B."}}
+    prompt = build_system_prompt(item_table, decision_cards=cards, active_items=("v1",))
+    assert "근거문구는 언제나 공고/첨부문서 원문에서만 인용한다." in prompt
+
+
 def test_metadata_law_router_uses_only_contract_metadata(tmp_path: Path) -> None:
     bundles = {}
     for profile in (

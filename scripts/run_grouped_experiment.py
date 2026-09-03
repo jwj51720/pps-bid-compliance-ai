@@ -155,6 +155,7 @@ def main() -> int:
                 prompt_budget_tokens=config.max_model_len - config.output_reserve_tokens,
                 reference_text=reference_text, reference_navigation=navigation,
                 active_items=group.items, prompt_layout=prompt_layout,
+                output_mode=config.output_mode,
                 v8_composite_merge_enabled=config.v8_composite_merge_enabled,
                 v8_composite_merge_mode=config.v8_composite_merge_mode,
             )

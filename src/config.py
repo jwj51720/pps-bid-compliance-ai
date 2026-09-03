@@ -65,6 +65,7 @@ class ExperimentConfig:
     candidate_detection: bool
     active_items: tuple[str, ...]
     prompt_layout: str
+    output_mode: str
     llm: LLMConfig
     resume: bool
     concurrency: int
@@ -83,6 +84,11 @@ def load_config(path: str | Path) -> ExperimentConfig:
         raw = yaml.safe_load(handle)
     raw = _mapping(raw, "config")
     experiment = _mapping(raw.get("experiment"), "experiment")
+    if experiment.get("lifecycle") == "invalidated":
+        raise ValueError(
+            "experiment is marked invalidated and must not be rerun; "
+            "see docs/experiment_control.md"
+        )
     data = _mapping(raw.get("data"), "data")
     output = _mapping(raw.get("output"), "output")
     prompt = _mapping(raw.get("prompt"), "prompt")
@@ -144,6 +150,7 @@ def load_config(path: str | Path) -> ExperimentConfig:
         candidate_detection=bool(prompt.get("candidate_detection", False)),
         active_items=tuple(str(item) for item in prompt.get("active_items", (f"v{i}" for i in range(1, 25)))),
         prompt_layout=str(prompt.get("layout", "plain")),
+        output_mode=str(prompt.get("output_mode", "labels_and_evidence")),
         llm=LLMConfig(
             provider=str(llm["provider"]),
             model=str(llm["model"]),
@@ -177,6 +184,12 @@ def load_config(path: str | Path) -> ExperimentConfig:
         raise ValueError("prompt.mode must be baseline, structured, or guided")
     if config.prompt_layout not in {"plain", "markdown", "markdown_v2"}:
         raise ValueError("prompt.layout must be plain, markdown, or markdown_v2")
+    if config.output_mode not in {"labels_and_evidence", "labels_only", "labels_and_anchor", "labels_and_sparse_evidence"}:
+        raise ValueError("invalid prompt.output_mode")
+    if config.output_mode == "labels_only" and config.strict_document_evidence:
+        raise ValueError("labels_only cannot use strict_document_evidence")
+    if config.output_mode in {"labels_and_anchor", "labels_and_sparse_evidence"} and not config.strict_document_evidence:
+        raise ValueError("labels_and_anchor requires strict_document_evidence")
     expected_items = {f"v{i}" for i in range(1, 25)}
     if not config.active_items or any(item not in expected_items for item in config.active_items):
         raise ValueError("prompt.active_items must be a non-empty subset of v1..v24")
@@ -206,6 +219,8 @@ def load_config(path: str | Path) -> ExperimentConfig:
         raise ValueError("per_pass_and absence detection requires full_split_merge context strategy")
     if config.v8_composite_merge_enabled and "v8" not in config.active_items:
         raise ValueError("v8_composite_merge.enabled requires prompt.active_items to include v8")
+    if config.output_mode == "labels_only" and config.v8_composite_merge_enabled:
+        raise ValueError("labels_only cannot use v8_composite_merge")
     if config.v8_composite_merge_mode not in {"fallback_or", "strict_conjunction"}:
         raise ValueError("v8_composite_merge.mode must be fallback_or or strict_conjunction")
     if config.notice_anchor_chars < 0:

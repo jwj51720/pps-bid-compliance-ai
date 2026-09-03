@@ -158,7 +158,21 @@ class MockClient:
         import json
 
         del messages
-        payload = {f"v{i}": {"위반여부": 0, "근거문구": None} for i in range(1, 25)}
+        properties = response_schema["properties"]
+        sparse = "판정" in properties and "발췌" in properties
+        label_properties = properties["판정"]["properties"] if sparse else properties
+        first_item = next(iter(label_properties))
+        labels_only = label_properties[first_item]["type"] == "integer"
+        anchor_mode = not labels_only and "판단어구" in label_properties[first_item]["properties"]
+        payload = (
+            {"판정": {item: 0 for item in label_properties}, "발췌": [], "부재검토": {item: "필수조건_확인" for item in label_properties if item in {"v10", "v11", "v16", "v18", "v20"}}}
+            if sparse
+            else {item: 0 for item in label_properties}
+            if labels_only
+            else {item: {"위반여부": 0, "판단어구": None} for item in label_properties}
+            if anchor_mode
+            else {item: {"위반여부": 0, "근거문구": None} for item in label_properties}
+        )
         if "v8병합관찰" in response_schema.get("properties", {}):
             payload["v8병합관찰"] = {"상태": "검토", "관찰근거문구": None}
         content = json.dumps(payload, ensure_ascii=False)

@@ -23,6 +23,19 @@ SYSTEM_HEAD = """당신은 공공 입찰공고의 법령 위반 여부를 점검
 
 판정 항목:"""
 
+LABELS_ONLY_SYSTEM_HEAD = """당신은 공공 입찰공고의 법령 위반 여부를 점검한다.
+아래의 공고 자료와 나라장터 입력 메타데이터를 법령 기준과 대조하여, 지정 항목별 위반 여부를 판정한다.
+
+규칙:
+1. 지정된 모든 v를 출력한다. 판단이 어려우면 위반여부를 0으로 둔다.
+2. 항목명을 단순 키워드 탐지로 판단하지 말고, 공고 자료 원문에서 해당 항목의 법적 요건을 모두 충족하는 명시적 제한·요구·불일치를 확인한 경우에만 1로 둔다.
+3. 판단할 때 공고 자료의 실제 내용과 나라장터 입력 메타의 적용계약법, 업무구분, 금액, 계약·낙찰방법, 지역·업종·공동계약 정보를 함께 검토한다.
+4. [부재탐지] 항목은 필요한 문구와 조건이 공고 자료 전체에 없을 때만 1이고, 있으면 0이다.
+5. 서로 비슷한 항목도 각각의 항목명·공식 참조·비고에 맞춰 독립적으로 판단한다. 문구 하나가 여러 항목의 위반을 자동으로 뜻하지는 않는다.
+6. v24는 문서의 명시적 내용과 나라장터 입력 메타의 대응 필드를 비교해 실제 불일치가 확인될 때만 1로 판단한다.
+
+판정 항목:"""
+
 STRUCTURED_GUIDANCE = """
 판정 원칙:
 5. 항목명을 단순 키워드 탐지로 판단하지 말고, 문서의 실제 제한 내용과 나라장터 입력 메타의 적용계약법, 업무구분, 금액, 계약·낙찰방법, 지역·업종·공동계약 정보를 함께 검토한다.
@@ -42,6 +55,22 @@ GUIDED_GUIDANCE = """
 SYSTEM_TAIL = """출력은 JSON 객체 하나로만 작성한다. 키는 v1~v24이고 값은
 {\"위반여부\": 0 또는 1, \"근거문구\": 문자열 또는 null} 형식이다. 설명이나 머리말을 추가하지 않는다."""
 
+LABELS_ONLY_SYSTEM_TAIL = """출력은 JSON 객체 하나로만 작성한다. 키는 지정된 v이고 값은 각각 0 또는 1이다. 설명이나 머리말을 추가하지 않는다."""
+
+ANCHOR_SYSTEM_HEAD = """당신은 공공 입찰공고의 법령 위반 여부를 점검한다.
+아래의 공고 자료와 나라장터 입력 메타데이터를 법령 기준과 대조하여, 지정 항목별 위반 여부와 판단어구를 판정한다.
+
+규칙:
+1. 지정된 모든 v를 출력한다. 판단이 어려우면 위반여부를 0으로 둔다.
+2. 판단어구는 주어진 공고 자료 원문에 그대로 존재하는 연속 부분문자열이어야 한다. 요약하거나 수정하지 말고 12~120자로 작성한다.
+3. 위반여부가 0이면 판단어구는 null이다.
+4. [부재탐지] 항목은 필요한 문구가 없는 경우가 위반이므로 판단어구를 항상 null로 둔다.
+
+판정 항목:"""
+
+ANCHOR_SYSTEM_TAIL = """출력은 JSON 객체 하나로만 작성한다. 키는 지정된 v이고 값은
+{\"위반여부\": 0 또는 1, \"판단어구\": 문자열 또는 null} 형식이다. 설명이나 머리말을 추가하지 않는다."""
+
 DOCUMENT_SCOPED_GUIDANCE = """
 
 [근거 문구 규칙]
@@ -58,8 +87,25 @@ DOCUMENT_SCOPED_GUIDANCE = """
 5. [부재탐지] 항목은 필요한 문구·조건이 없을 때만 1, 있으면 0이다. 근거문구는 null이다.
 """
 
+LABELS_ONLY_DOCUMENT_GUIDANCE = """
 
-def _render_card_text(prompt_text: str, *, indent: str = "") -> str:
+[원문 확인 규칙]
+`# 공고 자료` 아래에 제시된 공고 자료 원문만 실제 제한·요구·불일치 및 필요한 문구의 부재를 확인하는 대상이다.
+`[공고문 앵커:...]`는 같은 공고의 배경을 알리는 보조 문맥이다. 메타데이터와 참고 법령은 적용 조건을 판단하는 기준이며, 이들만으로 1을 정하지 않는다.
+
+정부계약 컴플라이언스 위반은 추측이나 위험 신호가 아니라, 해당 항목의 법적 요건을
+실제로 충족하는 명시적 제한·요구·불일치여야 한다.
+1. 공고 자료 원문에서 항목과 관련된 실제 문장을 찾는다.
+2. 그 문장이 해당 v 항목의 핵심 조건을 모두 충족하는지 메타데이터·판정 카드·참고 법령으로 확인한다.
+3. 조건이 하나라도 불명확하거나, 단순 키워드·일반 관행·의심에 그치면 0으로 둔다.
+4. 부재탐지가 아닌 항목은 공고 자료 원문에 해당 법적 조건을 뒷받침하는 실제 연속 문구가 있을 때만 1로 둔다.
+5. [부재탐지] 항목은 필요한 문구·조건이 없을 때만 1, 있으면 0이다.
+"""
+
+
+def _render_card_text(
+    prompt_text: str, *, indent: str = "", output_mode: str = "labels_and_evidence"
+) -> str:
     """Render the maintained card facts as short, scannable conditions.
 
     The decision-card artifact deliberately owns the wording.  This renderer
@@ -72,6 +118,10 @@ def _render_card_text(prompt_text: str, *, indent: str = "") -> str:
     # with the noun.  For example, "실적제한이 대상 문서에" must remain
     # grammatically separated as "실적제한이 공고 자료 원문에".
     prompt_text = prompt_text.replace("대상 문서", "공고 자료 원문")
+    if output_mode == "labels_only":
+        prompt_text = re.sub(r"\s*1이면 근거문구는[^.]*[.]", "", prompt_text)
+    elif output_mode == "labels_and_anchor":
+        prompt_text = re.sub(r"1이면 근거문구는([^.]*)[.]", r"1이면 판단어구는\1.", prompt_text)
     labels = ("적용 확인", "부재탐지", "1 조건", "0 조건")
     pattern = r"(?=(?:" + "|".join(re.escape(label) for label in labels) + r"): )"
     parts = [part.strip() for part in re.split(pattern, prompt_text) if part.strip()]
@@ -89,12 +139,21 @@ def build_system_prompt(
     candidate_detection: bool = False,
     active_items: tuple[str, ...] = ITEMS,
     layout: str = "plain",
+    output_mode: str = "labels_and_evidence",
 ) -> str:
     lines = []
+    sparse_anchor = output_mode == "labels_and_sparse_evidence"
+    # Sparse output changes only JSON serialization.  Retain every normal VE
+    # instruction, card rendering rule, and document-evidence requirement.
+    semantic_output_mode = "labels_and_evidence" if sparse_anchor else output_mode
     if not active_items or any(item not in ITEMS for item in active_items):
         raise ValueError("active_items must be a non-empty subset of v1..v24")
     if layout not in {"plain", "markdown", "markdown_v2"}:
         raise ValueError("layout must be plain, markdown, or markdown_v2")
+    if semantic_output_mode not in {"labels_and_evidence", "labels_only", "labels_and_anchor"}:
+        raise ValueError("output_mode must be labels_and_evidence, labels_only, or labels_and_anchor")
+    if semantic_output_mode == "labels_only" and v8_composite_enabled:
+        raise ValueError("labels_only does not support v8 composite observations")
     item_range = "~".join((active_items[0], active_items[-1])) if len(active_items) > 1 else active_items[0]
     for item in active_items:
         definition = item_table[item]
@@ -106,7 +165,7 @@ def build_system_prompt(
                 prompt_text = decision_cards[item]["prompt_text"]
                 card = (
                     "\n- **판정 카드**\n"
-                    + _render_card_text(prompt_text, indent="  ")
+                    + _render_card_text(prompt_text, indent="  ", output_mode=semantic_output_mode)
                 )
             lines.append(
                 f"### `{item}` — {definition['항목명']}\n"
@@ -124,18 +183,22 @@ def build_system_prompt(
         else:
             lines.append(f"- {item}: {definition['항목명']}{absence}{note}")
     guidance = STRUCTURED_GUIDANCE if mode == "structured" else GUIDED_GUIDANCE if mode == "guided" else ""
-    scope_guidance = DOCUMENT_SCOPED_GUIDANCE if document_scoped else ""
+    scope_guidance = (
+        LABELS_ONLY_DOCUMENT_GUIDANCE if document_scoped and semantic_output_mode == "labels_only"
+        else DOCUMENT_SCOPED_GUIDANCE.replace("근거 문구", "판단어구").replace("근거문구", "판단어구").replace("근거 문서", "판정 대상 문서").replace("위반 근거", "판정 어구").replace("근거로", "판정에") if document_scoped and semantic_output_mode == "labels_and_anchor"
+        else DOCUMENT_SCOPED_GUIDANCE if document_scoped else ""
+    )
     card_guidance = ""
     if decision_cards and layout == "plain":
         card_guidance = (
             ("\n\n## 항목별 상세 판정 카드\n" if layout == "markdown" else "\n\n[항목별 상세 판정 카드]\n")
             +
             "각 카드의 1 조건을 모두 만족할 때만 1이다. 카드의 0 조건 하나라도 해당하거나 "
-            "확인할 수 없으면 0이다. 카드의 법령 참조는 판단 범위이고, 근거문구는 언제나 "
-            "공고/첨부문서 원문에서만 인용한다.\n"
+            "확인할 수 없으면 0이다. 카드의 법령 참조는 판단 범위이고, "
+            + ("공고/첨부문서 원문에서 실제 문구를 확인해 판단한다.\n" if semantic_output_mode == "labels_only" else "판단어구는 언제나 공고/첨부문서 원문에서만 그대로 복사한다.\n" if semantic_output_mode == "labels_and_anchor" else "근거문구는 언제나 공고/첨부문서 원문에서만 인용한다.\n")
             + "\n\n".join(
                 (f"### {item} | {decision_cards[item]['item_name']}\n" if layout == "markdown" else f"[{item} | {decision_cards[item]['item_name']}]\n")
-                + _render_card_text(decision_cards[item]["prompt_text"])
+                + _render_card_text(decision_cards[item]["prompt_text"], output_mode=semantic_output_mode)
                 + (
                     "\n병합관찰 선택지: "
                     + ", ".join(decision_cards[item]["merge_contract"]["states"])
@@ -169,9 +232,9 @@ def build_system_prompt(
 금액 조건이 아직 불확실해도 1과 그 문구를 출력한다. 문구가 전혀 없으면 0이다. 부재탐지 항목은
 이 후보 탐지에서 항상 0으로 출력한다.
 """ if candidate_detection else ""
-    head = SYSTEM_HEAD.replace("아래 24개 항목 각각", f"아래 지정 항목({item_range}) 각각")
+    head = (LABELS_ONLY_SYSTEM_HEAD if semantic_output_mode == "labels_only" else ANCHOR_SYSTEM_HEAD if semantic_output_mode == "labels_and_anchor" else SYSTEM_HEAD).replace("아래 24개 항목 각각", f"아래 지정 항목({item_range}) 각각")
     head = head.replace("1. v1~v24를 모두 출력한다.", f"1. {', '.join(active_items)}을 모두 출력한다.")
-    tail = SYSTEM_TAIL.replace("v1~v24", ", ".join(active_items))
+    tail = (LABELS_ONLY_SYSTEM_TAIL if semantic_output_mode == "labels_only" else ANCHOR_SYSTEM_TAIL if semantic_output_mode == "labels_and_anchor" else SYSTEM_TAIL).replace("v1~v24", ", ".join(active_items)).replace("지정된 v", ", ".join(active_items))
     if layout in {"markdown", "markdown_v2"}:
         head = "# 역할\n" + head.replace("\n\n규칙:", "\n\n# 기본 규칙").replace("\n\n판정 항목:", "\n\n# 판정 항목")
         if decision_cards:
@@ -186,20 +249,38 @@ def build_system_prompt(
         if guidance:
             guidance = "\n\n# 판정 절차\n" + guidance.strip()
         if layout == "markdown_v2":
+            item_rule = (
+                "각 항목은 아래 카드의 **적용 확인**, **1 조건**, **0 조건**을 순서대로 확인한다. "
+                "1 조건을 모두 충족할 때만 1이고, 0 조건 또는 불확실성이 있으면 0이다."
+                if decision_cards
+                else
+                "각 항목의 항목명과 비고를 기준으로, 공고 자료의 실제 제한·요구·불일치가 "
+                "그 항목의 위반을 뜻하는지 확인한다. 불확실하면 0이다."
+            )
             workflow = """
 
 # 판정 순서
 1. **공고 자료 확인**: `# 공고 자료` 아래의 공고 자료 원문에서 해당 문구를 찾는다.
-2. **v별 카드 적용**: 각 v의 적용 확인 → 1 조건 → 0 조건 순서로 확인한다.
-3. **근거 확정**: 부재탐지가 아닌 항목을 1로 둘 때는 공고 자료 원문의 변경 없는 연속 문구를 복사한다. 복사할 수 없으면 0이다.
+2. **항목별 판단**: """ + item_rule + """
+3. **명시 확인**: 부재탐지가 아닌 항목은 공고 자료 원문에 해당 법적 조건을 뒷받침하는 실제 연속 문구가 있을 때만 1로 둔다.
 4. **출력**: 모든 v를 판단한 뒤 아래 JSON 객체 하나만 출력한다.
 """
+            if semantic_output_mode == "labels_and_evidence":
+                workflow = workflow.replace(
+                    "3. **명시 확인**: 부재탐지가 아닌 항목은 공고 자료 원문에 해당 법적 조건을 뒷받침하는 실제 연속 문구가 있을 때만 1로 둔다.\n4. **출력**", "3. **근거 확정**: 부재탐지가 아닌 항목을 1로 둘 때는 공고 자료 원문의 변경 없는 연속 문구를 복사한다. 복사할 수 없으면 0이다.\n4. **출력**"
+                )
+            elif semantic_output_mode == "labels_and_anchor":
+                workflow = workflow.replace(
+                    "3. **명시 확인**: 부재탐지가 아닌 항목은 공고 자료 원문에 해당 법적 조건을 뒷받침하는 실제 연속 문구가 있을 때만 1로 둔다.\n4. **출력**", "3. **판단어구 확정**: 부재탐지가 아닌 항목을 1로 둘 때는 공고 자료 원문의 변경 없는 연속 문구를 판단어구로 복사한다. 복사할 수 없으면 0이다.\n4. **출력**"
+                )
             scope_guidance = workflow + scope_guidance
             skeleton = ",\n".join(
-                f'  "{item}": {{"위반여부": 0, "근거문구": null}}'
+                (f'  "{item}": 0' if output_mode == "labels_only" else f'  "{item}": {{"위반여부": 0, "판단어구": null}}' if output_mode == "labels_and_anchor" else f'  "{item}": {{"위반여부": 0, "근거문구": null}}')
                 for item in active_items
             )
             tail = (
+                "# 출력 형식\n설명·분석·Markdown 없이 아래 키만 가진 JSON 객체 하나를 출력한다. 각 값은 0 또는 1이다.\n```json\n{\n" + skeleton + "\n}\n```"
+                if output_mode == "labels_only" else "# 출력 형식\n설명·분석·Markdown 없이 아래 키만 가진 JSON 객체 하나를 출력한다. 각 `위반여부`는 0 또는 1이며, 0이면 `판단어구`는 null이다.\n```json\n{\n" + skeleton + "\n}\n```" if output_mode == "labels_and_anchor" else
                 "# 출력 형식\n"
                 "설명·분석·Markdown 없이 아래 키만 가진 JSON 객체 하나를 출력한다. "
                 "각 `위반여부`는 0 또는 1이며, 0이면 `근거문구`는 null이다.\n"
@@ -211,8 +292,7 @@ def build_system_prompt(
     if reference_text:
         reference_section = (
             ("\n\n# 참고 법령·고시 — 판정 기준\n" if layout in {"markdown", "markdown_v2"} else "\n\n[참고 법령·고시 — 판정 기준]\n")
-            + "아래는 위반 여부를 판정할 때 적용할 기준이다. 법령 원문 또는 대회 제공 법령 기반 요약의 조건과 공고 자료를 대조해 판정한다. 참고자료는 공고문이 아니며 위반 근거문구도 아니다. "
-            "위반여부를 1로 할 때의 근거문구는 반드시 공고 자료 원문에서만 그대로 복사한다.\n"
+            + ("아래는 위반 여부를 판정할 때 적용할 기준이다. 법령 원문 또는 대회 제공 법령 기반 요약의 조건과 공고 자료를 대조해 판정한다. 참고자료만으로 1을 정하지 않는다.\n" if output_mode == "labels_only" else "아래는 위반 여부를 판정할 때 적용할 기준이다. 법령 원문 또는 대회 제공 법령 기반 요약의 조건과 공고 자료를 대조해 판정한다. 참고자료는 공고문이 아니며 위반 근거문구도 아니다. 위반여부를 1로 할 때의 근거문구는 반드시 공고 자료 원문에서만 그대로 복사한다.\n")
             + reference_text
         )
     prompt = f"{head}\n" + "\n".join(lines) + f"\n{guidance}{scope_guidance}{card_guidance}{merge_guidance}{navigation_guidance}{candidate_guidance}"
@@ -220,6 +300,22 @@ def build_system_prompt(
         prompt += reference_section + "\n\n" + tail
     else:
         prompt += "\n" + tail + reference_section
+    if sparse_anchor:
+        sparse_labels = ",".join(f'"{item}":0' for item in active_items)
+        sparse_absence = ",".join(
+            f'"{item}":"필수조건_확인"' for item in active_items if item in ABSENCE_ITEMS
+        )
+        sparse_contract = f"""
+# 출력 형식
+설명 없이 JSON 객체 하나를 출력한다.
+- `판정`에는 모든 v의 0 또는 1을 넣는다.
+- `발췌`에는 1인 부재탐지 이외 항목마다 공고 자료 원문의 변경 없는 연속 `근거문구`를 반드시 한 번 넣는다. 0인 항목은 발췌에 넣지 않는다.
+- `부재검토`에는 부재탐지 항목마다 `필수조건_확인`, `미확인`, `비적용_또는_불명` 중 하나를 넣는다. 이는 검토 기록이며 `판정`의 0/1을 바꾸지 않는다.
+```json
+{{"판정":{{{sparse_labels}}},"발췌":[],"부재검토":{{{sparse_absence}}}}}
+```
+"""
+        prompt = prompt.rsplit("# 출력 형식", 1)[0] + sparse_contract
     return prompt
 
 
@@ -370,7 +466,12 @@ def build_messages(
     competition_product_context: str | None = None,
     v24_comparison_context: str | None = None,
     markdown_sections: bool = False,
+    output_mode: str = "labels_and_evidence",
 ) -> list[dict[str, str]]:
+    sparse_evidence = output_mode == "labels_and_sparse_evidence"
+    semantic_output_mode = "labels_and_evidence" if sparse_evidence else output_mode
+    if semantic_output_mode not in {"labels_and_evidence", "labels_only", "labels_and_anchor"}:
+        raise ValueError("output_mode must be labels_and_evidence, labels_only, or labels_and_anchor")
     metadata = json.dumps(record["meta"], ensure_ascii=False, sort_keys=True, indent=2)
     facts = ""
     if include_normalized_facts:
@@ -390,23 +491,58 @@ def build_messages(
         fact_section = ""
         if facts:
             fact_section = "\n\n# 공고 보조 정보\n" + facts.strip()
-        user_prompt = (
-            "# 나라장터 입력 메타데이터\n"
-            "아래 값은 적용 법령·금액·계약방식 등을 공고문과 대조할 때 쓰는 입력값이다. 단독으로 위반 근거문구가 될 수 없다.\n"
-            "```json\n" + metadata + "\n```"
-            + fact_section
-            + "\n\n# 공고 자료\n"
-            "아래에 제시된 공고 자료 원문만 부재탐지가 아닌 항목의 근거문구로 인용할 수 있다.\n"
-            + document_text
-            + "\n\n# 출력\n"
-            "지정된 모든 v를 판단한다. 1이면 공고 자료 원문의 근거문구를 넣고, 0이면 null을 넣는다. 설명 없이 지정된 키만 가진 JSON 객체 하나를 출력한다."
-        )
+        if semantic_output_mode == "labels_only":
+            user_prompt = (
+                "# 나라장터 입력 메타데이터\n"
+                "아래 값은 적용 법령·금액·계약방식 등을 공고 자료와 대조할 때 쓰는 입력값이다. 이 값만으로 1을 정하지 않는다.\n"
+                "```json\n" + metadata + "\n```"
+                + fact_section
+                + "\n\n# 공고 자료\n"
+                "아래 공고 자료 원문에서 실제 제한·요구·불일치와 필요한 문구의 부재를 확인하고, 입력 메타데이터는 적용 조건을 대조하는 데 사용한다.\n"
+                + document_text
+                + "\n\n# 출력\n"
+                "지정된 모든 v의 위반여부를 0 또는 1로 판단한 JSON 객체 하나만 출력한다."
+            )
+        elif semantic_output_mode == "labels_and_anchor":
+            user_prompt = (
+                "# 나라장터 입력 메타데이터\n"
+                "아래 값은 적용 법령·금액·계약방식 등을 공고문과 대조할 때 쓰는 입력값이다. 단독으로 위반을 정하지 않는다.\n"
+                "```json\n" + metadata + "\n```" + fact_section + "\n\n# 공고 자료\n"
+                "아래 공고 자료 원문에서만 판단어구를 그대로 복사할 수 있다.\n" + document_text
+                + "\n\n# 출력\n" + ("`판정`에 모든 v의 0/1을 넣는다. 1인 부재탐지 이외 항목은 `발췌` 배열에 공고 자료 원문의 정확 문구를 반드시 넣는다. 부재탐지는 `부재검토`에 상태를 넣는다. JSON 객체 하나만 출력한다." if sparse_evidence else "지정된 모든 v를 판단한다. 1이면 공고 자료 원문의 판단어구를 넣고, 0이면 null을 넣는다. 설명 없이 지정된 키만 가진 JSON 객체 하나를 출력한다.")
+            )
+        else:
+            sparse_output_instruction = (
+                "`판정`에는 모든 v의 0/1을 넣는다. 1인 부재탐지 이외 항목은 `발췌` 배열에 "
+                "공고 자료 원문의 정확한 `근거문구`를 반드시 한 번 넣는다. 부재탐지는 `부재검토`에 "
+                "검토 상태를 넣는다. 설명 없이 JSON 객체 하나만 출력한다."
+            )
+            user_prompt = (
+                "# 나라장터 입력 메타데이터\n"
+                "아래 값은 적용 법령·금액·계약방식 등을 공고문과 대조할 때 쓰는 입력값이다. 단독으로 위반 근거문구가 될 수 없다.\n"
+                "```json\n" + metadata + "\n```"
+                + fact_section
+                + "\n\n# 공고 자료\n"
+                "아래에 제시된 공고 자료 원문만 부재탐지가 아닌 항목의 근거문구로 인용할 수 있다.\n"
+                + document_text
+                + "\n\n# 출력\n"
+                + (sparse_output_instruction if sparse_evidence else "지정된 모든 v를 판단한다. 1이면 공고 자료 원문의 근거문구를 넣고, 0이면 null을 넣는다. 설명 없이 지정된 키만 가진 JSON 객체 하나를 출력한다.")
+            )
     else:
+        output_instruction = (
+            "각 v의 위반여부를 0 또는 1로 판단한 JSON 객체 하나만 출력한다."
+            if semantic_output_mode == "labels_only"
+            else "1이면 공고 자료 원문의 판단어구를 넣고, 0이면 null을 넣는다. 설명 없이 JSON 객체 하나만 출력한다."
+            if semantic_output_mode == "labels_and_anchor"
+            else "1이면 공고 자료 원문의 근거문구를 넣고, 0이면 null을 넣는다. 설명 없이 JSON 객체 하나만 출력한다."
+        )
         user_prompt = (
             f"[나라장터 입력 메타데이터]\n{metadata}{facts}\n\n"
             f"[문서]\n{document_text}\n\n"
-            "[출력]\n참고 법령·판정 카드·메타데이터와 공고 자료를 대조하여 지정된 모든 v를 판정한다. "
-            "1이면 공고 자료 원문의 근거문구를 넣고, 0이면 null을 넣는다. 설명 없이 JSON 객체 하나만 출력한다."
+            "[출력]\n"
+            + ("메타데이터 값만으로 1을 정하지 말고 공고 자료의 실제 내용과 함께 대조한다. " if semantic_output_mode == "labels_only" else "")
+            + "나라장터 입력 메타데이터와 공고 자료를 대조하여 지정된 모든 v를 판정한다. "
+            + output_instruction
         )
     return [
         {"role": "system", "content": system_prompt},

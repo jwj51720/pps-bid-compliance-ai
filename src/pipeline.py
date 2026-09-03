@@ -117,17 +117,96 @@ def _parse_judgment_payload(
     return judgment
 
 
-def parse_judgment(
-    text: str, items: tuple[str, ...] = ITEMS
+def _parse_labels_payload(
+    payload: Any, items: tuple[str, ...] = ITEMS
 ) -> dict[str, dict[str, Any]]:
-    return _parse_judgment_payload(extract_json(text), items)
+    if isinstance(payload, dict) and isinstance(payload.get("판정"), dict):
+        payload = payload["판정"]
+    if not isinstance(payload, dict):
+        raise PredictionError("model response must be a JSON object")
+    missing = [item for item in items if item not in payload]
+    if missing:
+        raise PredictionError(f"model response missing items: {missing}")
+    judgment: dict[str, dict[str, Any]] = {}
+    for item in items:
+        violation = payload[item]
+        if isinstance(violation, bool):
+            violation = int(violation)
+        if violation not in (0, 1):
+            raise PredictionError(f"{item} must be 0 or 1")
+        judgment[item] = {"위반여부": int(violation), "근거문구": None}
+    return judgment
+
+
+def _parse_anchor_payload(payload: Any, items: tuple[str, ...] = ITEMS) -> dict[str, dict[str, Any]]:
+    if isinstance(payload, dict) and isinstance(payload.get("판정"), dict):
+        payload = payload["판정"]
+    if not isinstance(payload, dict):
+        raise PredictionError("model response must be a JSON object")
+    missing = [item for item in items if item not in payload]
+    if missing:
+        raise PredictionError(f"model response missing items: {missing}")
+    judgment: dict[str, dict[str, Any]] = {}
+    for item in items:
+        cell = payload[item]
+        if not isinstance(cell, dict):
+            raise PredictionError(f"{item} must be an object")
+        violation = cell.get("위반여부")
+        if isinstance(violation, bool):
+            violation = int(violation)
+        if violation not in (0, 1):
+            raise PredictionError(f"{item}.위반여부 must be 0 or 1")
+        anchor = cell.get("판단어구")
+        if anchor is not None and not isinstance(anchor, str):
+            raise PredictionError(f"{item}.판단어구 must be a string or null")
+        if item in ABSENCE_ITEMS and anchor is not None:
+            raise PredictionError(f"{item}.판단어구 must be null")
+        judgment[item] = {"위반여부": int(violation), "근거문구": anchor}
+    return judgment
+
+
+def _parse_sparse_anchor_payload(payload: Any, items: tuple[str, ...] = ITEMS) -> dict[str, dict[str, Any]]:
+    if not isinstance(payload, dict):
+        raise PredictionError("model response must be a JSON object")
+    excerpts = payload.get("발췌")
+    reviews = payload.get("부재검토")
+    if not isinstance(excerpts, list) or not isinstance(reviews, dict):
+        raise PredictionError("발췌 and 부재검토 are required")
+    judgment = _parse_labels_payload(payload, items)
+    seen: set[str] = set()
+    for entry in excerpts:
+        if not isinstance(entry, dict) or entry.get("항목") not in items or entry["항목"] in ABSENCE_ITEMS or not isinstance(entry.get("근거문구"), str) or entry["항목"] in seen:
+            raise PredictionError("invalid sparse 발췌")
+        seen.add(entry["항목"])
+        judgment[entry["항목"]]["근거문구"] = entry["근거문구"]
+    # 부재검토 is intentionally parsed/required by the schema but does not
+    # alter a model's final label.  That would make this an algorithm change,
+    # not an output-serialization experiment.
+    for item in items:
+        if item in ABSENCE_ITEMS and reviews.get(item) not in {"필수조건_확인", "미확인", "비적용_또는_불명"}:
+            raise PredictionError("invalid sparse 부재검토")
+    return judgment
+
+
+def parse_judgment(
+    text: str, items: tuple[str, ...] = ITEMS, output_mode: str = "labels_and_evidence"
+) -> dict[str, dict[str, Any]]:
+    payload = extract_json(text)
+    if output_mode == "labels_only":
+        return _parse_labels_payload(payload, items)
+    if output_mode == "labels_and_anchor":
+        return _parse_anchor_payload(payload, items)
+    if output_mode == "labels_and_sparse_evidence":
+        return _parse_sparse_anchor_payload(payload, items)
+    return _parse_judgment_payload(payload, items)
 
 
 def parse_pass_response(
-    text: str, v8_composite_enabled: bool, items: tuple[str, ...] = ITEMS
+    text: str, v8_composite_enabled: bool, items: tuple[str, ...] = ITEMS,
+    output_mode: str = "labels_and_evidence",
 ) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
     payload = extract_json(text)
-    judgment = _parse_judgment_payload(payload, items)
+    judgment = _parse_labels_payload(payload, items) if output_mode == "labels_only" else _parse_anchor_payload(payload, items) if output_mode == "labels_and_anchor" else _parse_sparse_anchor_payload(payload, items) if output_mode == "labels_and_sparse_evidence" else _parse_judgment_payload(payload, items)
     if not v8_composite_enabled or "v8" not in items:
         return judgment, {}
     observation = payload.get("v8병합관찰") if isinstance(payload, dict) else None
@@ -187,7 +266,13 @@ def postprocess_judgment(
     source_text: str | None = None,
     require_evidence_for_positive: bool = False,
     items: tuple[str, ...] = ITEMS,
+    output_mode: str = "labels_and_evidence",
 ) -> dict[str, dict[str, Any]]:
+    if output_mode == "labels_only":
+        return {
+            item: {"위반여부": judgment[item]["위반여부"], "근거문구": ""}
+            for item in items
+        }
     source = unicodedata.normalize("NFC", source_text or full_document_text(record))
     result: dict[str, dict[str, Any]] = {}
     for item in items:
@@ -197,6 +282,8 @@ def postprocess_judgment(
             evidence = _clean_evidence(judgment[item]["근거문구"], source)
             if require_evidence_for_positive and not evidence:
                 violation = 0
+        if output_mode == "labels_and_anchor":
+            evidence = ""
         result[item] = {"위반여부": violation, "근거문구": evidence}
     return result
 
@@ -235,6 +322,7 @@ class BaselinePipeline:
         candidate_detection: bool = False,
         active_items: tuple[str, ...] = ITEMS,
         prompt_layout: str = "plain",
+        output_mode: str = "labels_and_evidence",
     ) -> None:
         self.client = client
         self.max_document_chars = max_document_chars
@@ -251,6 +339,16 @@ class BaselinePipeline:
         self.v8_composite_merge_enabled = v8_composite_merge_enabled
         self.v8_composite_merge_mode = v8_composite_merge_mode
         self.prompt_layout = prompt_layout
+        if output_mode not in {"labels_and_evidence", "labels_only", "labels_and_anchor", "labels_and_sparse_evidence"}:
+            raise ValueError("output_mode must be labels_and_evidence, labels_only, or labels_and_anchor")
+        if output_mode == "labels_only" and strict_document_evidence:
+            raise ValueError("labels_only cannot use strict_document_evidence")
+        if output_mode == "labels_only" and v8_composite_merge_enabled:
+            raise ValueError("labels_only cannot use v8_composite_merge")
+        if output_mode in {"labels_and_anchor", "labels_and_sparse_evidence"} and not strict_document_evidence:
+            raise ValueError("labels_and_anchor requires strict_document_evidence")
+        self.output_mode = output_mode
+        self.prompt_output_mode = output_mode
         if not active_items or any(item not in ITEMS for item in active_items):
             raise ValueError("active_items must be a non-empty subset of v1..v24")
         if len(active_items) != len(set(active_items)):
@@ -265,25 +363,29 @@ class BaselinePipeline:
             mode=prompt_mode,
             reference_text=reference_text,
             reference_navigation=reference_navigation,
-            document_scoped=strict_document_evidence,
+            document_scoped=(strict_document_evidence or output_mode == "labels_only"),
             decision_cards=decision_cards,
             v8_composite_enabled=v8_composite_merge_enabled,
             candidate_detection=candidate_detection,
             active_items=active_items,
             layout=prompt_layout,
+            output_mode=self.output_mode,
         )
         self._prompt_options = {
             "item_table": item_table,
             "mode": prompt_mode,
-            "document_scoped": strict_document_evidence,
+            "document_scoped": (strict_document_evidence or output_mode == "labels_only"),
             "decision_cards": decision_cards,
             "v8_composite_enabled": v8_composite_merge_enabled,
             "candidate_detection": candidate_detection,
             "active_items": active_items,
             "layout": prompt_layout,
+            "output_mode": self.output_mode,
         }
         self._routed_system_prompts: dict[str, str] = {}
-        self.response_schema = judgment_schema(self.v8_composite_merge_enabled, active_items)
+        self.response_schema = judgment_schema(
+            self.v8_composite_merge_enabled, active_items, output_mode
+        )
 
     def system_prompt_for_record(self, record: dict[str, Any]) -> str:
         if self.law_bundle_router is None:
@@ -358,6 +460,7 @@ class BaselinePipeline:
             competition_product_context=self.competition_product_context_for_record(record),
             v24_comparison_context=(format_v24_comparison_context(record) if "v24" in self.active_items else None),
             markdown_sections=self.prompt_layout in {"markdown", "markdown_v2"},
+            output_mode=self.prompt_output_mode,
         )
 
     def competition_product_context_for_record(self, record: dict[str, Any]) -> str | None:
@@ -384,7 +487,8 @@ class BaselinePipeline:
         for pass_index, completion in enumerate(completions, 1):
             try:
                 parsed, raw_observations = parse_pass_response(
-                    completion.content, self.v8_composite_merge_enabled, self.active_items
+                    completion.content, self.v8_composite_merge_enabled, self.active_items,
+                    self.output_mode,
                 )
             except PredictionError as exc:
                 # Structured decoding is the normal path, but vLLM can still return
@@ -409,6 +513,7 @@ class BaselinePipeline:
                     source_text=context.target_text if isinstance(context, DocumentContext) else None,
                     require_evidence_for_positive=self.strict_document_evidence,
                     items=self.active_items,
+                    output_mode=self.output_mode,
                 )
             judgments.append(processed)
             if self.v8_composite_merge_enabled:
