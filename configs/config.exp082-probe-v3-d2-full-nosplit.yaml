@@ -1,0 +1,9 @@
+# Prompt-probe v3 D2: complete-document, one-call admission. Notices that do
+# not fit the exact Gemma budget are excluded and recorded in admission.json;
+# they are never silently truncated or converted to all-zero predictions.
+experiment: {id: exp-082-probe-v3-d2-full-nosplit, base_config: configs/config.exp076-probe-v3-p0-official.yaml, allowed_policy_changes: [prompt.max_document_chars, prompt.context_strategy], derived_data: [dev_prompt_probe_v3]}
+data: {root: data/raw/open, input: dev.jsonl.gz, labels: dev_labels.csv, item_table: data/항목표.json, fast_panel_ids_path: configs/dev_prompt_probe_v3.json}
+output: {dir: outputs/exp-082-probe-v3-d2-full-nosplit}
+prompt: {max_document_chars: null, context_strategy: single_no_split, overflow_split_enabled: false, strict_document_evidence: false, absence_detection_strategy: per_pass_or, decision_cards_path: null, competition_products_path: null, profile: official_baseline_v1, item_catalog_style: minimal, metadata_style: official_lines, layout: plain, output_mode: labels_and_evidence, max_model_len: 16384, output_reserve_tokens: 1536, notice_anchor_chars: 4000, mode: baseline, include_normalized_facts: false}
+llm: {provider: openrouter, model: google/gemma-4-26b-a4b-it, api_key_env: OPENROUTER_API_KEY, api_url: https://openrouter.ai/api/v1/chat/completions, tokenizer_source: google/gemma-4-26b-a4b-it, temperature: 0.0, max_tokens: 1536, seed: 20260826, timeout_seconds: 180, request_retries: 3, prediction_attempts: 2, provider_sort: throughput, require_parameters: true, min_request_interval_seconds: 1.0}
+run: {resume: true, concurrency: 4, local_limit: null}

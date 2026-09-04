@@ -1,0 +1,52 @@
+# EXP118: dev-200 confirmation of EXP117.  Only the fast-panel selection is
+# removed; the announcement-only full-text policy is identical.
+experiment:
+  id: exp-118-official-baseline-full-announcement-only-full200
+  base_config: configs/config.exp117-official-baseline-full-announcement-only-fast-panel.yaml
+  allowed_policy_changes: []
+  derived_data: []
+data:
+  root: data/raw/open
+  input: dev.jsonl.gz
+  labels: dev_labels.csv
+  item_table: data/항목표.json
+  fast_panel_ids_path: null
+output:
+  dir: outputs/exp-118-official-baseline-full-announcement-only-full200
+prompt:
+  max_document_chars: null
+  visible_document_types: [공고문] # options: null(all source documents), [공고문]
+  context_strategy: single
+  overflow_split_enabled: true
+  strict_document_evidence: false
+  absence_detection_strategy: per_pass_or
+  decision_cards_path: null
+  competition_products_path: null
+  profile: official_baseline_v1
+  layout: plain
+  role_directive: standard
+  output_mode: labels_and_evidence
+  max_model_len: 32768
+  output_reserve_tokens: 1536
+  notice_anchor_chars: 4000
+  mode: baseline
+  include_normalized_facts: false
+llm:
+  provider: openrouter
+  model: google/gemma-4-26b-a4b-it
+  api_key_env: OPENROUTER_API_KEY
+  api_url: https://openrouter.ai/api/v1/chat/completions
+  tokenizer_source: google/gemma-4-26b-a4b-it
+  temperature: 0.0
+  max_tokens: 1536
+  seed: 20260826
+  timeout_seconds: 180
+  request_retries: 3
+  prediction_attempts: 2
+  provider_sort: throughput
+  require_parameters: true
+  min_request_interval_seconds: 1.0
+run:
+  resume: true # options: true, false
+  concurrency: 20 # options: 1..20
+  local_limit: null

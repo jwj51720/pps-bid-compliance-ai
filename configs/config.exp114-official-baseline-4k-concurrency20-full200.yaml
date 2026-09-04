@@ -1,0 +1,53 @@
+# EXP114: scheduling control for EXP113.  It is EXP109's exact 4k baseline
+# with only the user-authorized OpenRouter concurrency raised to 20.
+experiment:
+  id: exp-114-official-baseline-4k-concurrency20-full200
+  lifecycle: invalidated
+  invalidation_reason: "Stopped after confirming that concurrency is not an intended model-policy variable; partial output is audit-only."
+  base_config: configs/config.exp109-official-baseline-v1-ve-full200.yaml
+  allowed_policy_changes: [run.concurrency]
+  derived_data: []
+data:
+  root: data/raw/open
+  input: dev.jsonl.gz
+  labels: dev_labels.csv
+  item_table: data/항목표.json
+  fast_panel_ids_path: null
+output:
+  dir: outputs/exp-114-official-baseline-4k-concurrency20-full200
+prompt:
+  max_document_chars: 4000
+  context_strategy: single
+  overflow_split_enabled: false
+  strict_document_evidence: false
+  absence_detection_strategy: per_pass_or
+  decision_cards_path: null
+  competition_products_path: null
+  profile: official_baseline_v1
+  layout: plain
+  role_directive: standard
+  output_mode: labels_and_evidence
+  max_model_len: 16384
+  output_reserve_tokens: 1536
+  notice_anchor_chars: 4000
+  mode: baseline
+  include_normalized_facts: false
+llm:
+  provider: openrouter
+  model: google/gemma-4-26b-a4b-it
+  api_key_env: OPENROUTER_API_KEY
+  api_url: https://openrouter.ai/api/v1/chat/completions
+  tokenizer_source: google/gemma-4-26b-a4b-it
+  temperature: 0.0
+  max_tokens: 1536
+  seed: 20260826
+  timeout_seconds: 180
+  request_retries: 3
+  prediction_attempts: 2
+  provider_sort: throughput
+  require_parameters: true
+  min_request_interval_seconds: 1.0
+run:
+  resume: true
+  concurrency: 20
+  local_limit: null

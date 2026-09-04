@@ -16,8 +16,9 @@
 
 이는 법령 RAG가 아니다. card는 Gemma가 “문구가 있다”를 곧바로 “위반”으로
 단정하지 않도록 판정 절차를 고정한다. 정확한 고시금액, 제품 지정, 금액 구간,
-예외처럼 card 안에서 추정하면 안 되는 사실은 이후 official-law RAG 또는 결정적
-metadata lookup이 제공해야 한다.
+예외처럼 공고별로 달라지는 사실은 사람이 읽을 수 있는 metadata/organizer CSV fact로
+제공한다. 법령 원문·조문 bundle을 런타임에 넣지 않는다. 법령은 오프라인에서 검토해
+card의 적용 전제·필수 조건·예외 경계로 압축하며, 근거와 변경 이유는 별도 문서에 남긴다.
 
 ## 사용
 
@@ -37,11 +38,9 @@ versioned card text에서 하고 새 버전 파일로 생성한다. v1은 EXP-00
 v2는 경쟁제품/일반제품 적용성 원칙을 제품분류 관련 항목 카드에 추가한다. 실제 `data/derived/`는 Git ignore 대상이므로,
 다른 환경 공유에는 `scripts/export_artifacts.py`가 포함하는 derived artifact archive를
 사용한다. 카드에 새 법적 숫자나 예외를 추가할 때는 대회 제공 법령/고시 원문 출처와
-추출 근거를 함께 기록한다.
+추출 근거를 함께 기록한다. 현재 `v6`가 이 원칙을 적용한 카드이며,
+`docs/decision_card_v6.md`가 항목별 근거와 변경 범위를 기록한다.
 
-`legal_micro_v1`은 raw-law RAG의 대조 실험용 카드다. `v2`의 제품 적용성 원칙을
-유지하되, `docs/legal_reference_mapping.md`에 검증된 organizer 법령 조문의
-**판정 순서만** 짧게 재서술한다. 법령 원문·새 금액 임계값·새 품목 사실은 넣지 않는다.
-따라서 이 카드는 “법령 원문을 더 넣으면 좋아지는가”가 아니라 “짧은 법령상 적용
-조건을 카드로 명시하면 Gemma가 더 일관되게 적용하는가”를 검증한다. EXP030은
-EXP027과 같은 12-group/full-split 조건에서 이 카드 파일만 바꾼 비교다.
+`legal_micro_v1`은 과거 raw-law-RAG 대조에서 만든 보조 artifact이며, 현재 후보가 아니다.
+법령 원문·별도 요약 bundle을 런타임에 넣지 않는 정책으로 전환했으므로, 이후의 법령
+해석 변경은 `v6`처럼 출처가 남은 정식 card 버전으로만 관리한다.

@@ -18,6 +18,33 @@
 - **변경 통제:** 기존 세팅의 일부만 바꾸는 실험은 `experiment.base_config`와 `allowed_policy_changes`를 config에 기록하고 `scripts/preflight_experiment.py`로 effective prompt·LLM·group execution policy의 차이를 확인한다. 선언하지 않은 차이가 있으면 유료 실행하지 않는다. prompt, output schema, merge, RAG, card를 한 실험에서 함께 바꾸지 않는다.
 - **재실행 안전성:** 실행 구조(v grouping, reference mode/navigation)는 runner CLI 관례가 아니라 `grouped_run` 등 versioned config에 기록한다. 결함이 확인된 실험은 `lifecycle: invalidated`로 보존하되 loader가 재실행을 거부하게 하고, 결과를 후보 비교·제출 근거로 쓰지 않는다.
 
+# 현재 법령·판단카드 정책
+
+- 모델 prompt에 법령 원문, 조문 발췌, 법령 요약 reference bundle을 별도 문서로 주입하지 않는다. 원문 RAG와 reference-only probe는 audit/과거 실험으로 보존하되 canonical 후보로 승격하지 않는다.
+- 대회 제공 법령·고시·예외는 사람이 source provenance와 함께 검토한 뒤, 각 v의 `decision_cards_v*.json`에 **압축적인 판단 기준**으로만 반영한다. 카드는 적용 전제, 1 조건, 0 조건, 주요 예외·수치·기간을 사람이 읽기 쉬운 문장으로 제공하되 notice-specific 사실이나 dev label을 넣지 않는다.
+- 모델은 법령 전문가로서 카드·공고 자료 원문·나라장터 metadata를 함께 읽고 자율적으로 판단한다. 카드가 제공하는 기준을 정확히 적용하지 않으면 정부계약 컴플라이언스 리스크와 피해가 생길 수 있음을 prompt에서 명확히 알린다. 다만 이 문구는 불확실한 사실을 자동으로 1로 단정하게 해서는 안 된다.
+- 제품의 경쟁제품 여부처럼 organizer CSV의 정확 코드 사실이 필요한 경우에는 기존 friendly product context만 사용한다. 법령 reference text로 대체하거나 제품 상태를 추정하지 않는다.
+
+## Canonical 모델 입력 형태
+
+모든 후보·제출 prompt는 아래 순서를 기본 형태로 쓴다. 이는 RAG가 아니다. 법령·고시·예외의 offline 검토 결과를 card에 압축해 둔 **카드 중심 판정 작업지시**다.
+
+```text
+1. 기본 역할·판정 원칙
+2. 출력 계약: v만 출력할지, v와 e를 함께 출력할지에 따른 정확한 형식·근거 규칙
+3. 이번 호출에서 판정할 v의 항목별 판단 카드
+4. 그 v 판단에 필요한 나라장터 metadata와 organizer CSV의 친화적 사실
+5. 이번 공고의 실제 문서 원문
+```
+
+- **기본 역할·판정 원칙:** 모델은 공공계약 법령 전문가다. 카드 기준을 공고 원문과 metadata에 정확히 적용하지 않으면 컴플라이언스 리스크와 피해가 생길 수 있음을 알리되, 불확실한 사실을 자동 1로 처리하라고 지시하지 않는다.
+- **출력 계약:** v-only는 0/1만, v+e는 1인 non-absence 항목에 공고 자료 원문의 변경 없는 evidence substring을 요구한다. evidence 규칙은 label 판단 기준을 바꾸지 않는다.
+- **판단 카드:** 각 v의 적용 전제, 1 조건, 0 조건, 주요 예외·수치·기간을 압축해 제공한다. 법령 원문과 별도 요약 reference는 넣지 않는다.
+- **판정 필요 metadata:** 전체 raw JSON을 기계적으로 던지지 않는다. 적용계약법, 업무구분, 계약·낙찰방법, 예산·추정가격, 지역·업종·공동계약, 날짜, 세부품명처럼 해당 v의 진리조건에 필요한 사실만 사람 친화적 문장 또는 소형 표로 제공한다. 코드·내부 status·구현 변수명은 prompt에 넣지 않는다.
+- **공고 원문:** 공고문과 첨부문서는 실제 제한·요구·불일치 및 evidence를 찾는 유일한 원문 근거다. 문서 순서·token admission·overflow 처리 정책은 shared pipeline이 관리한다.
+
+20,000건 비라벨 공고나 법령 RAG는 이 canonical prompt의 구성요소가 아니다. 이들은 향후 offline 사례 검토·card 작성 품질 점검 용도로만 검토할 수 있으며, 모델 context에 그대로 주입하지 않는다.
+
 # openrouter에서 사용할 모델
 openrouter gemma4 model (free)
 https://openrouter.ai/google/gemma-4-26b-a4b-it:free

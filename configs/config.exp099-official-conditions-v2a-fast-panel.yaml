@@ -1,0 +1,50 @@
+# EXP099: EXP098 with the official-condition reference reduced to v2a only.
+# The v2a artifact keeps only v5/v6/v7/v20/v21; all runtime, document,
+# output, card, product, merge, and decoding policy remains EXP098's.
+experiment:
+  id: exp-099-official-conditions-v2a-fast-panel
+  base_config: configs/config.exp098-official-conditions-v2-fast-panel.yaml
+  allowed_policy_changes: [prompt.reference_path]
+  derived_data: [official_conditions_v2a, dev_fast_panel_v1]
+data:
+  root: data/raw/open
+  input: dev.jsonl.gz
+  labels: dev_labels.csv
+  item_table: data/항목표.json
+  fast_panel_ids_path: configs/dev_fast_panel_v1.json
+output:
+  dir: outputs/exp-099-official-conditions-v2a-fast-panel
+prompt:
+  max_document_chars: 4000 # options: null, positive integer
+  context_strategy: single # options: single, single_no_split, split, full_split_merge
+  overflow_split_enabled: false # options: true, false
+  strict_document_evidence: false # options: true, false
+  absence_detection_strategy: per_pass_or # options: per_pass_or, per_pass_and
+  reference_path: data/derived/official_conditions_v2a.txt
+  decision_cards_path: null
+  competition_products_path: null
+  layout: markdown_v2 # options: plain, markdown, markdown_v2
+  max_model_len: 32768
+  output_reserve_tokens: 2500
+  notice_anchor_chars: 4000
+  mode: baseline # options: baseline, structured, guided
+  include_normalized_facts: false # options: true, false
+llm:
+  provider: openrouter
+  model: google/gemma-4-26b-a4b-it
+  api_key_env: OPENROUTER_API_KEY
+  api_url: https://openrouter.ai/api/v1/chat/completions
+  tokenizer_source: google/gemma-4-26b-a4b-it
+  temperature: 0.0
+  max_tokens: 2500
+  seed: 20260826
+  timeout_seconds: 180
+  request_retries: 3
+  prediction_attempts: 2
+  provider_sort: throughput
+  require_parameters: true
+  min_request_interval_seconds: 1.0
+run:
+  resume: true # options: true, false
+  concurrency: 4
+  local_limit: null

@@ -1,0 +1,51 @@
+# EXP107: EXP100 with professional-duty wording only.  Cards, documents,
+# evidence gate, merge, decoding, and provider policy are unchanged.
+experiment:
+  id: exp-107-card-v6-expert-duty-fast-panel
+  lifecycle: invalidated
+  invalidation_reason: "Executed with concurrency 20 rather than EXP100's 4; do not compare this output. EXP108 is the controlled replacement."
+  base_config: configs/config.exp100-card-v6-mdv1-fast-panel.yaml
+  allowed_policy_changes: [prompt.role_directive]
+  derived_data: [decision_cards_v6, competition_products_v1, dev_fast_panel_v1]
+data:
+  root: data/raw/open
+  input: dev.jsonl.gz
+  labels: dev_labels.csv
+  item_table: data/항목표.json
+  fast_panel_ids_path: configs/dev_fast_panel_v1.json
+output:
+  dir: outputs/exp-107-card-v6-expert-duty-fast-panel
+prompt:
+  max_document_chars: null
+  context_strategy: full_split_merge
+  overflow_split_enabled: true
+  strict_document_evidence: true
+  absence_detection_strategy: per_pass_and
+  decision_cards_path: data/derived/decision_cards_v6.json
+  competition_products_path: data/derived/competition_products_v1.json
+  layout: plain
+  role_directive: compliance_expert_v1 # options: standard, compliance_expert_v1
+  max_model_len: 32768
+  output_reserve_tokens: 2500
+  notice_anchor_chars: 4000
+  mode: baseline
+  include_normalized_facts: false
+llm:
+  provider: openrouter
+  model: google/gemma-4-26b-a4b-it
+  api_key_env: OPENROUTER_API_KEY
+  api_url: https://openrouter.ai/api/v1/chat/completions
+  tokenizer_source: google/gemma-4-26b-a4b-it
+  temperature: 0.0
+  max_tokens: 2500
+  seed: 20260826
+  timeout_seconds: 180
+  request_retries: 3
+  prediction_attempts: 2
+  provider_sort: throughput
+  require_parameters: true
+  min_request_interval_seconds: 1.0
+run:
+  resume: true
+  concurrency: 20
+  local_limit: null

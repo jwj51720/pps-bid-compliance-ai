@@ -1,0 +1,65 @@
+# EXP092: document-level full-split test.  Every source document is a distinct
+# call; an oversized source document alone is exact-token split.  Non-absence
+# judgments OR-merge with source-local evidence, absence judgments AND-merge,
+# and v8 retains its existing fallback cross-document conjunction.
+experiment:
+  id: exp-092-three-group-v4-fullsplit-fast20
+  base_config: configs/config.exp087-probe-v3-g2-absence-presence-v24.yaml
+  allowed_policy_changes: [prompt.competition_products_path, prompt.context_strategy, prompt.decision_cards_path, prompt.max_document_chars, prompt.strict_document_evidence, prompt.absence_detection_strategy, prompt.overflow_split_enabled, prompt.v8_composite_merge.enabled, grouped_run.group_context_overrides.G01_presence_items.absence_detection_strategy, grouped_run.group_context_overrides.G01_presence_items.context_strategy, grouped_run.group_context_overrides.G01_presence_items.max_document_chars, grouped_run.group_context_overrides.G01_presence_items.overflow_split_enabled, grouped_run.group_context_overrides.G02_absence_items.absence_detection_strategy, grouped_run.group_context_overrides.G02_absence_items.context_strategy, grouped_run.group_context_overrides.G02_absence_items.max_document_chars, grouped_run.group_context_overrides.G02_absence_items.overflow_split_enabled, grouped_run.group_context_overrides.G03_document_metadata_consistency.absence_detection_strategy, grouped_run.group_context_overrides.G03_document_metadata_consistency.context_strategy, grouped_run.group_context_overrides.G03_document_metadata_consistency.max_document_chars, grouped_run.group_context_overrides.G03_document_metadata_consistency.overflow_split_enabled, prompt.output_reserve_tokens, prompt.max_model_len, llm.max_tokens]
+  derived_data: [decision_cards_v4, competition_products_v1, dev_fast_panel_v1]
+data:
+  root: data/raw/open
+  input: dev.jsonl.gz
+  labels: dev_labels.csv
+  item_table: data/항목표.json
+  fast_panel_ids_path: configs/dev_fast_panel_v1.json
+output:
+  dir: outputs/exp-092-three-group-v4-fullsplit-fast20
+prompt:
+  max_document_chars: null # options: null, positive integer
+  context_strategy: full_split_merge # options: single, single_no_split, split, full_split_merge
+  overflow_split_enabled: true # options: true, false
+  strict_document_evidence: true # options: true, false
+  absence_detection_strategy: per_pass_and # options: per_pass_or, per_pass_and
+  decision_cards_path: data/derived/decision_cards_v4.json
+  competition_products_path: data/derived/competition_products_v1.json
+  profile: default # options: default, official_baseline_v1
+  item_catalog_style: minimal # options: minimal, official_references
+  metadata_style: full_json # options: full_json, official_lines
+  layout: markdown_v2 # options: plain, markdown, markdown_v2
+  output_mode: labels_and_evidence # options: labels_and_evidence, labels_only, labels_and_anchor, labels_and_sparse_evidence
+  max_model_len: 16384
+  output_reserve_tokens: 1536
+  notice_anchor_chars: 4000
+  mode: baseline # options: baseline, structured, guided
+  include_normalized_facts: false # options: true, false
+v8_composite_merge:
+  enabled: true # options: false, true
+  mode: fallback_or # options: fallback_or, strict_conjunction
+llm:
+  provider: openrouter
+  model: google/gemma-4-26b-a4b-it
+  api_key_env: OPENROUTER_API_KEY
+  api_url: https://openrouter.ai/api/v1/chat/completions
+  tokenizer_source: google/gemma-4-26b-a4b-it
+  temperature: 0.0
+  max_tokens: 1536
+  seed: 20260826
+  timeout_seconds: 180
+  request_retries: 3
+  prediction_attempts: 2
+  provider_sort: throughput
+  require_parameters: true
+  min_request_interval_seconds: 1.0
+run:
+  resume: true # options: true, false
+  concurrency: 4
+  local_limit: null
+grouped_run:
+  grouping: absence_presence_consistency_v1
+  reference_mode: none
+  reference_navigation: none
+  group_context_overrides:
+    G01_presence_items: {max_document_chars: null, context_strategy: full_split_merge, overflow_split_enabled: true, absence_detection_strategy: per_pass_or}
+    G02_absence_items: {max_document_chars: null, context_strategy: full_split_merge, overflow_split_enabled: true, absence_detection_strategy: per_pass_and}
+    G03_document_metadata_consistency: {max_document_chars: null, context_strategy: full_split_merge, overflow_split_enabled: true, absence_detection_strategy: per_pass_or}

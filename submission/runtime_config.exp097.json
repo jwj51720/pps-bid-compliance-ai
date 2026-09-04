@@ -1,0 +1,27 @@
+{
+  "prompt": {
+    "max_document_chars": null,
+    "context_strategy": "full_split_merge",
+    "overflow_split_enabled": true,
+    "strict_document_evidence": false,
+    "output_mode": "labels_only",
+    "profile": "default",
+    "absence_detection_strategy": "per_pass_and",
+    "decision_cards_file": "decision_cards_v5.json",
+    "competition_products_file": "competition_products_v1.json",
+    "max_model_len": 16384,
+    "output_reserve_tokens": 2500,
+    "notice_anchor_chars": 4000,
+    "mode": "baseline",
+    "include_normalized_facts": false
+  },
+  "runtime": {
+    "seed": 20260826,
+    "grouping": "absence_presence_consistency_v1",
+    "batch_size": 64,
+    "batch_retries": 2,
+    "gpu_memory_utilization": 0.92,
+    "quantization_env": "PPS_QUANT",
+    "default_quantization": "int8_per_channel_weight_only"
+  }
+}
