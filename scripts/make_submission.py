@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the canonical EXP-014 full-split DACON submission archive."""
+"""Build the canonical policy's DACON submission archive."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-STAGING = ROOT / "submission/build/final_exp014_full_split_cards_v2_products"
+STAGING = ROOT / "submission/build/final_exp109_official_baseline_v1"
 DIST_DIR = ROOT / "dist"
 
 
@@ -43,6 +43,8 @@ def verify_runtime_policy() -> tuple[dict, dict]:
         "max_model_len",
         "output_reserve_tokens",
         "notice_anchor_chars",
+        "profile",
+        "output_mode",
         "mode",
         "include_normalized_facts",
     )

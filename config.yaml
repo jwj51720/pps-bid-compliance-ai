@@ -1,8 +1,8 @@
-# Canonical final policy. Submission/runtime values must match
-# submission/runtime_config.json; historical experiment settings live in configs/.
+# Canonical final policy: EXP109 organizer-baseline reproduction. Submission
+# runtime values must match this file; historical experiments live in configs/.
 experiment:
-  id: final-exp014-full-split-cards-v2-products
-  derived_data: [decision_cards_v2, competition_products_v1]
+  id: final-exp109-official-baseline-v1
+  derived_data: []
 
 data:
   root: data/raw/open
@@ -12,19 +12,20 @@ data:
   fast_panel_ids_path: configs/dev_fast_panel_v1.json # default local fast gate; submission does not read this field
 
 output:
-  dir: outputs/final-exp014-full-split-cards-v2-products
+  dir: outputs/final-exp109-official-baseline-v1
 
 prompt:
-  max_document_chars: null
-  context_strategy: full_split_merge # options: single, split, full_split_merge
-  overflow_split_enabled: true # options: true, false
-  strict_document_evidence: true # options: true, false; full_split_merge only
+  max_document_chars: 4000
+  context_strategy: single # options: single, split, full_split_merge
+  overflow_split_enabled: false # options: true, false
+  strict_document_evidence: false # options: true, false; full_split_merge only
+  profile: official_baseline_v1 # options: default, official_baseline_v1
   output_mode: labels_and_evidence # options: labels_and_evidence, labels_only, labels_and_anchor, labels_and_sparse_evidence
-  absence_detection_strategy: per_pass_and # options: per_pass_or, per_pass_and; full_split_merge only
-  decision_cards_path: data/derived/decision_cards_v2.json # options: null, data/derived/decision_cards_v1.json, data/derived/decision_cards_v2.json
-  competition_products_path: data/derived/competition_products_v1.json # options: null, data/derived/competition_products_v1.json
-  max_model_len: 32768
-  output_reserve_tokens: 2500
+  absence_detection_strategy: per_pass_or # options: per_pass_or, per_pass_and; full_split_merge only
+  decision_cards_path: null # options: null, data/derived/decision_cards_v1.json, data/derived/decision_cards_v2.json
+  competition_products_path: null # options: null, data/derived/competition_products_v1.json
+  max_model_len: 16384
+  output_reserve_tokens: 1536
   notice_anchor_chars: 4000
   mode: baseline # options: baseline, structured, guided
   include_normalized_facts: false # options: true, false
@@ -35,7 +36,7 @@ llm:
   api_key_env: OPENROUTER_API_KEY
   api_url: https://openrouter.ai/api/v1/chat/completions
   temperature: 0.0
-  max_tokens: 2500
+  max_tokens: 1536
   seed: 20260826
   timeout_seconds: 180
   request_retries: 3
