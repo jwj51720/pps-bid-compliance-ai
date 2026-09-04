@@ -125,7 +125,8 @@ def pack_contexts_to_token_budget(
     prompt_budget_tokens: int,
     notice_anchor_chars: int = 4000,
     competition_product_context: str | None = None,
-) -> list[str]:
+    message_builder: Callable[[str | None], list[dict[str, str]]] | None = None,
+) -> list[str | None]:
     """Return one full context or ordered, token-admitted split contexts.
 
     Every returned context is counted with the same final system/user messages.
@@ -133,13 +134,24 @@ def pack_contexts_to_token_budget(
     token counting finds the largest prefix that fits; characters are never used
     as the admission criterion.
     """
-    full_messages = build_messages(
-        record,
-        system_prompt,
-        None,
-        competition_product_context=competition_product_context,
-    )
+    def messages_for(context: str | None) -> list[dict[str, str]]:
+        if message_builder is not None:
+            return message_builder(context)
+        return build_messages(
+            record,
+            system_prompt,
+            None,
+            document_context=context,
+            competition_product_context=competition_product_context,
+        )
+
+    full_messages = messages_for(None)
     if count_tokens(full_messages) <= prompt_budget_tokens:
+        # ``None`` preserves the pipeline's normal full-document construction
+        # when the caller supplied the actual final message builder.  Retain
+        # the historic rendered-string return for standalone callers.
+        if message_builder is not None:
+            return [None]
         return [
             build_messages(
                 record,
@@ -171,15 +183,7 @@ def pack_contexts_to_token_budget(
         return "\n\n".join(value for value in (prefix, body) if value) + unavailable_text
 
     def fits(parts: list[str]) -> bool:
-        return count_tokens(
-            build_messages(
-                record,
-                system_prompt,
-                None,
-                document_context=render(parts),
-                competition_product_context=competition_product_context,
-            )
-        ) <= prompt_budget_tokens
+        return count_tokens(messages_for(render(parts))) <= prompt_budget_tokens
 
     # Ensure even an unusually long announcement anchor cannot block progress.
     if not fits([]):
@@ -245,6 +249,7 @@ def pack_document_contexts_to_token_budget(
     prompt_budget_tokens: int,
     notice_anchor_chars: int = 4000,
     competition_product_context: str | None = None,
+    message_builder: Callable[[str], list[dict[str, str]]] | None = None,
 ) -> list[DocumentContext]:
     """Make a pass per source document, splitting only an oversized document.
 
@@ -278,15 +283,19 @@ def pack_document_contexts_to_token_budget(
         return "\n\n".join(value for value in (prefix, target) if value) + unavailable_text
 
     def fits(target: str, include_anchor: bool) -> bool:
-        return count_tokens(
-            build_messages(
+        context = render(target, include_anchor)
+        messages = (
+            message_builder(context)
+            if message_builder is not None
+            else build_messages(
                 record,
                 system_prompt,
                 None,
-                document_context=render(target, include_anchor),
+                document_context=context,
                 competition_product_context=competition_product_context,
             )
-        ) <= prompt_budget_tokens
+        )
+        return count_tokens(messages) <= prompt_budget_tokens
 
     # Metadata, system prompt, and the fixed reference are mandatory context;
     # do not silently drop them to make document splitting appear successful.

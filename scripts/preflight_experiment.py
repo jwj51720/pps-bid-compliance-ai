@@ -25,6 +25,7 @@ def _policy(config: ExperimentConfig) -> dict[str, Any]:
     return {
         "prompt": {
             "max_document_chars": config.max_document_chars,
+            "visible_document_types": list(config.visible_document_types) if config.visible_document_types else None,
             "context_strategy": config.context_strategy,
             "overflow_split_enabled": config.overflow_split_enabled,
             "strict_document_evidence": config.strict_document_evidence,
@@ -46,6 +47,10 @@ def _policy(config: ExperimentConfig) -> dict[str, Any]:
             "candidate_detection": config.candidate_detection,
             "active_items": list(config.active_items),
             "layout": config.prompt_layout,
+            "profile": config.prompt_profile,
+            "role_directive": config.role_directive,
+            "item_catalog_style": config.item_catalog_style,
+            "metadata_style": config.metadata_style,
             "output_mode": config.output_mode,
         },
         "llm": {
@@ -64,6 +69,13 @@ def _policy(config: ExperimentConfig) -> dict[str, Any]:
             "tokenizer_source": config.llm.tokenizer_source or config.llm.model,
         },
         "grouped_run": config.raw.get("grouped_run", {}),
+        # Remote scheduling can affect provider routing, timeout behavior, and
+        # reproducibility.  Treat it as controlled in paid ablations too.
+        "run": {
+            "concurrency": config.concurrency,
+            "resume": config.resume,
+            "local_limit": config.local_limit,
+        },
     }
 
 

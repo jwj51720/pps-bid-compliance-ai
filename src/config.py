@@ -46,6 +46,7 @@ class ExperimentConfig:
     data: DataConfig
     output_dir: Path
     max_document_chars: int | None
+    visible_document_types: tuple[str, ...] | None
     context_strategy: str
     overflow_split_enabled: bool
     strict_document_evidence: bool
@@ -65,6 +66,10 @@ class ExperimentConfig:
     candidate_detection: bool
     active_items: tuple[str, ...]
     prompt_layout: str
+    prompt_profile: str
+    role_directive: str
+    item_catalog_style: str
+    metadata_style: str
     output_mode: str
     llm: LLMConfig
     resume: bool
@@ -122,6 +127,11 @@ def load_config(path: str | Path) -> ExperimentConfig:
             if prompt.get("max_document_chars") is not None
             else None
         ),
+        visible_document_types=(
+            tuple(str(value) for value in prompt["visible_document_types"])
+            if prompt.get("visible_document_types") is not None
+            else None
+        ),
         context_strategy=str(prompt.get("context_strategy", "single")),
         overflow_split_enabled=bool(prompt.get("overflow_split_enabled", True)),
         strict_document_evidence=bool(prompt.get("strict_document_evidence", False)),
@@ -150,6 +160,10 @@ def load_config(path: str | Path) -> ExperimentConfig:
         candidate_detection=bool(prompt.get("candidate_detection", False)),
         active_items=tuple(str(item) for item in prompt.get("active_items", (f"v{i}" for i in range(1, 25)))),
         prompt_layout=str(prompt.get("layout", "plain")),
+        prompt_profile=str(prompt.get("profile", "default")),
+        role_directive=str(prompt.get("role_directive", "standard")),
+        item_catalog_style=str(prompt.get("item_catalog_style", "minimal")),
+        metadata_style=str(prompt.get("metadata_style", "full_json")),
         output_mode=str(prompt.get("output_mode", "labels_and_evidence")),
         llm=LLMConfig(
             provider=str(llm["provider"]),
@@ -178,12 +192,30 @@ def load_config(path: str | Path) -> ExperimentConfig:
         raise ValueError(f"unsupported local provider: {config.llm.provider}")
     if config.max_document_chars is not None and config.max_document_chars < 1:
         raise ValueError("prompt.max_document_chars must be positive")
+    if config.visible_document_types is not None:
+        allowed_document_types = {"공고문", "규격서", "과업지시서", "제안요청서", "예외공표서", "기타"}
+        if not config.visible_document_types:
+            raise ValueError("prompt.visible_document_types must not be empty")
+        if "공고문" not in config.visible_document_types:
+            raise ValueError("prompt.visible_document_types must include 공고문")
+        if len(config.visible_document_types) != len(set(config.visible_document_types)):
+            raise ValueError("prompt.visible_document_types must not contain duplicates")
+        if any(value not in allowed_document_types for value in config.visible_document_types):
+            raise ValueError("prompt.visible_document_types contains an unsupported type")
     if config.data.fast_panel_ids_path and not config.data.fast_panel_ids_path.is_file():
         raise ValueError("data.fast_panel_ids_path must point to an existing file")
     if config.prompt_mode not in {"baseline", "structured", "guided"}:
         raise ValueError("prompt.mode must be baseline, structured, or guided")
     if config.prompt_layout not in {"plain", "markdown", "markdown_v2"}:
         raise ValueError("prompt.layout must be plain, markdown, or markdown_v2")
+    if config.prompt_profile not in {"default", "official_baseline_v1"}:
+        raise ValueError("prompt.profile must be default or official_baseline_v1")
+    if config.role_directive not in {"standard", "compliance_expert_v1"}:
+        raise ValueError("prompt.role_directive must be standard or compliance_expert_v1")
+    if config.item_catalog_style not in {"minimal", "official_references"}:
+        raise ValueError("prompt.item_catalog_style must be minimal or official_references")
+    if config.metadata_style not in {"full_json", "official_lines"}:
+        raise ValueError("prompt.metadata_style must be full_json or official_lines")
     if config.output_mode not in {"labels_and_evidence", "labels_only", "labels_and_anchor", "labels_and_sparse_evidence"}:
         raise ValueError("invalid prompt.output_mode")
     if config.output_mode == "labels_only" and config.strict_document_evidence:
@@ -195,8 +227,8 @@ def load_config(path: str | Path) -> ExperimentConfig:
         raise ValueError("prompt.active_items must be a non-empty subset of v1..v24")
     if len(config.active_items) != len(set(config.active_items)):
         raise ValueError("prompt.active_items must not contain duplicates")
-    if config.context_strategy not in {"single", "split", "full_split_merge"}:
-        raise ValueError("prompt.context_strategy must be single, split, or full_split_merge")
+    if config.context_strategy not in {"single", "single_no_split", "split", "full_split_merge"}:
+        raise ValueError("prompt.context_strategy must be single, single_no_split, split, or full_split_merge")
     if config.context_strategy == "split" and config.max_document_chars is None:
         raise ValueError("split context strategy requires prompt.max_document_chars")
     if config.context_strategy == "full_split_merge" and config.max_document_chars is not None:

@@ -50,6 +50,10 @@ class PredictionError(RuntimeError):
         self.raw_response = raw_response
 
 
+class ContextAdmissionError(RuntimeError):
+    """A diagnostic full-context request cannot fit the exact token budget."""
+
+
 def zero_judgment(items: tuple[str, ...] = ITEMS) -> dict[str, dict[str, Any]]:
     """Return a submission-safe judgment for a single unusable model pass."""
     return {
@@ -80,7 +84,12 @@ def extract_json(text: str) -> Any:
         try:
             return json.loads(candidate)
         except json.JSONDecodeError:
-            pass
+            repaired = _close_complete_json_object(candidate)
+            if repaired is not None:
+                try:
+                    return json.loads(repaired)
+                except json.JSONDecodeError:
+                    pass
     start, end = text.find("{"), text.rfind("}")
     if start >= 0 and end > start:
         try:
@@ -88,6 +97,45 @@ def extract_json(text: str) -> Any:
         except json.JSONDecodeError:
             pass
     raise PredictionError("model response is not valid JSON")
+
+
+def _close_complete_json_object(candidate: str) -> str | None:
+    """Repair only a missing outer-object closure after otherwise valid JSON.
+
+    Some constrained Gemma responses emit every requested field, close the
+    final field object, then fill the remaining generation budget with
+    whitespace without writing the one final root ``}``.  This function never
+    edits a token, inserts a comma, or recovers a partial value: it appends
+    closing braces only when a JSON-aware scan finds unmatched opening braces
+    and the last non-whitespace token already closes an object or array.
+    ``json.loads`` remains the final authority.
+    """
+    stripped = candidate.strip()
+    if not stripped.startswith("{") or not stripped.endswith(("}", "]")):
+        return None
+    depth = 0
+    in_string = False
+    escaped = False
+    for char in stripped:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth < 0:
+                return None
+    if in_string or depth <= 0:
+        return None
+    return stripped + ("}" * depth)
 
 
 def _parse_judgment_payload(
@@ -322,7 +370,12 @@ class BaselinePipeline:
         candidate_detection: bool = False,
         active_items: tuple[str, ...] = ITEMS,
         prompt_layout: str = "plain",
+        prompt_profile: str = "default",
+        role_directive: str = "standard",
+        item_catalog_style: str = "minimal",
+        metadata_style: str = "full_json",
         output_mode: str = "labels_and_evidence",
+        visible_document_types: tuple[str, ...] | None = None,
     ) -> None:
         self.client = client
         self.max_document_chars = max_document_chars
@@ -339,6 +392,11 @@ class BaselinePipeline:
         self.v8_composite_merge_enabled = v8_composite_merge_enabled
         self.v8_composite_merge_mode = v8_composite_merge_mode
         self.prompt_layout = prompt_layout
+        self.prompt_profile = prompt_profile
+        self.role_directive = role_directive
+        self.item_catalog_style = item_catalog_style
+        self.metadata_style = metadata_style
+        self.visible_document_types = visible_document_types
         if output_mode not in {"labels_and_evidence", "labels_only", "labels_and_anchor", "labels_and_sparse_evidence"}:
             raise ValueError("output_mode must be labels_and_evidence, labels_only, or labels_and_anchor")
         if output_mode == "labels_only" and strict_document_evidence:
@@ -354,8 +412,14 @@ class BaselinePipeline:
         if len(active_items) != len(set(active_items)):
             raise ValueError("active_items must not contain duplicates")
         self.active_items = active_items
+        self.task_profile = (
+            "absence" if set(active_items) == set(ABSENCE_ITEMS)
+            else "v24_consistency" if active_items == ("v24",)
+            else "general"
+        )
         if self.v8_composite_merge_enabled and "v8" not in active_items:
             self.v8_composite_merge_enabled = False
+        v8_composite_enabled = self.v8_composite_merge_enabled
         if self.v8_composite_merge_mode not in {"fallback_or", "strict_conjunction"}:
             raise ValueError("v8_composite_merge_mode must be fallback_or or strict_conjunction")
         self.system_prompt = build_system_prompt(
@@ -365,10 +429,13 @@ class BaselinePipeline:
             reference_navigation=reference_navigation,
             document_scoped=(strict_document_evidence or output_mode == "labels_only"),
             decision_cards=decision_cards,
-            v8_composite_enabled=v8_composite_merge_enabled,
+            v8_composite_enabled=v8_composite_enabled,
             candidate_detection=candidate_detection,
             active_items=active_items,
             layout=prompt_layout,
+            profile=prompt_profile,
+            role_directive=role_directive,
+            item_catalog_style=item_catalog_style,
             output_mode=self.output_mode,
         )
         self._prompt_options = {
@@ -376,10 +443,13 @@ class BaselinePipeline:
             "mode": prompt_mode,
             "document_scoped": (strict_document_evidence or output_mode == "labels_only"),
             "decision_cards": decision_cards,
-            "v8_composite_enabled": v8_composite_merge_enabled,
+            "v8_composite_enabled": v8_composite_enabled,
             "candidate_detection": candidate_detection,
             "active_items": active_items,
             "layout": prompt_layout,
+            "profile": prompt_profile,
+            "role_directive": role_directive,
+            "item_catalog_style": item_catalog_style,
             "output_mode": self.output_mode,
         }
         self._routed_system_prompts: dict[str, str] = {}
@@ -412,6 +482,7 @@ class BaselinePipeline:
     def contexts_for_record(
         self, record: dict[str, Any]
     ) -> list[str | DocumentContext | None]:
+        record = self._visible_record(record)
         competition_context = self.competition_product_context_for_record(record)
         system_prompt = self.system_prompt_for_record(record)
         if self.context_strategy == "full_split_merge":
@@ -424,8 +495,20 @@ class BaselinePipeline:
                 self.prompt_budget_tokens,
                 self.notice_anchor_chars,
                 competition_product_context=competition_context,
+                message_builder=lambda context: self.messages_for_context(record, context),
             )
             return contexts
+        if self.context_strategy == "single_no_split":
+            if self.count_tokens is None:
+                raise ValueError("single_no_split requires an exact tokenizer token counter")
+            messages = self.messages_for_context(record, None)
+            token_count = self.count_tokens(messages)
+            if token_count > self.prompt_budget_tokens:
+                raise ContextAdmissionError(
+                    f"{record['id']} requires {token_count} prompt tokens; "
+                    f"budget is {self.prompt_budget_tokens}"
+                )
+            return [None]
         forced_contexts: list[str | None] = (
             build_split_document_contexts(
                 record, self.max_document_chars or 0, self.notice_anchor_chars
@@ -447,12 +530,14 @@ class BaselinePipeline:
                 self.prompt_budget_tokens,
                 self.notice_anchor_chars,
                 competition_product_context=competition_context,
+                message_builder=lambda context: self.messages_for_context(record, context),
             )
         return forced_contexts
 
     def messages_for_context(
         self, record: dict[str, Any], context: str | DocumentContext | None
     ) -> list[dict[str, str]]:
+        record = self._visible_record(record)
         return build_messages(
             record, self.system_prompt_for_record(record), self.max_document_chars,
             include_normalized_facts=self.include_normalized_facts,
@@ -460,8 +545,23 @@ class BaselinePipeline:
             competition_product_context=self.competition_product_context_for_record(record),
             v24_comparison_context=(format_v24_comparison_context(record) if "v24" in self.active_items else None),
             markdown_sections=self.prompt_layout in {"markdown", "markdown_v2"},
+            prompt_profile=self.prompt_profile,
+            metadata_style=self.metadata_style,
             output_mode=self.prompt_output_mode,
+            task_profile=self.task_profile,
         )
+
+    def _visible_record(self, record: dict[str, Any]) -> dict[str, Any]:
+        """Return the config-selected source documents without mutating input data."""
+        if self.visible_document_types is None:
+            return record
+        return {
+            **record,
+            "docs": [
+                document for document in record["docs"]
+                if document["type"] in self.visible_document_types
+            ],
+        }
 
     def competition_product_context_for_record(self, record: dict[str, Any]) -> str | None:
         if self.competition_products is None:

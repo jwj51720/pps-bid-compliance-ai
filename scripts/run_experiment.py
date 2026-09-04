@@ -36,7 +36,13 @@ from src.evaluate import evaluate_submission, write_rows
 from src.external.openrouter import MockClient, OpenRouterClient
 from src.external.openai import OpenAIClient
 from src.law_bundles import MetadataLawBundleRouter
-from src.pipeline import BaselinePipeline, Prediction, PredictionError, judgment_to_row
+from src.pipeline import (
+    BaselinePipeline,
+    ContextAdmissionError,
+    Prediction,
+    PredictionError,
+    judgment_to_row,
+)
 from src.submission import validate_submission, write_submission
 
 
@@ -197,8 +203,8 @@ def _make_client(config: ExperimentConfig, mock: bool):
     )
 
 
-def _make_token_counter(config: ExperimentConfig, mock: bool):
-    if (
+def _make_token_counter(config: ExperimentConfig, mock: bool, *, force: bool = False):
+    if not force and (
         config.max_document_chars is not None
         or config.context_strategy == "split"
         or (
@@ -366,8 +372,37 @@ def main() -> int:
         candidate_detection=config.candidate_detection,
         active_items=config.active_items,
         prompt_layout=config.prompt_layout,
+        prompt_profile=config.prompt_profile,
+        role_directive=config.role_directive,
+        item_catalog_style=config.item_catalog_style,
+        metadata_style=config.metadata_style,
         output_mode=config.output_mode,
+        visible_document_types=config.visible_document_types,
     )
+    excluded_admissions: list[dict[str, str]] = []
+    if config.context_strategy == "single_no_split":
+        admitted_records: list[dict[str, Any]] = []
+        for record in records:
+            try:
+                pipeline.contexts_for_record(record)
+            except ContextAdmissionError as exc:
+                excluded_admissions.append({"id": record["id"], "reason": str(exc)})
+            else:
+                admitted_records.append(record)
+        records = admitted_records
+        (output_dir / "admission.json").write_text(
+            json.dumps(
+                {
+                    "strategy": "single_no_split",
+                    "admitted_ids": [record["id"] for record in records],
+                    "excluded": excluded_admissions,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
     shutil.copy2(config.path, output_dir / "config.yaml")
     if config.reference_path:
         shutil.copy2(config.reference_path, output_dir / "reference_context.txt")

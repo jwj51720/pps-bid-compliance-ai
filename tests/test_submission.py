@@ -112,3 +112,30 @@ def test_submission_mock_client_has_a_full_split_admission_counter() -> None:
     spec.loader.exec_module(module)
 
     assert module.MockClient().count_tokens([{"content": "가나다"}]) == 3
+
+
+def test_submission_group_json_retry_uses_the_group_item_subset() -> None:
+    script_path = Path(__file__).resolve().parents[1] / "submission" / "script.py"
+    spec = importlib.util.spec_from_file_location("submission_script_group_subset", script_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    content = json.dumps({"v10": {"위반여부": 0, "근거문구": None}}, ensure_ascii=False)
+
+    class Client:
+        calls = 0
+
+        def complete_batch(self, batch, response_schema):
+            del response_schema
+            self.calls += 1
+            return [module.Completion(content, "test", 0.0, {}) for _ in batch]
+
+    client = Client()
+    outputs, retries = module._complete_group_with_json_retries(
+        client, [[{"role": "user", "content": "공고"}]], {}, batch_retries=0, items=("v10",)
+    )
+    assert retries == 0
+    assert client.calls == 1
+    assert outputs[0].content == content

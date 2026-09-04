@@ -53,6 +53,29 @@ THREE_WAY_ITEM_GROUPS = (
     ),
 )
 
+# A deliberately small execution ablation: absence detection has the opposite
+# truth condition from the other items, so it receives its own model call.
+# This is not a legal-reference grouping and does not alter any final labels.
+ABSENCE_PRESENCE_ITEM_GROUPS = (
+    LegalItemGroup(
+        "G01_presence_items",
+        ("v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9", "v12", "v13", "v14", "v15", "v17", "v19", "v21", "v22", "v23", "v24"),
+    ),
+    LegalItemGroup("G02_absence_items", ("v10", "v11", "v16", "v18", "v20")),
+)
+
+# v24 is a document-to-metadata consistency task, rather than either a
+# document-presence or an absence-detection task. This three-way variant tests
+# the cost of giving that comparison task a dedicated response.
+ABSENCE_PRESENCE_CONSISTENCY_ITEM_GROUPS = (
+    LegalItemGroup(
+        "G01_presence_items",
+        ("v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9", "v12", "v13", "v14", "v15", "v17", "v19", "v21", "v22", "v23"),
+    ),
+    LegalItemGroup("G02_absence_items", ("v10", "v11", "v16", "v18", "v20")),
+    LegalItemGroup("G03_document_metadata_consistency", ("v24",)),
+)
+
 
 def groups_for_scheme(scheme: str) -> tuple[LegalItemGroup, ...]:
     """Return a fixed, auditable item partition for a grouped-call ablation."""
@@ -60,6 +83,8 @@ def groups_for_scheme(scheme: str) -> tuple[LegalItemGroup, ...]:
         "law_overlap_12": LEGAL_ITEM_GROUPS,
         "four_way": FOUR_WAY_ITEM_GROUPS,
         "three_way": THREE_WAY_ITEM_GROUPS,
+        "absence_presence_v1": ABSENCE_PRESENCE_ITEM_GROUPS,
+        "absence_presence_consistency_v1": ABSENCE_PRESENCE_CONSISTENCY_ITEM_GROUPS,
     }
     try:
         groups = groups_by_scheme[scheme]

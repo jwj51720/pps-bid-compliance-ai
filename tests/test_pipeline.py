@@ -8,6 +8,7 @@ import pytest
 from src.context_budget import DocumentContext
 from src.pipeline import (
     BaselinePipeline,
+    ContextAdmissionError,
     PredictionError,
     _combine_pass_judgments,
     _merge_notice_judgments,
@@ -19,8 +20,10 @@ from src.pipeline import (
 from src.prompt import (
     build_document_context,
     build_messages,
+    build_official_baseline_context,
     build_split_document_contexts,
     build_system_prompt,
+    format_official_baseline_meta,
     format_competition_product_context,
     format_v24_comparison_context,
     normalize_notice_facts,
@@ -48,6 +51,17 @@ def _judgment() -> dict:
 def test_parse_judgment_requires_every_item() -> None:
     with pytest.raises(PredictionError, match="missing items"):
         parse_judgment('{"v1": {"위반여부": 0, "근거문구": null}}')
+
+
+def test_parse_judgment_recovers_only_missing_outer_closure() -> None:
+    items = ("v1", "v2")
+    payload = {item: {"위반여부": 0, "근거문구": None} for item in items}
+    complete = json.dumps(payload, ensure_ascii=False)
+    truncated_outer_closure = complete[:-1] + "   \n\t"
+    assert parse_judgment(truncated_outer_closure, items) == payload
+
+    with pytest.raises(PredictionError):
+        parse_judgment(complete[:-10], items)
 
 
 def test_group_schema_and_parser_require_only_requested_items() -> None:
@@ -101,6 +115,128 @@ def test_evidence_mode_keeps_plain_card_source_instruction() -> None:
     cards = {"v1": {"item_name": "항목 1", "prompt_text": "1 조건: A. 0 조건: B."}}
     prompt = build_system_prompt(item_table, decision_cards=cards, active_items=("v1",))
     assert "근거문구는 언제나 공고/첨부문서 원문에서만 인용한다." in prompt
+
+
+def test_compliance_expert_role_directive_reinforces_cards_without_new_facts() -> None:
+    item_table = {"v1": {"항목명": "항목 1", "비고": ""}}
+    cards = {"v1": {"item_name": "항목 1", "prompt_text": "1 조건: A. 0 조건: B."}}
+    prompt = build_system_prompt(
+        item_table,
+        decision_cards=cards,
+        active_items=("v1",),
+        role_directive="compliance_expert_v1",
+    )
+    assert "공공계약 법령 컴플라이언스 사전심사" in prompt
+    assert "적용 전제, 1 조건, 0 조건" in prompt
+    assert "공고 밖 사실이나" in prompt
+    assert "제공되지 않은 법령 내용을 보충하지 않는다" in prompt
+
+
+def test_absence_only_group_has_its_own_workflow_and_never_requests_evidence() -> None:
+    item_table = {
+        item: {"항목명": item, "부재탐지": item in {"v10", "v11", "v16", "v18", "v20"}, "비고": ""}
+        for item in ITEMS
+    }
+    items = ("v10", "v11", "v16", "v18", "v20")
+    prompt = build_system_prompt(item_table, active_items=items, layout="markdown_v2")
+    message = build_messages(
+        _record(), prompt, None, document_context="[공고문:D0]\\n본문", markdown_sections=True,
+        task_profile="absence",
+    )[1]["content"]
+    assert "# 부재 항목 판정 순서" in prompt
+    assert "근거문구는 항상 null" in prompt
+    assert "1이면 공고 자료 원문의 근거문구" not in message
+    assert "부재 항목은 1이어도 근거문구를 null" in message
+
+
+def test_v24_only_group_has_field_by_field_comparison_workflow() -> None:
+    item_table = {"v24": {"항목명": "상이", "부재탐지": False, "비고": ""}}
+    prompt = build_system_prompt(item_table, active_items=("v24",), layout="markdown_v2")
+    assert "# v24 대조 순서" in prompt
+    assert "같은 의미 필드와 한 쌍씩 비교" in prompt
+
+
+def test_official_baseline_profile_has_its_exact_context_and_message_contract() -> None:
+    record = _record("A" * 50)
+    record["docs"].append({"doc_id": "D1", "type": "규격서", "text": "규격"})
+    record["meta"] = {"적용계약법": "국가계약법", "배정예산금액": None}
+    context = build_official_baseline_context(record, 40)
+    assert context.startswith("[공고문:D0]\n" + "A" * 31)
+    assert "[절단] 공고문 뒷부분이 길이 예산으로 잘렸다" in context
+    assert "[미수록 문서] 규격서 1건" in context
+    assert format_official_baseline_meta(record) == "- 적용계약법: 국가계약법\n- 배정예산금액: 미기재"
+    item_table = {item: {"항목명": item, "부재탐지": item == "v10", "비고": ""} for item in ITEMS}
+    system = build_system_prompt(item_table, profile="official_baseline_v1")
+    messages = build_messages(record, system, 40, prompt_profile="official_baseline_v1")
+    assert "[공고 ID] test-id" in messages[1]["content"]
+    assert "판정할 24개 항목" in system
+    assert "v10: v10  [근거 없음 — null]" in system
+
+
+def test_official_baseline_profile_supports_labels_only_without_evidence_contract() -> None:
+    item_table = {item: {"항목명": item, "부재탐지": item == "v10", "비고": ""} for item in ITEMS}
+    prompt = build_system_prompt(
+        item_table, profile="official_baseline_v1", output_mode="labels_only"
+    )
+    message = build_messages(
+        _record(), prompt, 4000, prompt_profile="official_baseline_v1", output_mode="labels_only"
+    )[1]["content"]
+    assert "근거 문구" not in prompt
+    assert "[근거 없음]" in prompt
+    assert "근거문구" not in message
+
+
+def test_official_profile_renders_product_context_and_full_context_when_requested() -> None:
+    item_table = {
+        item: {"항목명": item, "부재탐지": False, "국가계약법": "", "지방계약법": "", "비고": ""}
+        for item in ITEMS
+    }
+    prompt = build_system_prompt(item_table, profile="official_baseline_v1", layout="markdown_v2")
+    record = _record("첫 문서")
+    record["docs"].append({"doc_id": "D1", "type": "규격서", "text": "둘째 문서"})
+    messages = build_messages(
+        record,
+        prompt,
+        None,
+        competition_product_context="대회 제공 고시의 확인 결과입니다.",
+        prompt_profile="official_baseline_v1",
+    )
+    assert "# 대회 제공 경쟁제품 고시 확인" in messages[1]["content"]
+    assert "대회 제공 고시의 확인 결과입니다." in messages[1]["content"]
+    assert "둘째 문서" in messages[1]["content"]
+
+
+def test_single_no_split_rejects_over_budget_full_context() -> None:
+    item_table = {
+        item: {"항목명": item, "부재탐지": False, "국가계약법": "", "지방계약법": "", "비고": ""}
+        for item in ITEMS
+    }
+    pipeline = BaselinePipeline(
+        item_table=item_table,
+        client=None,
+        max_document_chars=None,
+        context_strategy="single_no_split",
+        count_tokens=lambda messages: 11,
+        prompt_budget_tokens=10,
+    )
+    with pytest.raises(ContextAdmissionError, match="requires 11"):
+        pipeline.contexts_for_record(_record())
+
+
+def test_visible_document_types_limits_the_prompt_to_announcement() -> None:
+    item_table = {"v1": {"항목명": "항목 1", "비고": ""}}
+    record = _record("공고문 본문")
+    record["docs"].append({"doc_id": "D1", "type": "규격서", "text": "첨부 규격 내용"})
+    pipeline = BaselinePipeline(
+        item_table=item_table,
+        client=None,
+        max_document_chars=None,
+        active_items=("v1",),
+        visible_document_types=("공고문",),
+    )
+    message = pipeline.messages_for_context(record, None)[1]["content"]
+    assert "공고문 본문" in message
+    assert "첨부 규격 내용" not in message
 
 
 def test_metadata_law_router_uses_only_contract_metadata(tmp_path: Path) -> None:
@@ -453,6 +589,19 @@ def test_absence_items_use_and_while_other_items_use_or() -> None:
 
     assert combined["v1"] == {"위반여부": 1, "근거문구": "first"}
     assert combined["v10"] == {"위반여부": 0, "근거문구": ""}
+
+
+def test_v8_observation_contract_is_not_injected_into_groups_without_v8() -> None:
+    item_table = {
+        item: {"항목명": item, "부재탐지": item in {"v10", "v11", "v16", "v18", "v20"}, "비고": ""}
+        for item in ITEMS
+    }
+    pipeline = BaselinePipeline(
+        item_table=item_table, client=None, max_document_chars=4000,
+        active_items=("v10", "v11", "v16", "v18", "v20"),
+        v8_composite_merge_enabled=True, prompt_layout="markdown_v2",
+    )
+    assert "v8 문서 간 결합 관찰" not in pipeline.system_prompt
 
 
 def test_v8_composite_merge_requires_both_document_local_facts() -> None:

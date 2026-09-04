@@ -151,10 +151,14 @@ class VLLMClient:
         ]
 
 
-def _invalid_json(completion: Completion) -> bool:
+def _invalid_json(
+    completion: Completion,
+    items: tuple[str, ...] = tuple(f"v{index}" for index in range(1, 25)),
+) -> bool:
     try:
         parse_judgment(
             completion.content,
+            items=items,
             output_mode=str(PROMPT_CONFIG.get("output_mode", "labels_and_evidence")),
         )
     except Exception:
@@ -194,6 +198,7 @@ def _complete_group_with_json_retries(
     messages_batch: list[list[dict[str, str]]],
     response_schema: dict[str, Any],
     batch_retries: int,
+    items: tuple[str, ...] = tuple(f"v{index}" for index in range(1, 25)),
 ):
     """Retry malformed JSON once per pass after resilient batch completion."""
     outputs = _complete_batch_with_retries(
@@ -201,13 +206,13 @@ def _complete_group_with_json_retries(
     )
     retry_count = 0
     for index, output in enumerate(outputs):
-        if not _invalid_json(output):
+        if not _invalid_json(output, items):
             continue
         retry_count += 1
         replacement = _complete_batch_with_retries(
             client, [messages_batch[index]], response_schema, batch_retries
         )[0]
-        if not _invalid_json(replacement):
+        if not _invalid_json(replacement, items):
             outputs[index] = replacement
     return outputs, retry_count
 
@@ -256,7 +261,13 @@ def main() -> int:
             prompt_budget_tokens=MAX_MODEL_LEN - OUTPUT_RESERVE_TOKENS,
             active_items=active_items or tuple(f"v{i}" for i in range(1, 25)),
             prompt_layout=str(PROMPT_CONFIG.get("layout", "plain")),
+            prompt_profile=str(PROMPT_CONFIG.get("profile", "default")),
+            role_directive=str(PROMPT_CONFIG.get("role_directive", "standard")),
             output_mode=str(PROMPT_CONFIG.get("output_mode", "labels_and_evidence")),
+            visible_document_types=(
+                tuple(PROMPT_CONFIG["visible_document_types"])
+                if PROMPT_CONFIG.get("visible_document_types") is not None else None
+            ),
         )
     pipeline = make_pipeline()
     retried_malformed = 0
@@ -277,6 +288,7 @@ def main() -> int:
                 [messages for _, messages in batch],
                 pipeline.response_schema,
                 batch_retries,
+                pipeline.active_items,
             )
             retried_malformed += retries
             for (index, _), output in zip(batch, outputs):
@@ -302,8 +314,9 @@ def main() -> int:
                 outputs, retries = _complete_group_with_json_retries(
                     client,
                     [messages for _, messages in batch],
-                    group_pipeline.response_schema,
-                    batch_retries,
+                group_pipeline.response_schema,
+                batch_retries,
+                group_pipeline.active_items,
                 )
                 retried_malformed += retries
                 for (index, _), output in zip(batch, outputs):

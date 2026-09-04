@@ -66,6 +66,29 @@ def test_token_budget_packer_splits_long_document_and_keeps_all_text() -> None:
     assert sum(context.count("R") for context in contexts) >= 160
 
 
+def test_packer_admits_with_the_supplied_final_message_builder() -> None:
+    record = {
+        "id": "N1",
+        "docs": [{"doc_id": "N", "type": "공고문", "text": "N" * 80}],
+        "meta": {}, "dropped_doc_counts": {}, "input_completeness": {},
+        "anon_applied": False, "assembly_policy_version": "test",
+    }
+
+    def count_tokens(messages):
+        return sum(len(message["content"]) for message in messages)
+
+    def final_messages(context):
+        return [{"role": "system", "content": "S" * 40}, {"role": "user", "content": "U" * 40 + ("N" * 80 if context is None else context)}]
+
+    contexts = pack_contexts_to_token_budget(
+        record, "short", count_tokens, prompt_budget_tokens=130,
+        notice_anchor_chars=0, message_builder=final_messages,
+    )
+
+    assert len(contexts) > 1
+    assert all(count_tokens(final_messages(context)) <= 130 for context in contexts)
+
+
 def test_fixed_reference_is_counted_for_every_split_pass() -> None:
     record = {
         "id": "N1",
