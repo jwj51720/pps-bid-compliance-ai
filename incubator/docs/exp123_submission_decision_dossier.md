@@ -2,8 +2,8 @@
 
 ## Exact artifact
 
-- Archive: `dist/pps_20260907_001734.zip`
-- SHA-256: `171d9287cae416623d382a65c15a9edb2388c03fa51505e1915e2bda939bc5e6`
+- Archive: `dist/pps_20260906_233304.zip` (submitted)
+- SHA-256: `9b28391d63e2f8a4dcf42af8b225de30c3479dce96df310c17572b599e8b0907`
 - Policy: EXP-120's single full-notice Gemma V/E call, card-v6, ordered
   4,000-character context, plus the source-complete frozen overrides for v2,
   v3, and v21.
@@ -47,3 +47,10 @@ were discovered and audited on dev200, so a public submission is the only
 valid generalization measurement.  A result above EXP-120 promotes the
 candidate; a result materially below it rejects the rule-composition transfer
 and closes further dev-derived rule expansion.
+
+## Archive correction
+
+`pps_20260907_001734.zip` was a later duplicate repackage with identical member
+contents, not a new policy. It was never a distinct submission candidate and
+has been removed to prevent ambiguity. The archive named above is the only
+EXP-123 artifact submitted to the public leaderboard.
