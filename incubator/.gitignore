@@ -1,0 +1,8 @@
+# Generated competition-derived material and model responses.
+data/derived/*
+!data/derived/.gitkeep
+runs/*
+!runs/.gitkeep
+cache/
+__pycache__/
+*.py[cod]

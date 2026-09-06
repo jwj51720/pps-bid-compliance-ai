@@ -1,0 +1,22 @@
+{
+  "experiment_id": "inc010_procedure_candidate_pilot",
+  "data_root": "data/raw/open",
+  "candidate_manifest_path": "incubator/data/derived/inc009r_candidate_window_refinement_candidate_manifest.jsonl",
+  "model": "google/gemma-4-26b-a4b-it",
+  "api_url": "https://openrouter.ai/api/v1/chat/completions",
+  "api_key_env": "OPENROUTER_API_KEY",
+  "temperature": 0.0,
+  "seed": 20260826,
+  "max_tokens": 900,
+  "timeout_seconds": 60,
+  "request_retries": 0,
+  "min_request_interval_seconds": 0.0,
+  "max_requests": 66,
+  "max_cost_usd": 0.35,
+  "concurrency": 8,
+  "control_document_chars": 12000,
+  "treatment_max_candidate_chars": 12000,
+  "announcement_anchor_chars": 1200,
+  "hard_candidate_negative_limit": 12,
+  "no_candidate_negative_limit": 4
+}

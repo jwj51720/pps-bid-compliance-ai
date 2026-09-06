@@ -1,0 +1,19 @@
+{
+  "experiment_id": "inc003_v13_product_fact",
+  "data_root": "data/raw/open",
+  "historical_prediction_path": "outputs/exp-001-first-submission/predictions.jsonl",
+  "product_csv_path": "data/raw/open/data/법령패키지/중기부고시/중기부고시_경쟁제품_세부품명.csv",
+  "model": "google/gemma-4-26b-a4b-it",
+  "api_url": "https://openrouter.ai/api/v1/chat/completions",
+  "api_key_env": "OPENROUTER_API_KEY",
+  "temperature": 0.0,
+  "seed": 20260826,
+  "max_tokens": 1800,
+  "timeout_seconds": 30,
+  "request_retries": 0,
+  "min_request_interval_seconds": 0.5,
+  "max_requests": 36,
+  "max_cost_usd": 0.5,
+  "max_document_chars_total": 4000,
+  "hard_negative_limit": 12
+}

@@ -1,0 +1,12 @@
+{
+  "experiment_id": "inc013_v20_decision_card_audit",
+  "data_root": "data/raw/open",
+  "law_path": "data/법령패키지/법령/중소 소프트웨어사업자의 사업 참여 지원에 관한 지침.txt",
+  "target_item": "v20",
+  "policy": "offline source-grounded decision-card and applicability-cue audit only; no automatic labels and no API calls",
+  "preflight_gate": {
+    "require_all_gold_positive_sw_cue": true,
+    "require_exact_law_excerpts": true,
+    "forbid_metadata_only_applicability": true
+  }
+}

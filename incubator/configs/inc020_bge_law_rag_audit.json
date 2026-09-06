@@ -1,0 +1,15 @@
+{
+  "experiment_id": "inc020_bge_law_rag_audit",
+  "data_root": "data/raw/open",
+  "law_directory": "data/법령패키지/법령",
+  "model": "baai/bge-m3",
+  "api_url": "https://openrouter.ai/api/v1/embeddings",
+  "api_key_env": "OPENROUTER_API_KEY",
+  "chunk_chars": 1400,
+  "overlap_chars": 180,
+  "top_k": 4,
+  "batch_size": 32,
+  "timeout_seconds": 90,
+  "request_retries": 1,
+  "max_cost_usd": 0.05
+}
