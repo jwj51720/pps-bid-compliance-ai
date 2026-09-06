@@ -22,6 +22,10 @@
 | INC-122 control | EXP-120-style card v6 V/E | 32 | 0.12500 | Comparator only. |
 | INC-122 treatment | + compact profile official-law summary | 32 | 0.08333 | Rejected: -0.04167 macro F1, recall loss. |
 | INC-123 | Archived EXP-120 + frozen v2/v3/v21 predicates | 200 | **0.31780** | Advance to isolated package integration; hidden-test transfer unproven. |
+| INC-125 | Luna high full notice + official ledger v1–v23; direct card v24 | 200 | **0.42737** | New Luna teacher best; three predeclared cohorts then full-dev confirmation. Not a submission policy. |
+| INC-126 | INC-125 + pre-frozen source-complete v2/v3/v21 rules | 200 | **0.46222** | Historical teacher composition; rules share dev discovery data, so no hidden-test claim. |
+| INC-127 control | EXP-120-equivalent Gemma card v6 V/E | fresh 32 | 0.11111 | Comparator only; sparse cohort. |
+| INC-127 treatment | + fixed operational-contract instruction | fresh 32 | 0.10417 | Rejected: −0.00694, no recall/absence gain. |
 
 | Run | Policy | Cohort | Macro F1 | TP / FP / FN | Evidence validity | API cost | Decision |
 |---|---|---:|---:|---|---:|---:|---|
