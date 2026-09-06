@@ -31,6 +31,14 @@ def _lines(record: dict[str, Any]):
             yield raw.rstrip("\r\n")
 
 
+def _evidence_window(line: str, focus: int) -> str:
+    """Keep a bounded unchanged source substring containing the rule trigger."""
+    if len(line) <= 500:
+        return line
+    start = max(0, min(focus - 220, len(line) - 500))
+    return line[start : start + 500]
+
+
 def _v2(record: dict[str, Any]) -> str:
     estimate = record["meta"].get("입찰추정가격")
     try:
@@ -39,7 +47,10 @@ def _v2(record: dict[str, Any]) -> str:
         below = False
     if not below or "공사" in str(record["meta"].get("업무구분") or ""):
         return ""
-    return next((line for line in _lines(record) if "실적" in line and LOWER.search(line) and _amounts(line) and V2_ROLE.search(line)), "")
+    for line in _lines(record):
+        if "실적" in line and LOWER.search(line) and _amounts(line) and V2_ROLE.search(line):
+            return _evidence_window(line, line.find("실적"))
+    return ""
 
 
 def _v3(record: dict[str, Any]) -> str:
@@ -51,7 +62,7 @@ def _v3(record: dict[str, Any]) -> str:
     for line in _lines(record):
         values = _amounts(line)
         if "실적" in line and LOWER.search(line) and len(values) == 1 and any(term in line for term in terms) and values[0] >= budget:
-            return line
+            return _evidence_window(line, line.find("실적"))
     return ""
 
 
@@ -65,7 +76,7 @@ def _v21(record: dict[str, Any]) -> str:
     for line in _lines(record):
         match = V21.search(line)
         if match and "분담이행" not in line and float(match.group(1)) < threshold:
-            return line
+            return _evidence_window(line, match.start())
     return ""
 
 
