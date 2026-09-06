@@ -1,0 +1,17 @@
+{
+  "experiment_id": "inc129_gemma_source_grounded_self_audit",
+  "model": "google/gemma-4-26b-a4b-it",
+  "api_url": "https://openrouter.ai/api/v1/chat/completions",
+  "api_key_env": "OPENROUTER_API_KEY",
+  "temperature": 0.0,
+  "seed": 20260907,
+  "max_tokens": 1200,
+  "context_chars": 4000,
+  "cohort_per_profile": 6,
+  "max_requests": 48,
+  "max_workers": 16,
+  "request_retries": 1,
+  "timeout_seconds": 180,
+  "max_cost_usd": 0.10,
+  "promotion": "audit macro positive-F1 >= direct +0.02, micro recall non-decrease, evidence validity non-decrease, failure rate <=2%; then one unchanged fresh availability-balanced holdout without prompt changes"
+}
