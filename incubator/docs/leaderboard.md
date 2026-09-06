@@ -14,6 +14,15 @@
 후보는 이 정책을 fixed control로 하는 independent cohort와 dev-200 confirmation을
 통과해야 한다. 상세 milestone은 `post_exp120_bfs_milestone.md`에 고정한다.
 
+| Run | Policy | Cohort | Macro F1 | Decision |
+|---|---|---:|---:|---|
+| INC-121 control | card v6 + numbered 4k source + V/E | 32 | 0.25502 | Comparator only; rendering differs from EXP-120. |
+| INC-121 A1 | Same input, V-only | 32 | 0.13472 | Rejected: recall collapse. |
+| INC-121 A2 | Same input, V + source-anchor ID | 32 | unscorable | Rejected: 2/32 positive-without-anchor semantic failures. |
+| INC-122 control | EXP-120-style card v6 V/E | 32 | 0.12500 | Comparator only. |
+| INC-122 treatment | + compact profile official-law summary | 32 | 0.08333 | Rejected: -0.04167 macro F1, recall loss. |
+| INC-123 | Archived EXP-120 + frozen v2/v3/v21 predicates | 200 | **0.31780** | Advance to isolated package integration; hidden-test transfer unproven. |
+
 | Run | Policy | Cohort | Macro F1 | TP / FP / FN | Evidence validity | API cost | Decision |
 |---|---|---:|---:|---|---:|---:|---|
 | INC-001 | Joint 24-item, 4,000-character ordered context, no RAG/rules/cards | 24 | 0.13036 | 7 / 30 / 30 | 0.81081 | $0.01657 | Operational baseline accepted; no performance policy promoted |

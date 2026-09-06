@@ -5,6 +5,14 @@ after a preregistered experiment and reproducible artifact support it.
 
 ## Verified so far
 
+- INC-121 reconfirms that a joint 24-item V-only answer is not a safe way to
+  reduce output burden: under fixed card-v6/4k numbered-source input it lost
+  0.12030 macro-F1 and 0.21311 micro recall against V/E. It also rejects a
+  global V-plus-source-anchor contract before score: two of 32 A2 outputs
+  asserted v23 without a required anchor. Preserve deterministic spans only as
+  a Python evidence-validation/retrieval mechanism; do not demand an anchor
+  for every final positive or retry that contract on the same cohort.
+
 - A 4,000-character prefix is insufficient exposure; generic full-notice input
   is not a reliable improvement over a bounded prefix.
 - Exact token admission is feasible for all dev notices under the final 32k
