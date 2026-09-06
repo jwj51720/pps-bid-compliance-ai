@@ -36,12 +36,12 @@ different task shapes:
 - document-to-metadata reconciliation (`v24`).
 
 Recorded historical dev results show that simply adding full context or a broad
-law bundle did not improve the baseline. The best recorded policy is not yet a
-reproducible local artifact in this WSL, so it is a historical comparator rather
-than a trusted starting point. See [research loop](docs/experiment_loop.md) and
-[portfolio](docs/experiment_portfolio.md). The executable decision tree and
-success/partial-success/failure branches are in the
-[research experiment plan](docs/research_experiment_plan.md).
+law bundle did not improve the baseline. EXP-120 (a 4,000-character single
+Gemma call with decision cards v6) is now a public-submission-validated control:
+dev-200 `0.248932`, public leaderboard `0.244317`. It is not an automatic final
+policy; every successor must beat it under the milestone gates. See [research
+loop](docs/experiment_loop.md), [portfolio](docs/experiment_portfolio.md), and
+the [post-EXP-120 BFS milestone](docs/post_exp120_bfs_milestone.md).
 
 ## Intended architecture, if evidence supports it
 
