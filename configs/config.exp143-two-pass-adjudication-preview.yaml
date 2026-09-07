@@ -1,0 +1,57 @@
+# Preview-only input audit for the two-pass adjudication plan. This config is
+# not runnable through a provider; the inspection script requires lifecycle preview.
+experiment:
+  id: exp-143-two-pass-adjudication-preview
+  base_config: configs/config.exp125a-exact-baseline-ve-fast-panel.yaml
+  allowed_policy_changes: [review_run.mode, review_run.final_judgment_source]
+  derived_data: [dev_fast_panel_v1]
+  lifecycle: preview
+data:
+  root: data/raw/open
+  input: dev.jsonl.gz
+  labels: dev_labels.csv
+  item_table: data/항목표.json
+  fast_panel_ids_path: configs/dev_fast_panel_v1.json
+output:
+  dir: outputs/exp-143-two-pass-adjudication-preview
+prompt:
+  max_document_chars: 4000
+  context_strategy: single
+  overflow_split_enabled: false
+  strict_document_evidence: false
+  absence_detection_strategy: per_pass_or
+  decision_cards_path: null
+  competition_products_path: null
+  profile: official_baseline_v1
+  layout: plain
+  role_directive: standard
+  item_catalog_style: minimal
+  metadata_style: official_lines
+  output_mode: labels_and_evidence
+  max_model_len: 16384
+  output_reserve_tokens: 1536
+  notice_anchor_chars: 4000
+  mode: baseline
+  include_normalized_facts: false
+llm:
+  provider: openrouter
+  model: google/gemma-4-26b-a4b-it
+  api_key_env: OPENROUTER_API_KEY
+  api_url: https://openrouter.ai/api/v1/chat/completions
+  tokenizer_source: google/gemma-4-26b-a4b-it
+  temperature: 0.0
+  max_tokens: 1536
+  seed: 20260826
+  timeout_seconds: 180
+  request_retries: 3
+  prediction_attempts: 2
+  provider_sort: throughput
+  require_parameters: true
+  min_request_interval_seconds: 1.0
+run:
+  resume: true
+  concurrency: 4
+  local_limit: null
+review_run:
+  mode: untrusted_label_only_adjudication_v1
+  final_judgment_source: pass_b

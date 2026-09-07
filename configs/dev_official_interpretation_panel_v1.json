@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "dev_official_interpretation_panel_v1",
+  "purpose": "Paired diagnostic panel for the official-interpretation card branch. It is not a canonical-policy selection set.",
+  "selection_contract": [
+    "Includes every dev positive for v9 or v13, selected only after the official interpretation candidate was specified from DACON public guidance and the item table.",
+    "Also includes the frozen dev_fast_panel_v1 unchanged, preserving its broad positive, contract-law, and document-length coverage.",
+    "Dev labels are used only to make target-item evaluation adequately powered; no label, evidence, ID-specific condition, or historical prediction is used in either card or inference policy.",
+    "The exact ordered IDs are frozen before any EXP121 provider call. A favorable result requires an independent cohort before dev-200 confirmation."
+  ],
+  "ids": [
+    "PPS-DEV-062", "PPS-DEV-049", "PPS-DEV-042", "PPS-DEV-072", "PPS-DEV-036",
+    "PPS-DEV-051", "PPS-DEV-058", "PPS-DEV-069", "PPS-DEV-039", "PPS-DEV-131",
+    "PPS-DEV-141", "PPS-DEV-26", "PPS-DEV-199", "PPS-DEV-191", "PPS-DEV-32",
+    "PPS-DEV-169", "PPS-DEV-30", "PPS-DEV-165", "PPS-DEV-197", "PPS-DEV-194",
+    "PPS-DEV-09", "PPS-DEV-12", "PPS-DEV-16", "PPS-DEV-23", "PPS-DEV-050",
+    "PPS-DEV-052", "PPS-DEV-074", "PPS-DEV-076", "PPS-DEV-077", "PPS-DEV-078"
+  ],
+  "selection_summary": {
+    "record_count": 30,
+    "v9_positive_count": 6,
+    "v13_positive_count": 6,
+    "frozen_fast_panel_record_count": 20,
+    "additional_target_positive_record_count": 10
+  }
+}

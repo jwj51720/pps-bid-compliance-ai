@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "id": "dev_prompt_holdout_v1",
+  "purpose": "Independent label-blind 20-notice confirmation cohort for prompt-only candidates. It is not a substitute for dev-200 confirmation.",
+  "selection_contract": [
+    "Starts from dev records not included in dev_fast_panel_v1.",
+    "Records were sorted by total organizer-document character length into four equal-size remaining-data quartiles; five records were selected per quartile by the ascending SHA-256 digest of `prompt-holdout-v1:<id>`.",
+    "No dev label, evidence, historical prediction, item error, or experimental outcome was used in selection.",
+    "The ordered IDs are frozen before the EXP128 provider calls. The cohort has 11 national-contract and 9 local-contract notices."
+  ],
+  "ids": [
+    "PPS-DEV-094", "PPS-DEV-174", "PPS-DEV-080", "PPS-DEV-046", "PPS-DEV-068",
+    "PPS-DEV-089", "PPS-DEV-192", "PPS-DEV-050", "PPS-DEV-053", "PPS-DEV-110",
+    "PPS-DEV-090", "PPS-DEV-170", "PPS-DEV-132", "PPS-DEV-091", "PPS-DEV-086",
+    "PPS-DEV-135", "PPS-DEV-082", "PPS-DEV-27", "PPS-DEV-044", "PPS-DEV-121"
+  ]
+}

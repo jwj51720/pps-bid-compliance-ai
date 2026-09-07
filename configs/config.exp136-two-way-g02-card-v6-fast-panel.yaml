@@ -1,0 +1,59 @@
+# EXP136: EXP133 with only the five active G02 decision cards added.
+experiment:
+  id: exp-136-two-way-g02-card-v6-fast-panel
+  base_config: configs/config.exp133-two-way-g02-fast-panel.yaml
+  allowed_policy_changes: [prompt.decision_cards_path]
+  derived_data: [decision_cards_v6, dev_fast_panel_v1]
+  # Invalidated by rendered-input review: root-level cards also enter G01,
+  # so this cannot isolate the stated G02-only hypothesis.
+  lifecycle: invalidated
+data:
+  root: data/raw/open
+  input: dev.jsonl.gz
+  labels: dev_labels.csv
+  item_table: data/항목표.json
+  fast_panel_ids_path: configs/dev_fast_panel_v1.json
+output:
+  dir: outputs/exp-136-two-way-g02-card-v6-fast-panel
+prompt:
+  max_document_chars: 4000
+  context_strategy: single
+  overflow_split_enabled: false
+  strict_document_evidence: false
+  absence_detection_strategy: per_pass_or
+  decision_cards_path: data/derived/decision_cards_v6.json
+  competition_products_path: null
+  profile: official_baseline_subset_v1
+  layout: plain
+  role_directive: standard
+  item_catalog_style: minimal
+  metadata_style: official_lines
+  output_mode: labels_and_evidence
+  max_model_len: 16384
+  output_reserve_tokens: 1536
+  notice_anchor_chars: 4000
+  mode: baseline
+  include_normalized_facts: false
+llm:
+  provider: openrouter
+  model: google/gemma-4-26b-a4b-it
+  api_key_env: OPENROUTER_API_KEY
+  api_url: https://openrouter.ai/api/v1/chat/completions
+  tokenizer_source: google/gemma-4-26b-a4b-it
+  temperature: 0.0
+  max_tokens: 1536
+  seed: 20260826
+  timeout_seconds: 180
+  request_retries: 3
+  prediction_attempts: 2
+  provider_sort: throughput
+  require_parameters: true
+  min_request_interval_seconds: 1.0
+run:
+  resume: true
+  concurrency: 4
+  local_limit: null
+grouped_run:
+  grouping: document_restrictions_two_way_v1
+  reference_mode: none
+  reference_navigation: none
