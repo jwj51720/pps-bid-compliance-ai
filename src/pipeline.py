@@ -17,6 +17,7 @@ from src.context_budget import (
     pack_document_contexts_to_token_budget,
 )
 from src.prompt import (
+    append_untrusted_review_draft,
     build_messages,
     build_split_document_contexts,
     build_system_prompt,
@@ -74,6 +75,16 @@ class Prediction:
     pass_judgments: tuple[dict[str, dict[str, Any]], ...] = ()
     v8_observations: tuple[dict[str, Any], ...] = ()
     parse_errors: tuple[dict[str, Any], ...] = ()
+
+
+@dataclass(frozen=True)
+class TwoPassAdjudicationPrediction:
+    """Auditable result of one draft pass and one final review pass."""
+
+    pass_a: Prediction
+    pass_b: Prediction
+    final: Prediction
+    final_source: str
 
 
 def extract_json(text: str) -> Any:
@@ -478,6 +489,40 @@ class BaselinePipeline:
             )
             completions.append(completion)
         return self.finalize(record, completions, contexts)
+
+    def predict_with_untrusted_label_review(
+        self, record: dict[str, Any]
+    ) -> TwoPassAdjudicationPrediction:
+        """Run one exact pass, then independently adjudicate its labels.
+
+        The second message receives no first-pass evidence text and final labels
+        come entirely from pass B. If B cannot be parsed, retaining A is only a
+        transport recovery; it never merges individual labels.
+        """
+        contexts = self.contexts_for_record(record)
+        if len(contexts) != 1:
+            raise ValueError("two-pass adjudication requires exactly one notice context")
+        pass_a = self.predict(record)
+        pass_b_messages = append_untrusted_review_draft(
+            self.messages_for_context(record, contexts[0]),
+            pass_a.judgment,
+            self.active_items,
+        )
+        completion = self.client.complete(pass_b_messages, self.response_schema)
+        pass_b = self.finalize(record, [completion], contexts)
+        if pass_b.parse_errors:
+            return TwoPassAdjudicationPrediction(
+                pass_a=pass_a,
+                pass_b=pass_b,
+                final=pass_a,
+                final_source="pass_a_recovery_after_pass_b_parse_error",
+            )
+        return TwoPassAdjudicationPrediction(
+            pass_a=pass_a,
+            pass_b=pass_b,
+            final=pass_b,
+            final_source="pass_b",
+        )
 
     def contexts_for_record(
         self, record: dict[str, Any]

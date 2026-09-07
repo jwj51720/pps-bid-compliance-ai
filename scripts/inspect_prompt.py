@@ -14,12 +14,20 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.config import load_config
-from src.data import load_item_table, load_records
-from src.prompt import build_messages, build_system_prompt
-from src.schema import judgment_schema
+from src.data import (
+    load_competition_product_index,
+    load_decision_cards,
+    load_item_table,
+    load_records,
+)
+from src.external.openrouter import MockClient
+from src.law_bundles import MetadataLawBundleRouter
+from src.pipeline import BaselinePipeline
 
 
-def _request_preview(config: Any, messages: list[dict[str, str]]) -> dict[str, Any]:
+def _request_preview(
+    config: Any, messages: list[dict[str, str]], response_schema: dict[str, Any]
+) -> dict[str, Any]:
     return {
         "model": config.llm.model,
         "messages": messages,
@@ -36,14 +44,15 @@ def _request_preview(config: Any, messages: list[dict[str, str]]) -> dict[str, A
             "json_schema": {
                 "name": "pps_compliance_judgment",
                 "strict": True,
-                "schema": judgment_schema(),
+                "schema": response_schema,
             },
         },
     }
 
 
-def _markdown_preview(record_id: str, config: Any, messages: list[dict[str, str]]) -> str:
-    system, user = messages
+def _markdown_preview(
+    record_id: str, config: Any, messages_by_context: list[list[dict[str, str]]]
+) -> str:
     return (
         f"# Actual LLM Input: {record_id}\n\n"
         "This file is generated without making an API call. It is the exact `messages` "
@@ -55,10 +64,59 @@ def _markdown_preview(record_id: str, config: Any, messages: list[dict[str, str]
         f"- `max_tokens`: `{config.llm.max_tokens}`\n"
         f"- Temperature: `{config.llm.temperature}`\n"
         f"- Seed: `{config.llm.seed}`\n\n"
-        "## System Message\n\n"
-        f"```text\n{system['content']}\n```\n\n"
-        "## User Message\n\n"
-        f"```text\n{user['content']}\n```\n"
+        + "".join(
+            "## System Message" + (f" (context {index})" if len(messages_by_context) > 1 else "") + "\n\n"
+            f"```text\n{messages[0]['content']}\n```\n\n"
+            "## User Message" + (f" (context {index})" if len(messages_by_context) > 1 else "") + "\n\n"
+            f"```text\n{messages[1]['content']}\n```\n\n"
+            for index, messages in enumerate(messages_by_context, 1)
+        )
+    )
+
+
+def build_pipeline_for_preview(config: Any) -> BaselinePipeline:
+    """Mirror the shared runner's pipeline construction without a provider call."""
+    item_table = load_item_table(config.data.item_table_path)
+    decision_cards = (
+        load_decision_cards(config.decision_cards_path, item_table)
+        if config.decision_cards_path else None
+    )
+    competition_products = (
+        load_competition_product_index(config.competition_products_path)
+        if config.competition_products_path else None
+    )
+    reference_text = config.reference_path.read_text(encoding="utf-8") if config.reference_path else None
+    law_bundle_router = (
+        MetadataLawBundleRouter(config.reference_bundle_dir)
+        if config.reference_bundle_dir else None
+    )
+    return BaselinePipeline(
+        item_table=item_table,
+        client=MockClient(),
+        max_document_chars=config.max_document_chars,
+        prompt_mode=config.prompt_mode,
+        include_normalized_facts=config.include_normalized_facts,
+        context_strategy=config.context_strategy,
+        notice_anchor_chars=config.notice_anchor_chars,
+        overflow_split_enabled=config.overflow_split_enabled,
+        strict_document_evidence=config.strict_document_evidence,
+        absence_detection_strategy=config.absence_detection_strategy,
+        decision_cards=decision_cards,
+        competition_products=competition_products,
+        prompt_budget_tokens=config.max_model_len - config.output_reserve_tokens,
+        reference_text=reference_text,
+        law_bundle_router=law_bundle_router,
+        v8_composite_merge_enabled=config.v8_composite_merge_enabled,
+        v8_composite_merge_mode=config.v8_composite_merge_mode,
+        candidate_detection=config.candidate_detection,
+        active_items=config.active_items,
+        prompt_layout=config.prompt_layout,
+        prompt_profile=config.prompt_profile,
+        role_directive=config.role_directive,
+        item_catalog_style=config.item_catalog_style,
+        metadata_style=config.metadata_style,
+        output_mode=config.output_mode,
+        visible_document_types=config.visible_document_types,
     )
 
 
@@ -76,17 +134,21 @@ def main() -> int:
     )
     if record is None:
         raise ValueError(f"record not found: {args.record_id}")
-    system_prompt = build_system_prompt(load_item_table(config.data.item_table_path))
-    messages = build_messages(record, system_prompt, config.max_document_chars)
+    pipeline = build_pipeline_for_preview(config)
+    contexts = pipeline.contexts_for_record(record)
+    messages_by_context = [pipeline.messages_for_context(record, context) for context in contexts]
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     stem = args.record_id.lower()
     (output_dir / f"{stem}.request.json").write_text(
-        json.dumps(_request_preview(config, messages), ensure_ascii=False, indent=2) + "\n",
+        json.dumps(
+            _request_preview(config, messages_by_context[0], pipeline.response_schema),
+            ensure_ascii=False, indent=2,
+        ) + "\n",
         encoding="utf-8",
     )
     (output_dir / f"{stem}.messages.md").write_text(
-        _markdown_preview(args.record_id, config, messages), encoding="utf-8"
+        _markdown_preview(args.record_id, config, messages_by_context), encoding="utf-8"
     )
     print(output_dir / f"{stem}.messages.md")
     print(output_dir / f"{stem}.request.json")

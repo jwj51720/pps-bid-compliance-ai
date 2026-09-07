@@ -139,3 +139,28 @@ def test_submission_group_json_retry_uses_the_group_item_subset() -> None:
     assert retries == 0
     assert client.calls == 1
     assert outputs[0].content == content
+
+
+def test_submission_runtime_forwards_official_baseline_metadata_style() -> None:
+    script_path = Path(__file__).resolve().parents[1] / "submission" / "script.py"
+    spec = importlib.util.spec_from_file_location("submission_script_prompt_contract", script_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    item_table = {
+        item: {"항목명": item, "부재탐지": False, "비고": ""}
+        for item in ITEMS
+    }
+    pipeline = module.build_submission_pipeline(
+        item_table=item_table,
+        client=module.MockClient(),
+        decision_cards=None,
+        competition_products=None,
+    )
+    record = _record()
+    record["meta"] = {"적용계약법": "국가계약법", "배정예산금액": None}
+    message = pipeline.messages_for_context(record, None)[1]["content"]
+    assert "- 적용계약법: 국가계약법" in message
+    assert "- 배정예산금액: 미기재" in message
+    assert '"적용계약법"' not in message

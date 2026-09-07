@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import json
+import importlib.util
 from pathlib import Path
+import json
 
 import pytest
 
@@ -132,6 +133,19 @@ def test_compliance_expert_role_directive_reinforces_cards_without_new_facts() -
     assert "제공되지 않은 법령 내용을 보충하지 않는다" in prompt
 
 
+def test_source_first_role_directive_only_adds_reading_workflow() -> None:
+    item_table = {"v1": {"항목명": "항목 1", "비고": ""}}
+    prompt = build_system_prompt(
+        item_table,
+        active_items=("v1",),
+        role_directive="source_first_v1",
+    )
+    assert "[판정 순서]" in prompt
+    assert "공고 자료 원문에서 실제 제한·요구·불일치" in prompt
+    assert "한 문구를 비슷한 여러 항목의 위반으로 넓혀 해석하지 말고" in prompt
+    assert "법령 참조" not in prompt
+
+
 def test_absence_only_group_has_its_own_workflow_and_never_requests_evidence() -> None:
     item_table = {
         item: {"항목명": item, "부재탐지": item in {"v10", "v11", "v16", "v18", "v20"}, "비고": ""}
@@ -184,6 +198,74 @@ def test_official_baseline_profile_supports_labels_only_without_evidence_contrac
     assert "근거 문구" not in prompt
     assert "[근거 없음]" in prompt
     assert "근거문구" not in message
+
+
+def test_exact_organizer_control_prompt_matches_organizer_baseline() -> None:
+    """Protect the immutable 24-item organizer control from rendering drift.
+
+    Root ``config.yaml`` may select a disjoint item-group submission policy;
+    the parity control itself remains versioned as EXP125A rather than being
+    inferred from whichever submission policy is currently canonical.
+    """
+    from src.config import load_config
+    from src.external.openrouter import MockClient
+
+    root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location(
+        "organizer_baseline_for_parity", root / "data/raw/open/baseline/script.py"
+    )
+    assert spec is not None and spec.loader is not None
+    organizer = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(organizer)
+    config = load_config(root / "configs/config.exp125a-exact-baseline-ve-fast-panel.yaml")
+    item_table = {
+        item: {"항목명": item, "부재탐지": item == "v10", "비고": ""}
+        for item in ITEMS
+    }
+    record = _record("공고 원문")
+    record["meta"] = {"적용계약법": "국가계약법", "배정예산금액": None}
+    pipeline = BaselinePipeline(
+        item_table=item_table,
+        client=MockClient(),
+        max_document_chars=config.max_document_chars,
+        prompt_mode=config.prompt_mode,
+        context_strategy=config.context_strategy,
+        notice_anchor_chars=config.notice_anchor_chars,
+        overflow_split_enabled=config.overflow_split_enabled,
+        prompt_budget_tokens=config.max_model_len - config.output_reserve_tokens,
+        strict_document_evidence=config.strict_document_evidence,
+        absence_detection_strategy=config.absence_detection_strategy,
+        prompt_layout=config.prompt_layout,
+        prompt_profile=config.prompt_profile,
+        role_directive=config.role_directive,
+        item_catalog_style=config.item_catalog_style,
+        metadata_style=config.metadata_style,
+        output_mode=config.output_mode,
+    )
+    expected = organizer.build_messages(
+        record, organizer.build_system_prompt(item_table), config.max_document_chars
+    )
+    assert pipeline.messages_for_context(record, None) == expected
+
+
+def test_official_baseline_subset_keeps_renderer_but_limits_output_items() -> None:
+    """A diagnostic subset may not silently become a different prompt family."""
+    item_table = {"v2": {"항목명": "실적제한", "부재탐지": False, "비고": ""}}
+    system = build_system_prompt(
+        item_table,
+        active_items=("v2",),
+        profile="official_baseline_subset_v1",
+    )
+    assert "아래 지정 항목(v2) 각각" in system
+    assert "지정 항목(v2) 전부에 답한다" in system
+    assert "키는 v2," in system
+    assert "- v2: 실적제한" in system
+    messages = build_messages(
+        _record("공고 원문"), system, 4000,
+        prompt_profile="official_baseline_subset_v1",
+        metadata_style="official_lines",
+    )
+    assert messages[1]["content"].startswith("[공고 ID] test-id\n\n[나라장터 입력 메타]\n")
 
 
 def test_official_profile_renders_product_context_and_full_context_when_requested() -> None:

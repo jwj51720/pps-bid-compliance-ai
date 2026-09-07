@@ -41,6 +41,7 @@ from src.pipeline import (
     ContextAdmissionError,
     Prediction,
     PredictionError,
+    TwoPassAdjudicationPrediction,
     judgment_to_row,
 )
 from src.submission import validate_submission, write_submission
@@ -112,7 +113,46 @@ def _git_commit() -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
-def _prediction_to_json(prediction: Prediction) -> dict[str, Any]:
+def _prediction_to_json(
+    prediction: Prediction | TwoPassAdjudicationPrediction,
+) -> dict[str, Any]:
+    if isinstance(prediction, TwoPassAdjudicationPrediction):
+        final = prediction.final
+        combined_usage = {
+            key: float(prediction.pass_a.usage.get(key, 0) or 0)
+            + float(prediction.pass_b.usage.get(key, 0) or 0)
+            for key in set(prediction.pass_a.usage) | set(prediction.pass_b.usage)
+        }
+        return {
+            "id": final.record_id,
+            "judgment": final.judgment,
+            "row": judgment_to_row(final.record_id, final.judgment),
+            "raw_response": final.raw_response,
+            "model": final.model,
+            "latency_seconds": prediction.pass_a.latency_seconds + prediction.pass_b.latency_seconds,
+            "usage": combined_usage,
+            "finish_reason": final.finish_reason,
+            "pass_judgments": list(final.pass_judgments),
+            "v8_observations": list(final.v8_observations),
+            "parse_errors": list(final.parse_errors),
+            "two_pass": {
+                "final_source": prediction.final_source,
+                "pass_a": {
+                    "raw_response": prediction.pass_a.raw_response,
+                    "judgment": prediction.pass_a.judgment,
+                    "latency_seconds": prediction.pass_a.latency_seconds,
+                    "usage": prediction.pass_a.usage,
+                    "parse_errors": list(prediction.pass_a.parse_errors),
+                },
+                "pass_b": {
+                    "raw_response": prediction.pass_b.raw_response,
+                    "judgment": prediction.pass_b.judgment,
+                    "latency_seconds": prediction.pass_b.latency_seconds,
+                    "usage": prediction.pass_b.usage,
+                    "parse_errors": list(prediction.pass_b.parse_errors),
+                },
+            },
+        }
     return {
         "id": prediction.record_id,
         "judgment": prediction.judgment,
@@ -236,11 +276,17 @@ def _predict_with_retries(
     pipeline: BaselinePipeline,
     record: dict[str, Any],
     attempts: int,
-) -> tuple[Prediction | None, list[dict[str, Any]]]:
+    two_pass_adjudication: bool = False,
+) -> tuple[Prediction | TwoPassAdjudicationPrediction | None, list[dict[str, Any]]]:
     failed_attempts: list[dict[str, Any]] = []
     for attempt in range(1, attempts + 1):
         try:
-            return pipeline.predict(record), failed_attempts
+            prediction = (
+                pipeline.predict_with_untrusted_label_review(record)
+                if two_pass_adjudication
+                else pipeline.predict(record)
+            )
+            return prediction, failed_attempts
         except Exception as exc:
             failed_attempts.append(
                 {
@@ -281,6 +327,8 @@ def main() -> int:
 
     load_dotenv(ROOT / ".env")
     config = load_config(args.config)
+    if config.raw.get("experiment", {}).get("lifecycle") == "preview" and not args.mock:
+        raise ValueError("lifecycle: preview config may only run with --mock")
     output_dir = config.output_dir if not args.mock else config.output_dir.with_name(config.output_dir.name + "-mock")
     output_dir.mkdir(parents=True, exist_ok=True)
     logger = _logger(output_dir)
@@ -470,6 +518,7 @@ def main() -> int:
                     pipeline,
                     record,
                     config.llm.prediction_attempts,
+                    config.review_run is not None,
                 ): (position, record)
                 for position, record in pending
             }
@@ -496,14 +545,20 @@ def main() -> int:
                 checkpoint[record["id"]] = value
                 checkpoint_handle.write(json.dumps(value, ensure_ascii=False) + "\n")
                 checkpoint_handle.flush()
+                total_latency = (
+                    prediction.pass_a.latency_seconds + prediction.pass_b.latency_seconds
+                    if isinstance(prediction, TwoPassAdjudicationPrediction)
+                    else prediction.latency_seconds
+                )
+                logged_usage = value["usage"]
                 logger.info(
                     "[%d/%d] %s %.2fs prompt=%s completion=%s",
                     position,
                     len(records),
                     record["id"],
-                    prediction.latency_seconds,
-                    prediction.usage.get("prompt_tokens", "?"),
-                    prediction.usage.get("completion_tokens", "?"),
+                    total_latency,
+                    logged_usage.get("prompt_tokens", "?"),
+                    logged_usage.get("completion_tokens", "?"),
                 )
 
     if failures:
@@ -582,6 +637,14 @@ def main() -> int:
         if config.competition_products_path
         else None,
         "llm_provider": "mock" if args.mock else config.llm.provider,
+        "review_run": (
+            {
+                "mode": config.review_run.mode,
+                "final_judgment_source": config.review_run.final_judgment_source,
+            }
+            if config.review_run
+            else None
+        ),
         "model": getattr(client, "model", config.llm.model),
         "rag_enabled": bool(config.reference_path or config.reference_bundle_dir),
         "created_at": datetime.now(timezone.utc).isoformat(),

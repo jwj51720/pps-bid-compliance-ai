@@ -38,6 +38,98 @@ _GROUP_CONTEXT_OVERRIDE_KEYS = {
     "max_document_chars", "context_strategy", "overflow_split_enabled",
     "absence_detection_strategy",
 }
+_PROMPT_PROFILES = {"default", "official_baseline_v1", "official_baseline_subset_v1"}
+
+
+def _group_decision_cards(
+    config: Any,
+    grouped_run: dict[str, Any],
+    item_groups: tuple[Any, ...],
+    item_table: dict[str, Any],
+) -> tuple[dict[str, dict[str, Any] | None], dict[str, Path | None]]:
+    """Resolve the declared card artifact for each disjoint execution group."""
+    overrides = grouped_run.get("decision_cards_overrides", {})
+    if not isinstance(overrides, dict):
+        raise ValueError("grouped_run.decision_cards_overrides must be a mapping")
+    group_ids = {group.group_id for group in item_groups}
+    unknown = set(overrides) - group_ids
+    if unknown:
+        raise ValueError(f"unknown group card override: {sorted(unknown)}")
+
+    cards_by_group: dict[str, dict[str, Any] | None] = {}
+    paths_by_group: dict[str, Path | None] = {}
+    for group in item_groups:
+        value = overrides.get(group.group_id, config.decision_cards_path)
+        if value is None:
+            path = None
+        elif isinstance(value, (str, Path)):
+            path = (ROOT / value).resolve()
+            if not path.is_file():
+                raise FileNotFoundError(f"group card file does not exist: {path}")
+        else:
+            raise ValueError(f"group card override must be a path or null: {group.group_id}")
+        paths_by_group[group.group_id] = path
+        cards_by_group[group.group_id] = load_decision_cards(path, item_table) if path else None
+    return cards_by_group, paths_by_group
+
+
+def _group_prompt_profiles(
+    config: Any,
+    grouped_run: dict[str, Any],
+    item_groups: tuple[Any, ...],
+) -> dict[str, str]:
+    """Resolve the declared prompt profile for each execution group.
+
+    This exists for the single EXP139 overlay: its first call must remain the
+    byte-for-byte organizer profile while the focused second call necessarily
+    uses the subset profile.  It is explicit config, not inferred behavior.
+    """
+    overrides = grouped_run.get("prompt_profile_overrides", {})
+    if not isinstance(overrides, dict):
+        raise ValueError("grouped_run.prompt_profile_overrides must be a mapping")
+    group_ids = {group.group_id for group in item_groups}
+    unknown = set(overrides) - group_ids
+    if unknown:
+        raise ValueError(f"unknown group prompt profile override: {sorted(unknown)}")
+    profiles = {
+        group.group_id: str(overrides.get(group.group_id, config.prompt_profile))
+        for group in item_groups
+    }
+    invalid = {group_id: profile for group_id, profile in profiles.items() if profile not in _PROMPT_PROFILES}
+    if invalid:
+        raise ValueError(f"invalid group prompt profile: {invalid}")
+    return profiles
+
+
+def _group_competition_products(
+    config: Any,
+    grouped_run: dict[str, Any],
+    item_groups: tuple[Any, ...],
+) -> tuple[dict[str, dict[str, Any] | None], dict[str, Path | None]]:
+    """Resolve group-scoped organizer CSV facts without contaminating control calls."""
+    overrides = grouped_run.get("competition_products_overrides", {})
+    if not isinstance(overrides, dict):
+        raise ValueError("grouped_run.competition_products_overrides must be a mapping")
+    group_ids = {group.group_id for group in item_groups}
+    unknown = set(overrides) - group_ids
+    if unknown:
+        raise ValueError(f"unknown group product override: {sorted(unknown)}")
+    result: dict[str, dict[str, Any] | None] = {}
+    paths: dict[str, Path | None] = {}
+    for group in item_groups:
+        value = overrides.get(group.group_id, config.competition_products_path)
+        if value is None:
+            result[group.group_id] = None
+            paths[group.group_id] = None
+            continue
+        if not isinstance(value, (str, Path)):
+            raise ValueError(f"group product override must be a path or null: {group.group_id}")
+        path = (ROOT / value).resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f"group product file does not exist: {path}")
+        result[group.group_id] = load_competition_product_index(path)
+        paths[group.group_id] = path
+    return result, paths
 
 
 def _group_context_policy(config: Any, grouped_run: dict[str, Any], group_id: str) -> dict[str, Any]:
@@ -75,7 +167,7 @@ def main() -> int:
     parser.add_argument("--prompt-layout", choices=("plain", "markdown", "markdown_v2"))
     parser.add_argument("--reference-mode", choices=("group_bundle", "none"))
     parser.add_argument("--reference-navigation", choices=("none", "per_item"))
-    parser.add_argument("--grouping", choices=("law_overlap_12", "four_way", "three_way", "absence_presence_v1", "absence_presence_consistency_v1"))
+    parser.add_argument("--grouping", choices=("law_overlap_12", "four_way", "three_way", "absence_presence_v1", "absence_presence_consistency_v1", "document_restrictions_two_way_v1", "document_restrictions_overlay_v1", "semantic_verifier_overlay_v1", "document_restrictions_v9_source_v1"))
     parser.add_argument("--mock", action="store_true")
     parser.add_argument("--fresh", action="store_true")
     args = parser.parse_args()
@@ -84,6 +176,12 @@ def main() -> int:
 
     load_dotenv(ROOT / ".env")
     config = load_config(args.config)
+    lifecycle = str(config.raw["experiment"].get("lifecycle", "diagnostic"))
+    if lifecycle == "preview" and not args.mock:
+        raise ValueError(
+            "preview lifecycle is input-audit only; create a separately reviewed "
+            "paid config before provider calls"
+        )
     grouped_run = config.raw.get("grouped_run", {})
     if not isinstance(grouped_run, dict):
         raise ValueError("grouped_run must be a mapping when provided")
@@ -91,7 +189,7 @@ def main() -> int:
     reference_mode = args.reference_mode or str(grouped_run.get("reference_mode", "group_bundle"))
     reference_navigation = args.reference_navigation or str(grouped_run.get("reference_navigation", "per_item"))
     prompt_layout = args.prompt_layout or config.prompt_layout
-    if grouping not in {"law_overlap_12", "four_way", "three_way", "absence_presence_v1", "absence_presence_consistency_v1"}:
+    if grouping not in {"law_overlap_12", "four_way", "three_way", "absence_presence_v1", "absence_presence_consistency_v1", "document_restrictions_two_way_v1", "document_restrictions_overlay_v1", "semantic_verifier_overlay_v1", "document_restrictions_v9_source_v1"}:
         raise ValueError("invalid grouped_run.grouping")
     if reference_mode not in {"group_bundle", "none"}:
         raise ValueError("grouped_run.reference_mode must be group_bundle or none")
@@ -103,6 +201,7 @@ def main() -> int:
     if reference_mode == "group_bundle" and not config.reference_bundle_dir:
         raise ValueError("the base config must provide generated legal-reference bundles")
     item_groups = groups_for_scheme(grouping)
+    group_prompt_profiles = _group_prompt_profiles(config, grouped_run, item_groups)
     group_context_policies = {
         group.group_id: _group_context_policy(config, grouped_run, group.group_id)
         for group in item_groups
@@ -144,6 +243,7 @@ def main() -> int:
                 "base_config": str(config.path), "reference_mode": reference_mode,
                 "reference_navigation": reference_navigation, "reuse_groups": reuse_spec,
                 "group_context_policies": group_context_policies,
+                "group_prompt_profiles": group_prompt_profiles,
             }, ensure_ascii=False, indent=2
         ) + "\n", encoding="utf-8"
     )
@@ -175,12 +275,22 @@ def main() -> int:
             raise ValueError(f"reuse source lacks selected records: {sorted(missing_records)}")
 
     item_table = load_item_table(config.data.item_table_path)
-    cards = load_decision_cards(config.decision_cards_path, item_table) if config.decision_cards_path else None
-    products = load_competition_product_index(config.competition_products_path) if config.competition_products_path else None
+    cards_by_group, card_paths_by_group = _group_decision_cards(
+        config, grouped_run, item_groups, item_table
+    )
+    products_by_group, product_paths_by_group = _group_competition_products(
+        config, grouped_run, item_groups
+    )
     if config.decision_cards_path:
         shutil.copy2(config.decision_cards_path, output_dir / "decision_cards.json")
+    for group_id, card_path in card_paths_by_group.items():
+        if card_path and card_path != config.decision_cards_path:
+            shutil.copy2(card_path, output_dir / f"decision_cards_{group_id}.json")
     if config.competition_products_path:
         shutil.copy2(config.competition_products_path, output_dir / "competition_products.json")
+    for group_id, product_path in product_paths_by_group.items():
+        if product_path and product_path != config.competition_products_path:
+            shutil.copy2(product_path, output_dir / f"competition_products_{group_id}.json")
     client = _make_client(config, args.mock)
     exact_counter_required = any(
         policy["max_document_chars"] is None
@@ -234,12 +344,12 @@ def main() -> int:
                 prompt_mode=config.prompt_mode, include_normalized_facts=config.include_normalized_facts,
                 context_strategy=context_policy["context_strategy"], notice_anchor_chars=config.notice_anchor_chars,
                 overflow_split_enabled=context_policy["overflow_split_enabled"], strict_document_evidence=config.strict_document_evidence,
-                absence_detection_strategy=context_policy["absence_detection_strategy"], decision_cards=cards,
-                competition_products=products, count_tokens=token_counter,
+                absence_detection_strategy=context_policy["absence_detection_strategy"], decision_cards=cards_by_group[group.group_id],
+                competition_products=products_by_group[group.group_id], count_tokens=token_counter,
                 prompt_budget_tokens=config.max_model_len - config.output_reserve_tokens,
                 reference_text=reference_text, reference_navigation=navigation,
                 active_items=group.items, prompt_layout=prompt_layout,
-                prompt_profile=config.prompt_profile,
+                prompt_profile=group_prompt_profiles[group.group_id],
                 role_directive=config.role_directive,
                 item_catalog_style=config.item_catalog_style,
                 metadata_style=config.metadata_style,
@@ -259,6 +369,7 @@ def main() -> int:
                 merged[item] = prediction.judgment[item]
             group_results.append({
                 "group": group.group_id, "items": list(group.items), "profile": route.profile if route else None,
+                "prompt_profile": group_prompt_profiles[group.group_id],
                 "bundle_path": str(bundle_path.relative_to(ROOT)) if bundle_path else None,
                 "bundle_characters": len(reference_text) if reference_text else 0,
                 "context_policy": context_policy,

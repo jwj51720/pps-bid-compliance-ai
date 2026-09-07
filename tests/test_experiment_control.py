@@ -25,3 +25,17 @@ def test_invalidated_config_cannot_be_loaded() -> None:
         assert "invalidated" in str(exc)
     else:
         raise AssertionError("invalidated config must not be runnable")
+
+
+def test_exp125_vonly_declares_only_output_contract_change() -> None:
+    base = load_config(ROOT / "configs/config.exp125a-exact-baseline-ve-fast-panel.yaml")
+    candidate = load_config(ROOT / "configs/config.exp125b-exact-baseline-vonly-fast-panel.yaml")
+    assert set(controlled_differences(base, candidate)) == {"prompt.output_mode"}
+
+
+def test_preflight_distinguishes_unset_from_explicit_null_group_override() -> None:
+    base = load_config(ROOT / "configs" / "config.exp133-two-way-g02-fast-panel.yaml")
+    candidate = load_config(ROOT / "configs" / "config.exp138-v9-source-coverage-fast-panel.yaml")
+    differences = controlled_differences(base, candidate)
+    key = "grouped_run.group_context_overrides.G03_specification_model.max_document_chars"
+    assert differences[key] == {"base": "<unset>", "candidate": None}

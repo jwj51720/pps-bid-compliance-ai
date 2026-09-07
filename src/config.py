@@ -38,6 +38,14 @@ class LLMConfig:
 
 
 @dataclass(frozen=True)
+class ReviewRunConfig:
+    """Declared two-pass review operation for an experiment or submission."""
+
+    mode: str
+    final_judgment_source: str
+
+
+@dataclass(frozen=True)
 class ExperimentConfig:
     path: Path
     raw: dict[str, Any]
@@ -72,6 +80,7 @@ class ExperimentConfig:
     metadata_style: str
     output_mode: str
     llm: LLMConfig
+    review_run: ReviewRunConfig | None
     resume: bool
     concurrency: int
     local_limit: int | None
@@ -99,6 +108,7 @@ def load_config(path: str | Path) -> ExperimentConfig:
     prompt = _mapping(raw.get("prompt"), "prompt")
     llm = _mapping(raw.get("llm"), "llm")
     run = _mapping(raw.get("run", {}), "run")
+    review_run = _mapping(raw["review_run"], "review_run") if raw.get("review_run") else None
     v8_composite_merge = _mapping(raw.get("v8_composite_merge", {}), "v8_composite_merge")
 
     # Root config lives at the repository root, while historical/experimental
@@ -184,6 +194,14 @@ def load_config(path: str | Path) -> ExperimentConfig:
             reasoning_effort=(str(llm["reasoning_effort"])
                               if llm.get("reasoning_effort") else None),
         ),
+        review_run=(
+            ReviewRunConfig(
+                mode=str(review_run["mode"]),
+                final_judgment_source=str(review_run["final_judgment_source"]),
+            )
+            if review_run is not None
+            else None
+        ),
         resume=bool(run.get("resume", True)),
         concurrency=int(run.get("concurrency", 1)),
         local_limit=int(run["local_limit"]) if run.get("local_limit") is not None else None,
@@ -208,10 +226,19 @@ def load_config(path: str | Path) -> ExperimentConfig:
         raise ValueError("prompt.mode must be baseline, structured, or guided")
     if config.prompt_layout not in {"plain", "markdown", "markdown_v2"}:
         raise ValueError("prompt.layout must be plain, markdown, or markdown_v2")
-    if config.prompt_profile not in {"default", "official_baseline_v1"}:
-        raise ValueError("prompt.profile must be default or official_baseline_v1")
-    if config.role_directive not in {"standard", "compliance_expert_v1"}:
-        raise ValueError("prompt.role_directive must be standard or compliance_expert_v1")
+    if config.prompt_profile not in {
+        "default", "official_baseline_v1", "official_baseline_subset_v1",
+    }:
+        raise ValueError(
+            "prompt.profile must be default, official_baseline_v1, or "
+            "official_baseline_subset_v1"
+        )
+    if config.role_directive not in {
+        "standard", "compliance_expert_v1", "source_first_v1"
+    }:
+        raise ValueError(
+            "prompt.role_directive must be standard, compliance_expert_v1, or source_first_v1"
+        )
     if config.item_catalog_style not in {"minimal", "official_references"}:
         raise ValueError("prompt.item_catalog_style must be minimal or official_references")
     if config.metadata_style not in {"full_json", "official_lines"}:
@@ -271,4 +298,13 @@ def load_config(path: str | Path) -> ExperimentConfig:
         "none", "low", "medium", "high", "xhigh", "max"
     }:
         raise ValueError("llm.reasoning_effort must be a supported GPT-5.6 effort")
+    if config.review_run is not None:
+        if config.review_run.mode != "untrusted_label_only_adjudication_v1":
+            raise ValueError("review_run.mode is unsupported")
+        if config.review_run.final_judgment_source != "pass_b":
+            raise ValueError("review_run.final_judgment_source must be pass_b")
+        if config.context_strategy != "single" or config.overflow_split_enabled:
+            raise ValueError("two-pass adjudication requires one fixed single context")
+        if config.active_items != tuple(f"v{index}" for index in range(1, 25)):
+            raise ValueError("two-pass adjudication requires all v1..v24 items")
     return config

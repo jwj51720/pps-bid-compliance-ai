@@ -69,6 +69,9 @@ def _policy(config: ExperimentConfig) -> dict[str, Any]:
             "tokenizer_source": config.llm.tokenizer_source or config.llm.model,
         },
         "grouped_run": config.raw.get("grouped_run", {}),
+        # A review loop is an execution/prompt policy, not a remembered CLI
+        # option. Preview and paid configs must declare it explicitly.
+        "review_run": config.raw.get("review_run", {}),
         # Remote scheduling can affect provider routing, timeout behavior, and
         # reproducibility.  Treat it as controlled in paid ablations too.
         "run": {
@@ -92,10 +95,14 @@ def controlled_differences(
     base: ExperimentConfig, candidate: ExperimentConfig
 ) -> dict[str, dict[str, Any]]:
     before, after = _flatten(_policy(base)), _flatten(_policy(candidate))
+    missing = object()
     return {
-        key: {"base": before.get(key), "candidate": after.get(key)}
+        key: {
+            "base": "<unset>" if before.get(key, missing) is missing else before[key],
+            "candidate": "<unset>" if after.get(key, missing) is missing else after[key],
+        }
         for key in sorted(set(before) | set(after))
-        if before.get(key) != after.get(key)
+        if before.get(key, missing) != after.get(key, missing)
     }
 
 
@@ -104,6 +111,39 @@ def main() -> int:
     parser.add_argument("--config", required=True)
     args = parser.parse_args()
     candidate = load_config(args.config)
+    group_card_overrides = candidate.raw.get("grouped_run", {}).get(
+        "decision_cards_overrides", {}
+    )
+    if not isinstance(group_card_overrides, dict):
+        raise ValueError("grouped_run.decision_cards_overrides must be a mapping")
+    group_product_overrides = candidate.raw.get("grouped_run", {}).get(
+        "competition_products_overrides", {}
+    )
+    if not isinstance(group_product_overrides, dict):
+        raise ValueError("grouped_run.competition_products_overrides must be a mapping")
+    group_profile_overrides = candidate.raw.get("grouped_run", {}).get(
+        "prompt_profile_overrides", {}
+    )
+    if not isinstance(group_profile_overrides, dict):
+        raise ValueError("grouped_run.prompt_profile_overrides must be a mapping")
+    invalid_profiles = {
+        group_id: profile for group_id, profile in group_profile_overrides.items()
+        if profile not in {"default", "official_baseline_v1", "official_baseline_subset_v1"}
+    }
+    if invalid_profiles:
+        raise ValueError(f"invalid group prompt profile override: {invalid_profiles}")
+    group_card_paths = []
+    for group_id, value in group_card_overrides.items():
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"group card override must be a path or null: {group_id}")
+        if value is not None:
+            group_card_paths.append((ROOT / value).resolve())
+    group_product_paths = []
+    for group_id, value in group_product_overrides.items():
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"group product override must be a path or null: {group_id}")
+        if value is not None:
+            group_product_paths.append((ROOT / value).resolve())
     for artifact in (
         candidate.data.input_path,
         candidate.data.item_table_path,
@@ -112,6 +152,8 @@ def main() -> int:
         candidate.reference_path,
         candidate.reference_bundle_dir,
         candidate.data.fast_panel_ids_path,
+        *group_card_paths,
+        *group_product_paths,
     ):
         if artifact is not None and not artifact.exists():
             raise FileNotFoundError(f"required artifact does not exist: {artifact}")

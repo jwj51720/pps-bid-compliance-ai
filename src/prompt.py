@@ -108,6 +108,21 @@ COMPLIANCE_EXPERT_DUTY_V1 = """
 사실을 확인할 수 없으면 0으로 판단한다.
 """
 
+# This is deliberately a process-only directive.  It must not add legal
+# thresholds, item-specific facts, or a different evidence contract: those
+# belong to the organizer item table or a separately versioned card policy.
+# Keeping the directive short also lets EXP127 isolate reading order from the
+# large card/context changes in earlier experiments.
+SOURCE_FIRST_WORKFLOW_V1 = """
+
+[판정 순서]
+각 항목을 답하기 전에 다음 순서로 조용히 확인한다.
+1. 공고 자료 원문에서 실제 제한·요구·불일치 또는 필요한 문구의 부재를 찾는다.
+2. 나라장터 입력 메타는 그 문구의 적용 조건과 같은 항목의 값인지 대조하는 데만 사용한다.
+3. 한 문구를 비슷한 여러 항목의 위반으로 넓혀 해석하지 말고, 각 항목을 독립적으로 판단한다.
+4. 확인되지 않은 사실·문서 밖 사유는 보충하지 않는다. 판단이 불명확하면 0으로 둔다.
+"""
+
 SYSTEM_TAIL = """출력은 JSON 객체 하나로만 작성한다. 키는 v1~v24이고 값은
 {\"위반여부\": 0 또는 1, \"근거문구\": 문자열 또는 null} 형식이다. 설명이나 머리말을 추가하지 않는다."""
 
@@ -200,16 +215,27 @@ def build_system_prompt(
     item_catalog_style: str = "minimal",
     output_mode: str = "labels_and_evidence",
 ) -> str:
-    if role_directive not in {"standard", "compliance_expert_v1"}:
-        raise ValueError("role_directive must be standard or compliance_expert_v1")
-    duty_text = COMPLIANCE_EXPERT_DUTY_V1 if role_directive == "compliance_expert_v1" else ""
-    if profile == "official_baseline_v1":
-        if active_items != ITEMS or output_mode not in {"labels_and_evidence", "labels_only"}:
+    if role_directive not in {"standard", "compliance_expert_v1", "source_first_v1"}:
+        raise ValueError(
+            "role_directive must be standard, compliance_expert_v1, or source_first_v1"
+        )
+    duty_text = (
+        COMPLIANCE_EXPERT_DUTY_V1
+        if role_directive == "compliance_expert_v1"
+        else SOURCE_FIRST_WORKFLOW_V1
+        if role_directive == "source_first_v1"
+        else ""
+    )
+    if profile in {"official_baseline_v1", "official_baseline_subset_v1"}:
+        if (
+            (profile == "official_baseline_v1" and active_items != ITEMS)
+            or output_mode not in {"labels_and_evidence", "labels_only"}
+        ):
             raise ValueError("official_baseline_v1 requires all items and VE or labels-only output")
         if item_catalog_style not in {"minimal", "official_references"}:
             raise ValueError("item_catalog_style must be minimal or official_references")
         lines = []
-        for item in ITEMS:
+        for item in active_items:
             definition = item_table[item]
             tag = "  [근거 없음]" if definition.get("부재탐지") and output_mode == "labels_only" else "  [근거 없음 — null]" if definition.get("부재탐지") else ""
             note = f" ({definition['비고']})" if definition.get("비고") else ""
@@ -243,12 +269,24 @@ def build_system_prompt(
                 lines.append(f"- {item}: {definition['항목명']}{note}{tag}{reference}{card}")
         head = OFFICIAL_BASELINE_LABELS_ONLY_HEAD if output_mode == "labels_only" else OFFICIAL_BASELINE_SYSTEM_HEAD
         tail = OFFICIAL_BASELINE_LABELS_ONLY_TAIL if output_mode == "labels_only" else OFFICIAL_BASELINE_SYSTEM_TAIL
+        if profile == "official_baseline_subset_v1":
+            item_list = ", ".join(active_items)
+            item_count = len(active_items)
+            head = (
+                head.replace("아래 24개 항목 각각", f"아래 지정 항목({item_list}) 각각")
+                .replace("24개 항목 전부", f"지정 항목({item_list}) 전부")
+                .replace("판정할 24개 항목", f"판정할 {item_count}개 항목")
+            )
+            tail = tail.replace("v1~v24", item_list)
         if layout == "markdown_v2":
             head = "# 역할\n" + head.replace("\n\n지켜야 할 것", "\n\n# 기본 규칙\n지켜야 할 것").replace("\n\n판정할 24개 항목", "\n\n# 판정 항목")
             tail = "# 출력 형식\n" + tail.strip()
         return head + duty_text + "\n" + "\n".join(lines) + "\n" + tail
     if profile != "default":
-        raise ValueError("profile must be default or official_baseline_v1")
+        raise ValueError(
+            "profile must be default, official_baseline_v1, or "
+            "official_baseline_subset_v1"
+        )
     lines = []
     sparse_anchor = output_mode == "labels_and_sparse_evidence"
     # Sparse output changes only JSON serialization.  Retain every normal VE
@@ -644,7 +682,7 @@ def build_messages(
     output_mode: str = "labels_and_evidence",
     task_profile: str = "general",
 ) -> list[dict[str, str]]:
-    if prompt_profile == "official_baseline_v1":
+    if prompt_profile in {"official_baseline_v1", "official_baseline_subset_v1"}:
         if output_mode not in {"labels_and_evidence", "labels_only"}:
             raise ValueError("official_baseline_v1 supports VE or labels-only output")
         if metadata_style not in {"official_lines", "full_json"}:
@@ -682,7 +720,10 @@ def build_messages(
             )
         return [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
     if prompt_profile != "default":
-        raise ValueError("prompt_profile must be default or official_baseline_v1")
+        raise ValueError(
+            "prompt_profile must be default, official_baseline_v1, or "
+            "official_baseline_subset_v1"
+        )
     sparse_evidence = output_mode == "labels_and_sparse_evidence"
     semantic_output_mode = "labels_and_evidence" if sparse_evidence else output_mode
     if semantic_output_mode not in {"labels_and_evidence", "labels_only", "labels_and_anchor"}:
@@ -824,6 +865,41 @@ def format_competition_product_context(
             "조회 불가는 일반제품 배제 근거가 아니므로, 공고의 물품·금액·제한 또는 예외 문구를 계속 확인하십시오."
         )
     return f"{finding}\n" + " ".join(guidance)
+
+
+def append_untrusted_review_draft(
+    messages: list[dict[str, str]],
+    judgment: dict[str, dict[str, Any]],
+    active_items: tuple[str, ...] = ITEMS,
+) -> list[dict[str, str]]:
+    """Append first-pass labels as explicitly non-source review material.
+
+    This supports the two-pass adjudication *preview* without treating an
+    earlier model response as evidence.  In particular, evidence strings are
+    intentionally omitted: the final reviewer must locate its own unchanged
+    substring in the actual notice documents.
+    """
+    if len(messages) != 2 or messages[0].get("role") != "system" or messages[1].get("role") != "user":
+        raise ValueError("review draft requires one system message and one user message")
+    if not active_items or any(item not in judgment for item in active_items):
+        raise ValueError("review draft is missing an active-item judgment")
+    labels: list[str] = []
+    for item in active_items:
+        value = judgment[item].get("위반여부")
+        if value not in {0, 1}:
+            raise ValueError(f"review draft has invalid label for {item}")
+        labels.append(f"- {item}: {value}")
+    review_text = (
+        "\n\n[1차 검토 초안 — 공고 자료가 아님]\n"
+        "아래 값은 다른 검토자의 임시 판단일 뿐이며, 사실·법령·근거문구가 아니다. "
+        "초안의 0 또는 1을 따르거나 인용하지 말고, 반드시 위의 나라장터 입력 메타와 "
+        "[문서] 원문을 다시 읽어 독립적으로 판정한다. 위반여부를 1로 둘 때의 근거문구는 "
+        "이 초안이 아니라 [문서]에서만 그대로 복사한다.\n"
+        + "\n".join(labels)
+        + "\n\n[재심사]\n"
+        "24개 항목을 모두 다시 판단하여, 지시된 JSON 하나만 출력한다."
+    )
+    return [messages[0], {"role": "user", "content": messages[1]["content"] + review_text}]
 
 
 def format_v24_comparison_context(record: dict[str, Any]) -> str:
