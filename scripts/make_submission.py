@@ -12,7 +12,7 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-STAGING = ROOT / "submission/build/final_exp109_official_baseline_v1"
+STAGING = ROOT / "submission/build/final_exp135_two_way_g02_organizer_v1"
 DIST_DIR = ROOT / "dist"
 
 
@@ -44,6 +44,10 @@ def verify_runtime_policy() -> tuple[dict, dict]:
         "output_reserve_tokens",
         "notice_anchor_chars",
         "profile",
+        "layout",
+        "role_directive",
+        "item_catalog_style",
+        "metadata_style",
         "output_mode",
         "mode",
         "include_normalized_facts",
@@ -67,6 +71,15 @@ def verify_runtime_policy() -> tuple[dict, dict]:
     if canonical_products and Path(str(canonical_products)).name != runtime_products:
         raise ValueError(
             "submission competition_products_file must equal config competition_products_path basename"
+        )
+    canonical_grouped_run = canonical.get("grouped_run", {})
+    if not isinstance(canonical_grouped_run, dict):
+        raise ValueError("config.yaml grouped_run must be a mapping")
+    canonical_grouping = str(canonical_grouped_run.get("grouping", "all"))
+    runtime_grouping = str(runtime["runtime"].get("grouping", "all"))
+    if canonical_grouping != runtime_grouping:
+        raise ValueError(
+            "config.yaml grouped_run.grouping and submission runtime grouping differ"
         )
     return canonical, runtime
 

@@ -36,11 +36,14 @@ src/
 ## 문서 입력 전략 옵션
 
 최종 정책은 `config.yaml`의 `prompt.context_strategy`와 제출용
-`submission/runtime_config.json`이 함께 정한다. `single`은 전체 문서가
-Gemma의 정확한 tokenizer 예산에 맞으면 한 번에 넣고, 초과할 때에만 순서대로
-문서를 묶어 여러 pass로 나눈다. `full_split_merge`는 각 실제 source document를
-독립 pass로 넣고 결과를 OR-merge한다. 현재 canonical 정책은 EXP-014 결과에 따라
-후자를 사용한다.
+`submission/runtime_config.json`이 함께 정한다. 현재 canonical은 organizer-format
+`single` 4,000자 context를 두 번 읽는 2-way v-item partition
+(`final-exp135-two-way-g02-organizer-v1`)이다. 첫 호출은 `v1`–`v5`, `v10`–`v18`,
+`v20`–`v24`, 두 번째 호출은 `v6`–`v9`, `v19`만 산출하며 두 결과는 서로 겹치지
+않는 열을 채운다. overflow split은 사용하지 않는다. 이는 두 호출의 투표·OR/AND
+병합이 아니라, 검증된 출력 범위 분할이다. `single`의 adaptive full-document packing과
+`full_split_merge`는 별도 versioned ablation이다. 후자는 각 실제 source document를
+독립 pass로 넣고 결과를 OR-merge한다.
 비공고문 pass에는 동일 공고임을 유지하기 위한 짧은 공고문 앵커와 메타데이터가
 함께 들어간다. 어느 모드든 한 source document 자체가 예산을 넘을 때에만 해당
 문서를 exact tokenizer 기준으로 잘라 연속 pass로 보낸다.
@@ -53,8 +56,8 @@ Gemma의 정확한 tokenizer 예산에 맞으면 한 번에 넣고, 초과할 �
 non-absence는 원칙적으로 OR이며, 문서 간에 실적제한과 지역제한이라는 두 사실을 함께
 확인해야 하는 v8만 최소 상태 관찰을 결합하는 별도 ablation으로 둔다.
 
-이 선택은 실험 전용 로직이 아니다. `src.pipeline.BaselinePipeline`이 두 환경의
-공통 구현이며, 패키징은 두 config의 관련 필드가 일치하지 않으면 실패한다.
+어느 선택이든 `src.pipeline.BaselinePipeline`이 두 환경의 공통 구현이며, 패키징은
+canonical config와 submission runtime의 관련 필드가 일치하지 않으면 실패한다.
 
 제가 보기에도 이번 방향이 더 적절합니다.
 

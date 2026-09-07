@@ -5,7 +5,11 @@
     "overflow_split_enabled": false,
     "strict_document_evidence": false,
     "output_mode": "labels_and_evidence",
-    "profile": "official_baseline_v1",
+    "profile": "official_baseline_subset_v1",
+    "layout": "plain",
+    "role_directive": "standard",
+    "item_catalog_style": "minimal",
+    "metadata_style": "official_lines",
     "absence_detection_strategy": "per_pass_or",
     "decision_cards_file": null,
     "competition_products_file": null,
@@ -17,10 +21,11 @@
   },
   "runtime": {
     "seed": 20260826,
-    "batch_size": 128,
+    "batch_size": 64,
     "batch_retries": 2,
     "gpu_memory_utilization": 0.92,
     "quantization_env": "PPS_QUANT",
-    "default_quantization": "int8_per_channel_weight_only"
+    "default_quantization": "int8_per_channel_weight_only",
+    "grouping": "document_restrictions_two_way_v1"
   }
 }

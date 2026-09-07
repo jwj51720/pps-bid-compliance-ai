@@ -17,6 +17,8 @@
 - 파일 순서 first-20은 fast gate로 사용하지 않는다. 기본 fast 평가에는 `configs/dev_fast_panel_v1.json`을 사용하며, 이 패널은 고정·버전관리한다. 패널 점수는 dev-200 확인을 대체하거나 canonical 정책 변경의 근거가 될 수 없다.
 - **변경 통제:** 기존 세팅의 일부만 바꾸는 실험은 `experiment.base_config`와 `allowed_policy_changes`를 config에 기록하고 `scripts/preflight_experiment.py`로 effective prompt·LLM·group execution policy의 차이를 확인한다. 선언하지 않은 차이가 있으면 유료 실행하지 않는다. prompt, output schema, merge, RAG, card를 한 실험에서 함께 바꾸지 않는다.
 - **재실행 안전성:** 실행 구조(v grouping, reference mode/navigation)는 runner CLI 관례가 아니라 `grouped_run` 등 versioned config에 기록한다. 결함이 확인된 실험은 `lifecycle: invalidated`로 보존하되 loader가 재실행을 거부하게 하고, 결과를 후보 비교·제출 근거로 쓰지 않는다.
+- **프롬프트 사전 검토:** 유료 prompt 실험 전에는 exact rendered system/user message를 Markdown으로 내보내고 직접 읽는다. 최소한 짧은 완전 공고·절단/overflow 공고·첨부 포함 공고를 확인하고, 검토 파일 경로와 결론을 실험 계획에 남긴다. config 값이나 prompt source만으로 input 검토를 대체하지 않는다.
+- **의미 완결성 gate:** 형식·토큰 검토와 별개로, 활성 v마다 적용 전제·1 조건·중요 0 조건/예외·필요 문서 유형·필요 metadata/CSV 사실을 organizer source와 연결한 `semantic input contract`를 먼저 만든다. 유료 실행 전 그 각각이 exact rendered input의 어느 문장에 들어가는지 대조한다. 항목명·비고만 있거나 출처 없는 추상 조건이면 실행하지 않는다.
 
 # 현재 법령·판단카드 정책
 
@@ -27,7 +29,7 @@
 
 ## Canonical 모델 입력 형태
 
-모든 후보·제출 prompt는 아래 순서를 기본 형태로 쓴다. 이는 RAG가 아니다. 법령·고시·예외의 offline 검토 결과를 card에 압축해 둔 **카드 중심 판정 작업지시**다.
+card를 사용하는 후보 prompt는 아래 순서를 기본 형태로 쓴다. 이는 RAG가 아니다. 법령·고시·예외의 offline 검토 결과를 card에 압축해 둔 **카드 중심 판정 작업지시**다. 현재 canonical 제출은 organizer-format two-way output partition으로 card를 사용하지 않으며, `config.yaml`과 `submission/runtime_config.json`이 그 사실과 같은 grouping을 함께 정한다.
 
 ```text
 1. 기본 역할·판정 원칙
