@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import io
 import json
+import subprocess
 import tarfile
 from datetime import datetime
 from pathlib import Path
@@ -25,15 +26,28 @@ INCLUDE_PATHS = (
     "scripts",
     "submission",
     "tests",
+    "incubator",
     "data/raw",
     "data/derived",
     "outputs",
 )
-EXCLUDED_PARTS = {"__pycache__", ".DS_Store", ".git", ".venv", ".pytest_cache"}
+EXCLUDED_PARTS = {
+    "__pycache__",
+    ".DS_Store",
+    ".git",
+    ".venv",
+    ".pytest_cache",
+    "cache",
+}
+EXCLUDED_NAMES = {".env", ".envrc"}
 
 
 def should_include(path: Path) -> bool:
-    return not any(part in EXCLUDED_PARTS for part in path.parts) and path.suffix != ".pyc"
+    return (
+        not any(part in EXCLUDED_PARTS for part in path.parts)
+        and path.name not in EXCLUDED_NAMES
+        and path.suffix != ".pyc"
+    )
 
 
 def files_to_archive() -> list[Path]:
@@ -58,6 +72,32 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def git_revision() -> str | None:
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode:
+        return None
+    return result.stdout.strip()
+
+
+def git_is_dirty() -> bool | None:
+    result = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode:
+        return None
+    return bool(result.stdout.strip())
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", help="archive stem; .tar.xz is added when omitted")
@@ -74,9 +114,11 @@ def main() -> int:
         "included_roots": list(INCLUDE_PATHS),
         "excluded": [
             ".env",
+            ".envrc",
             ".git",
             ".venv",
             ".pytest_cache",
+            "cache",
             "dist/archives (recursive archive exclusion)",
             "__pycache__",
             ".DS_Store",
@@ -89,6 +131,8 @@ def main() -> int:
             }
             for path in files
         ],
+        "git_revision": git_revision(),
+        "git_worktree_dirty": git_is_dirty(),
     }
     DIST_ARCHIVES.mkdir(parents=True, exist_ok=True)
     with tarfile.open(destination, "w:xz") as archive:

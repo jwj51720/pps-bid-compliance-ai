@@ -1,0 +1,7 @@
+{
+  "experiment_id": "inc019_product_family_matrix_audit",
+  "data_root": "data/raw/open",
+  "product_csv_path": "data/법령패키지/중기부고시/중기부고시_경쟁제품_세부품명.csv",
+  "items": ["v10", "v11", "v12", "v13", "v14", "v15", "v16", "v17", "v18"],
+  "policy": "offline organizer-product-index and source-cue fact matrix; no automatic labels and no API calls"
+}

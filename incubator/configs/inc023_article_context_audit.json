@@ -1,0 +1,7 @@
+{
+  "experiment_id": "inc023_article_context_audit",
+  "data_root": "data/raw/open",
+  "law_directory": "data/raw/open/data/법령패키지/법령",
+  "model_tokenizer": "google/gemma-3-27b-it",
+  "output_path": "incubator/data/derived/inc023_article_context_audit.json"
+}

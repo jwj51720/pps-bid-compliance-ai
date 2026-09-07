@@ -1,0 +1,22 @@
+{
+  "experiment_id": "inc018_global_context_architecture",
+  "data_root": "data/raw/open",
+  "model_tokenizer": "google/gemma-4-26B-A4B-it",
+  "model": "google/gemma-4-26b-a4b-it",
+  "api_url": "https://openrouter.ai/api/v1/chat/completions",
+  "api_key_env": "OPENROUTER_API_KEY",
+  "temperature": 0.0,
+  "seed": 20260905,
+  "max_tokens": 1800,
+  "timeout_seconds": 120,
+  "request_retries": 1,
+  "max_model_len": 32768,
+  "output_reserve_tokens": 2200,
+  "announcement_anchor_chars": 2500,
+  "max_requests": 700,
+  "max_cost_usd": 1.50,
+  "observed_input_cost_per_token_usd": 0.00000015,
+  "observed_completion_cost_per_token_usd": 0.00000060,
+  "assumed_completion_tokens": 700,
+  "concurrency": 16
+}
