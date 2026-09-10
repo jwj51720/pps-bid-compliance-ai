@@ -87,4 +87,4 @@ def test_untrusted_review_draft_carries_labels_but_never_first_pass_evidence() -
     assert "- v1: 1" in reviewed[1]["content"]
     assert "- v2: 0" in reviewed[1]["content"]
     assert "원문 근거" not in reviewed[1]["content"]
-    assert "[문서]에서만 그대로 복사" in reviewed[1]["content"]
+    assert "공고 자료 원문에서만 그대로 복사" in reviewed[1]["content"]

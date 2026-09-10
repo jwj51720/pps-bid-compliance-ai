@@ -59,3 +59,35 @@ resolution pass, exceeding this candidate's bounded topology; it is not part of 
 5. A fast20 result must improve over the matching EXP169 direct full-source control and not regress
    parser/evidence behavior before an unchanged frozen holdout20. Promotion to dev200 requires the
    same direction on holdout. A failure closes this topology without draft wording or voting variants.
+
+## Preflight record — 2026-09-10
+
+`scripts/preflight_experiment.py` reports exactly one controlled difference from EXP169:
+`staged_run.mode: <unset> -> vonly_draft_full_final_v1`. The implementation keeps the V-only draft
+and V/E final in the shared pipeline. It serializes both exact message packs, records whether a
+draft was available, and has no Python label merge. On malformed A, B has no advisory draft; on
+malformed B, the recovery is one ordinary complete-source V/E call.
+
+The fast-panel mock completed 20/20 and explicitly verified stage provenance. The full test suite
+passed 148 tests, including the V-only-draft final-owner test and the untrusted-draft evidence
+contract test. The rendered stage A output contract is exactly 24 integers; B's draft is headed as
+non-source material and says that evidence must come from the actual complete source.
+
+`scripts/profile_exp186_vonly_admission.py` performed exact Gemma tokenizer admission over dev200:
+215 draft calls plus 216 final calls, or 431 total; batch size 64 requires four draft and four final
+rounds. Draft prompt tokens total 3,170,914 (p50 12,795; max 30,268), and B prompt tokens total
+3,268,593 (p50 13,203; max 30,268). Both stages have zero source-document omissions. This is a
+call/token topology result, not vLLM throughput evidence.
+
+The label-blind semantic contract audit passed all 24 items on the actual rendered short,
+attachment, and overflow fixtures:
+
+- `outputs/exp186-semantic-contract-audit-v1/PPS-DEV-062/`
+- `outputs/exp186-semantic-contract-audit-v1/PPS-DEV-046/`
+- `outputs/exp186-semantic-contract-audit-v1/PPS-DEV-082/`
+
+The dev200 final base admission artifact records 374 source documents, zero source or metadata
+omissions, no missing active card, and no over-budget final pack at
+`outputs/exp186-admission-audit-v1/final_admission.json`. The next permitted action is one paid
+fast20 probe only; cards, source admission, merge, provider parameters, and output schema remain
+fixed.
