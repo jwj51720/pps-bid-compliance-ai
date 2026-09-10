@@ -91,3 +91,24 @@ omissions, no missing active card, and no over-budget final pack at
 `outputs/exp186-admission-audit-v1/final_admission.json`. The next permitted action is one paid
 fast20 probe only; cards, source admission, merge, provider parameters, and output schema remain
 fixed.
+
+## Result and decision — 2026-09-10
+
+`outputs/exp-186-vonly-draft-full-final-fast-panel-c4/` completed 20/20 at macro positive-F1
+`0.206944`, below matching direct complete-source EXP169 `0.262500` (`-0.055556`). It made 23
+draft plus 23 final calls (46 total), with no parse errors and no recovery. CSV validation passed
+but issued four invalid-positive-evidence warnings, versus the direct control's lower warning count.
+Remote elapsed time (`110.8s`) is not vLLM runtime evidence.
+
+Relative to EXP169, the final verifier loses one v4 TP and one v23 TP, adds two v22 FPs, and removes
+one v19 FP. Its direct-to-final changes include losing `PPS-DEV-062/v4`, `PPS-DEV-062/v23`, and
+`PPS-DEV-141/v23`, while adding v22 FPs at `PPS-DEV-131` and `PPS-DEV-199`. The draft-to-final
+comparison shows the final still changed 14 cells, so it did not mechanically copy the draft; the
+problem is that the advisory labels altered final calibration rather than providing a reliable
+signal. The complete changed-cell and evidence ledger is in the run's `predictions.jsonl` and
+`errors.csv`.
+
+**Decision: reject EXP186 as a V/E verifier topology.** Do not run holdout/dev200 or tune its draft
+wording. A user-requested separate diagnostic may still test several full-source V-only readings
+with a model-owned V-only resolver, but it cannot claim evidence quality or submission readiness
+without a source-grounded evidence mechanism.
