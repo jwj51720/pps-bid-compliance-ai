@@ -12,7 +12,7 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-STAGING = ROOT / "submission/build/final_exp125a_exact_organizer_control_v1"
+STAGING = ROOT / "submission/build/exp171_source_first_full_final_v1"
 DIST_DIR = ROOT / "dist"
 
 
@@ -81,6 +81,10 @@ def verify_runtime_policy() -> tuple[dict, dict]:
         raise ValueError(
             "config.yaml grouped_run.grouping and submission runtime grouping differ"
         )
+    if canonical.get("staged_run", {}) != runtime.get("staged_run", {}):
+        raise ValueError("config.yaml and submission runtime staged_run differ")
+    if canonical.get("postprocess", {}) != runtime.get("postprocess", {}):
+        raise ValueError("config.yaml and submission runtime postprocess differ")
     return canonical, runtime
 
 

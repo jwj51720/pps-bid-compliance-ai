@@ -23,9 +23,17 @@ from src.data import (
     load_records,
 )
 from src.pipeline import BaselinePipeline, parse_judgment
-from src.pipeline import judgment_to_row, zero_judgment
+from src.pipeline import (
+    PredictionError,
+    _clean_evidence,
+    judgment_to_row,
+    parse_fact_inventory_response,
+    zero_judgment,
+)
+from src.context_budget import DocumentContext, pack_contexts_to_token_budget
 from src.legal_groups import groups_for_scheme
-from src.schema import judgment_schema
+from src.prompt import append_fact_inventory, build_fact_inventory_system_prompt, build_messages
+from src.schema import FACT_INVENTORY_CATEGORIES, fact_inventory_schema, judgment_schema
 from src.submission import prediction_rows, validate_submission, write_submission
 
 RUNTIME_CONFIG = json.loads((ROOT / "runtime_config.json").read_text(encoding="utf-8"))
@@ -61,6 +69,14 @@ class MockClient:
 
         del messages
         properties = response_schema["properties"]
+        if properties and all(value.get("type") == "array" for value in properties.values()):
+            content = {key: [] for key in properties}
+            return Completion(
+                content=json.dumps(content, ensure_ascii=False),
+                model=self.model,
+                latency_seconds=0.0,
+                usage={},
+            )
         sparse = "판정" in properties and "발췌" in properties
         label_properties = properties["판정"]["properties"] if sparse else properties
         first_item = next(iter(label_properties))
@@ -114,17 +130,23 @@ class VLLMClient:
             dtype="auto",
         )
         self.tokenizer = self.llm.get_tokenizer()
-        self.sampling_params = SamplingParams(
-            temperature=0.0,
-            max_tokens=OUTPUT_RESERVE_TOKENS,
-            seed=SEED,
-            structured_outputs=StructuredOutputsParams(
-                json=judgment_schema(
-                    output_mode=str(PROMPT_CONFIG.get("output_mode", "labels_and_evidence"))
-                ), disable_any_whitespace=True
-            ),
-        )
+        self._sampling_params_type = SamplingParams
+        self._structured_outputs_type = StructuredOutputsParams
+        self._sampling_cache: dict[str, Any] = {}
         self.model = model_dir
+
+    def _sampling_params_for(self, response_schema: dict[str, Any]):
+        schema_key = json.dumps(response_schema, ensure_ascii=False, sort_keys=True)
+        if schema_key not in self._sampling_cache:
+            self._sampling_cache[schema_key] = self._sampling_params_type(
+                temperature=0.0,
+                max_tokens=OUTPUT_RESERVE_TOKENS,
+                seed=SEED,
+                structured_outputs=self._structured_outputs_type(
+                    json=response_schema, disable_any_whitespace=True
+                ),
+            )
+        return self._sampling_cache[schema_key]
 
     def count_tokens(self, messages: list[dict[str, str]]) -> int:
         encoded = self.tokenizer.apply_chat_template(
@@ -137,8 +159,9 @@ class VLLMClient:
         return self.complete_batch([messages], response_schema)[0]
 
     def complete_batch(self, batch, response_schema):
-        del response_schema
-        outputs = self.llm.chat(batch, sampling_params=self.sampling_params, use_tqdm=False)
+        outputs = self.llm.chat(
+            batch, sampling_params=self._sampling_params_for(response_schema), use_tqdm=False
+        )
         return [
             Completion(
                 content=output.outputs[0].text if output.outputs else "",
@@ -217,6 +240,34 @@ def _complete_group_with_json_retries(
     return outputs, retry_count
 
 
+def _complete_inventory_with_json_retries(
+    client,
+    messages_batch: list[list[dict[str, str]]],
+    response_schema: dict[str, Any],
+    batch_retries: int,
+) -> tuple[list[Completion], int]:
+    """Retry malformed source-fact inventory independently of V/E parsing."""
+    outputs = _complete_batch_with_retries(
+        client, messages_batch, response_schema, batch_retries
+    )
+    retry_count = 0
+    for index, output in enumerate(outputs):
+        try:
+            parse_fact_inventory_response(output.content)
+            continue
+        except PredictionError:
+            retry_count += 1
+        replacement = _complete_batch_with_retries(
+            client, [messages_batch[index]], response_schema, batch_retries
+        )[0]
+        try:
+            parse_fact_inventory_response(replacement.content)
+            outputs[index] = replacement
+        except PredictionError:
+            pass
+    return outputs, retry_count
+
+
 def build_submission_pipeline(
     *,
     item_table: dict[str, dict[str, Any]],
@@ -247,10 +298,128 @@ def build_submission_pipeline(
         item_catalog_style=str(PROMPT_CONFIG.get("item_catalog_style", "minimal")),
         metadata_style=str(PROMPT_CONFIG.get("metadata_style", "full_json")),
         output_mode=str(PROMPT_CONFIG.get("output_mode", "labels_and_evidence")),
+        frozen_rule_set=(
+            str(RUNTIME_CONFIG.get("postprocess", {}).get("frozen_rule_set"))
+            if RUNTIME_CONFIG.get("postprocess", {}).get("frozen_rule_set") else None
+        ),
         visible_document_types=(
             tuple(PROMPT_CONFIG["visible_document_types"])
             if PROMPT_CONFIG.get("visible_document_types") is not None else None
         ),
+    )
+
+
+def _source_text(context: str | DocumentContext | None, record: dict[str, Any]) -> str:
+    if isinstance(context, DocumentContext):
+        return context.text
+    if context is not None:
+        return context
+    return "\n\n".join(doc["text"] for doc in record["docs"])
+
+
+def _source_first_full_final_rows(
+    records: list[dict[str, Any]], pipeline: BaselinePipeline, client: Any,
+    batch_size: int, batch_retries: int,
+) -> tuple[list[dict[str, Any]], int, int]:
+    """Run EXP171's source-first/full-final policy in two vLLM-batched stages.
+
+    The first stage produces only source-grounded factual navigation.  It has
+    no label semantics.  The second stage owns V/E and receives all original
+    admitted source again.  This mirrors the shared pipeline method while
+    batching each stage across notices for submission throughput.
+    """
+    inventory_system = build_fact_inventory_system_prompt()
+    inventory_schema = fact_inventory_schema()
+    stage_contexts: list[list[str | DocumentContext | None]] = []
+    inventories: list[dict[str, list[tuple[str, str]]]] = []
+    pending: list[tuple[int, str, list[dict[str, str]]]] = []
+    for index, record in enumerate(records):
+        contexts = pipeline.contexts_for_record(record)
+        stage_contexts.append(contexts)
+        inventories.append({category: [] for category in FACT_INVENTORY_CATEGORIES})
+        visible = pipeline._visible_record(record)
+        for context in contexts:
+            source = _source_text(context, visible)
+            messages = build_messages(
+                visible,
+                inventory_system,
+                pipeline.max_document_chars,
+                document_context=source,
+                prompt_profile=pipeline.prompt_profile,
+                metadata_style=pipeline.metadata_style,
+                output_mode="labels_only",
+            )
+            pending.append((index, source, messages))
+
+    retried_malformed = 0
+    for start in range(0, len(pending), batch_size):
+        batch = pending[start : start + batch_size]
+        outputs, retries = _complete_inventory_with_json_retries(
+            client, [messages for _, _, messages in batch], inventory_schema,
+            batch_retries,
+        )
+        retried_malformed += retries
+        for (index, source, _), completion in zip(batch, outputs):
+            try:
+                parsed = parse_fact_inventory_response(completion.content)
+            except PredictionError:
+                parsed = {category: [] for category in FACT_INVENTORY_CATEGORIES}
+            visible = pipeline._visible_record(records[index])
+            for category, values in parsed.items():
+                for value in values:
+                    excerpt = _clean_evidence(value, source)
+                    if not excerpt:
+                        continue
+                    doc_id = next(
+                        (doc["doc_id"] for doc in visible["docs"] if excerpt in doc["text"]),
+                        "source",
+                    )
+                    if (doc_id, excerpt) not in inventories[index][category]:
+                        inventories[index][category].append((doc_id, excerpt))
+
+    final_contexts: list[list[str | DocumentContext | None]] = []
+    final_completions: list[list[Completion]] = [[] for _ in records]
+    final_pending: list[tuple[int, list[dict[str, str]]]] = []
+    for index, record in enumerate(records):
+        visible = pipeline._visible_record(record)
+        inventory = {
+            category: tuple(inventories[index][category])
+            for category in FACT_INVENTORY_CATEGORIES
+        }
+
+        def final_messages_for(context: str | DocumentContext | None) -> list[dict[str, str]]:
+            return append_fact_inventory(
+                pipeline.messages_for_context(record, context), inventory,
+            )
+
+        contexts = pack_contexts_to_token_budget(
+            visible,
+            pipeline.system_prompt_for_record(record),
+            client.count_tokens,
+            pipeline.prompt_budget_tokens,
+            pipeline.notice_anchor_chars,
+            message_builder=final_messages_for,
+        )
+        final_contexts.append(contexts)
+        for context in contexts:
+            final_pending.append((index, final_messages_for(context)))
+
+    for start in range(0, len(final_pending), batch_size):
+        batch = final_pending[start : start + batch_size]
+        outputs, retries = _complete_group_with_json_retries(
+            client, [messages for _, messages in batch], pipeline.response_schema,
+            batch_retries, pipeline.active_items,
+        )
+        retried_malformed += retries
+        for (index, _), completion in zip(batch, outputs):
+            final_completions[index].append(completion)
+
+    rows = [
+        pipeline.finalize(record, final_completions[index], final_contexts[index])
+        for index, record in enumerate(records)
+    ]
+    return prediction_rows(rows), retried_malformed, sum(
+        len(row.parse_errors) for row in rows
     )
 
 
@@ -275,10 +444,15 @@ def main() -> int:
     )
     client = MockClient() if args.mock else VLLMClient(model_dir)
     grouping = str(RUNTIME.get("grouping", "all"))
+    staged_mode = str(RUNTIME_CONFIG.get("staged_run", {}).get("mode", "off"))
     batch_retries = int(RUNTIME.get("batch_retries", 2))
     if batch_retries < 0:
         raise ValueError("runtime.batch_retries must be non-negative")
     groups = groups_for_scheme(grouping) if grouping != "all" else ()
+    if staged_mode not in {"off", "fact_inventory_full_final_v1"}:
+        raise ValueError(f"unsupported submission staged mode: {staged_mode}")
+    if staged_mode != "off" and groups:
+        raise ValueError("source-first submission mode does not support item grouping")
 
     pipeline = build_submission_pipeline(
         item_table=item_table,
@@ -288,7 +462,11 @@ def main() -> int:
     )
     retried_malformed = 0
 
-    if not groups:
+    if staged_mode == "fact_inventory_full_final_v1":
+        output_rows, retried_malformed, unrecovered = _source_first_full_final_rows(
+            records, pipeline, client, args.batch_size, batch_retries,
+        )
+    elif not groups:
         pending = []
         contexts_by_record = []
         completions = [[] for _ in records]

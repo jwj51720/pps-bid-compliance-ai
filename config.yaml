@@ -1,10 +1,8 @@
-# Canonical control policy: exact organizer-format single-call V/E baseline.
-# Submission runtime values must match this file; historical experiments live
-# in configs/.  EXP135's two-way partition is preserved under configs/ but was
-# rejected as a default after its public result (see submission_lessons.md).
+# EXP171 submission candidate: source-first navigation plus full-source final
+# V/E. Submission runtime values must match this policy exactly.
 experiment:
-  id: final-exp125a-exact-organizer-control-v1
-  derived_data: []
+  id: submit-exp171-source-first-full-final-v1
+  derived_data: [decision_cards_v6, competition_products_v1]
 
 data:
   root: data/raw/open
@@ -14,24 +12,24 @@ data:
   fast_panel_ids_path: configs/dev_fast_panel_v1.json # default local fast gate; submission does not read this field
 
 output:
-  dir: outputs/final-exp125a-exact-organizer-control-v1
+  dir: outputs/submit-exp171-source-first-full-final-v1
 
 prompt:
-  max_document_chars: 4000
+  max_document_chars: null
   context_strategy: single # options: single, split, full_split_merge
-  overflow_split_enabled: false # options: true, false
+  overflow_split_enabled: true # options: true, false
   strict_document_evidence: false # options: true, false; full_split_merge only
-  profile: official_baseline_v1 # options: default, official_baseline_v1, official_baseline_subset_v1
+  profile: complete_fact_v1 # options: default, official_baseline_v1, official_baseline_subset_v1, complete_fact_v1
   layout: plain # options: plain, markdown, markdown_v2
   role_directive: standard # options: standard, compliance_expert_v1, source_first_v1
   item_catalog_style: minimal # options: minimal, official_references
   metadata_style: official_lines # options: official_lines, full_json
   output_mode: labels_and_evidence # options: labels_and_evidence, labels_only, labels_and_anchor, labels_and_sparse_evidence
-  absence_detection_strategy: per_pass_or # options: per_pass_or, per_pass_and; full_split_merge only
-  decision_cards_path: null # options: null, data/derived/decision_cards_v1.json, data/derived/decision_cards_v2.json
-  competition_products_path: null # options: null, data/derived/competition_products_v1.json
-  max_model_len: 16384
-  output_reserve_tokens: 1536
+  absence_detection_strategy: per_pass_and # options: per_pass_or, per_pass_and
+  decision_cards_path: data/derived/decision_cards_v6.json
+  competition_products_path: data/derived/competition_products_v1.json
+  max_model_len: 32768
+  output_reserve_tokens: 2500
   notice_anchor_chars: 4000
   mode: baseline # options: baseline, structured, guided
   include_normalized_facts: false # options: true, false
@@ -42,7 +40,7 @@ llm:
   api_key_env: OPENROUTER_API_KEY
   api_url: https://openrouter.ai/api/v1/chat/completions
   temperature: 0.0
-  max_tokens: 1536
+  max_tokens: 2500
   seed: 20260826
   timeout_seconds: 180
   request_retries: 3
@@ -53,4 +51,10 @@ llm:
 
 run:
   resume: true # options: true, false
-  concurrency: 4
+  concurrency: 64
+
+staged_run:
+  mode: fact_inventory_full_final_v1
+
+postprocess:
+  frozen_rule_set: exp123_v1
