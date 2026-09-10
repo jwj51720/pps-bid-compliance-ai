@@ -29,7 +29,7 @@
 
 ## Canonical 모델 입력 형태
 
-card를 사용하는 후보 prompt는 아래 순서를 기본 형태로 쓴다. 이는 RAG가 아니다. 법령·고시·예외의 offline 검토 결과를 card에 압축해 둔 **카드 중심 판정 작업지시**다. 현재 canonical 제출은 organizer-format two-way output partition으로 card를 사용하지 않으며, `config.yaml`과 `submission/runtime_config.json`이 그 사실과 같은 grouping을 함께 정한다.
+card를 사용하는 후보 prompt는 아래 순서를 기본 형태로 쓴다. 이는 RAG가 아니다. 법령·고시·예외의 offline 검토 결과를 card에 압축해 둔 **카드 중심 판정 작업지시**다. 현재 canonical control은 organizer-format single-call baseline으로 card를 사용하지 않으며, `config.yaml`과 `submission/runtime_config.json`이 같은 prompt policy를 함께 정한다. EXP135 2-way output partition은 public 일반화 실패 후 historical experiment로 보존한다.
 
 ```text
 1. 기본 역할·판정 원칙

@@ -152,3 +152,30 @@ roughly 55–72 minutes, below the two-hour limit but not a substitute for an
 actual evaluator runtime measurement. This candidate deliberately does not
 include EXP146's global two-pass adjudication: it declined on dev-200 and had
 a severe malformed-output runaway on `PPS-DEV-160`.
+
+## 2026-09-09: EXP135 public result — local grouping signal rejected
+
+The submitted archive above completed successfully:
+
+| Archive / submission note | Local dev-200 macro positive-F1 | Public macro positive-F1 | Runtime |
+| --- | ---: | ---: | ---: |
+| `pps_20260907_174343.zip` — EXP135 two-way v-item partition | 0.24694 | **0.2200692374** | 93m 28s |
+
+The 93m runtime is inside the 2-hour constraint, so runtime is not the reason
+to reject this candidate. Quality is. EXP135 had improved over its local
+single-call organizer control (0.22350) and had also passed fast-20 and an
+independent 20-notice holdout. Nevertheless, its public score is below the
+best confirmed public EXP123 result (0.2604457110).
+
+There is no same-template/same-decoder single-call public control for this
+particular submission, so this observation does **not** prove that two-way
+partitioning alone lowered public score. It does prove the operationally
+important weaker statement: the three local gains were insufficient to promote
+the grouping policy as a reliable general improvement. Do not submit another
+v-item partition, tune its G01/G02 composition against dev labels, or combine
+it with a verifier loop or document splitting.
+
+For the next research cycle, treat exact organizer single-call V/E as the
+control and begin with an actual-message/semantic-input audit before a new
+paid prompt treatment. EXP135 remains a documented negative generalization
+result, not the default final policy.

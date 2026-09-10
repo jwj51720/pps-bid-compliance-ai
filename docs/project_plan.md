@@ -36,12 +36,11 @@ src/
 ## 문서 입력 전략 옵션
 
 최종 정책은 `config.yaml`의 `prompt.context_strategy`와 제출용
-`submission/runtime_config.json`이 함께 정한다. 현재 canonical은 organizer-format
-`single` 4,000자 context를 두 번 읽는 2-way v-item partition
-(`final-exp135-two-way-g02-organizer-v1`)이다. 첫 호출은 `v1`–`v5`, `v10`–`v18`,
-`v20`–`v24`, 두 번째 호출은 `v6`–`v9`, `v19`만 산출하며 두 결과는 서로 겹치지
-않는 열을 채운다. overflow split은 사용하지 않는다. 이는 두 호출의 투표·OR/AND
-병합이 아니라, 검증된 출력 범위 분할이다. `single`의 adaptive full-document packing과
+`submission/runtime_config.json`이 함께 정한다. 현재 canonical control은 organizer-format
+`single` 4,000자 V/E baseline(`final-exp125a-exact-organizer-control-v1`)이다. 한 공고문
+context를 한 번 호출하며 overflow split은 사용하지 않는다. EXP135의 2-way v-item
+partition은 dev에서 개선됐지만 public 0.220069으로 일반화 근거를 잃었으므로 versioned
+historical experiment로만 보존한다. `single`의 adaptive full-document packing과
 `full_split_merge`는 별도 versioned ablation이다. 후자는 각 실제 source document를
 독립 pass로 넣고 결과를 OR-merge한다.
 비공고문 pass에는 동일 공고임을 유지하기 위한 짧은 공고문 앵커와 메타데이터가

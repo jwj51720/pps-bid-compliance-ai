@@ -8,12 +8,20 @@
 | --- | --- | ---: | ---: | ---: |
 | EXP-120 | 4,000자 ordered context + card v6 + 단일 Gemma V/E | 0.248932 | 0.244317 | 기록 참조 |
 | EXP-123 | EXP-120 + v2/v3/v21 source-grounded fixed rules | 0.317797 | 0.260446 | 37분 14초 |
+| EXP-135 | organizer 4,000자 V/E + disjoint 2-way v partition | 0.246940 | 0.220069 | 93분 28초 |
 | 외부 관측 | 별도 팀의 상이한 rule-based 전략 | 재현 대상으로 사용하지 않음 | 참고치만 존재 | 미확인 |
 
 EXP-123은 public에서 EXP-120보다 +0.016129 상승했다. 따라서 세 fixed
 rule이 전혀 무의미했다고 볼 수는 없다. 그러나 dev에서의 +0.068865와 비교하면
 증가분의 대부분은 일반화되지 않았다. v2/v3/v21처럼 dev 오류를 보고 발견한
 item별 rule을 더 추가하는 전략은 여기서 종료한다.
+
+EXP135는 fast-20·독립 holdout-20·dev-200에서 모두 organizer single-call
+control보다 높았지만 public에서는 0.220069에 그쳤다. 따라서 `v` 출력 범위를
+나누는 구조도 local 반복 개선만으로 canonical 제출 정책으로 승격하지 않는다.
+동일 prompt/template의 public single-call control이 없으므로 "그룹화가 public을
+낮췄다"고 단정하지는 않는다. 다만 지금부터 G01/G02 구성·항목별 지시를 dev 라벨에
+맞춰 조정하거나, 이를 다른 다중 호출 구조와 합성하는 것은 금지한다.
 
 Public은 1,853개 전체 평가 자료의 24개 v positive-class F1 평균이다. 따라서 이
 차이는 작은 public sample의 단순 분산으로 설명해서는 안 된다. e 열은 leaderboard
