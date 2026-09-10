@@ -115,6 +115,18 @@ class TwoPassAdjudicationPrediction:
 
 
 @dataclass(frozen=True)
+class VOnlyDraftFullFinalPrediction:
+    """Complete-source V-only draft followed by a complete-source V/E owner."""
+
+    draft: Prediction
+    draft_messages_by_context: tuple[tuple[dict[str, str], ...], ...]
+    final: Prediction
+    final_messages_by_context: tuple[tuple[dict[str, str], ...], ...]
+    draft_available: bool
+    final_recovery_used: bool
+
+
+@dataclass(frozen=True)
 class TriageThenStrictPrediction:
     """B architecture: non-final routing followed by a strict subset pass.
 
@@ -801,6 +813,91 @@ class BaselinePipeline:
             pass_b=pass_b,
             final=pass_b,
             final_source="pass_b",
+        )
+
+    def _labels_only_draft_pipeline(self) -> "BaselinePipeline":
+        """Make an advisory all-item reader without evidence or frozen rules."""
+        return BaselinePipeline(
+            item_table=self._item_table,
+            client=self.client,
+            max_document_chars=self.max_document_chars,
+            prompt_mode=self._prompt_mode,
+            include_normalized_facts=self.include_normalized_facts,
+            context_strategy=self.context_strategy,
+            notice_anchor_chars=self.notice_anchor_chars,
+            overflow_split_enabled=self.overflow_split_enabled,
+            count_tokens=self.count_tokens,
+            prompt_budget_tokens=self.prompt_budget_tokens,
+            reference_text=self._reference_text,
+            reference_navigation=self._reference_navigation,
+            law_bundle_router=None,
+            strict_document_evidence=False,
+            absence_detection_strategy=self.absence_detection_strategy,
+            decision_cards=self._decision_cards,
+            competition_products=self.competition_products,
+            v8_composite_merge_enabled=False,
+            v8_composite_merge_mode=self.v8_composite_merge_mode,
+            candidate_detection=self._candidate_detection,
+            active_items=self.active_items,
+            prompt_layout=self.prompt_layout,
+            prompt_profile=self.prompt_profile,
+            role_directive=self.role_directive,
+            item_catalog_style=self.item_catalog_style,
+            metadata_style=self.metadata_style,
+            output_mode="labels_only",
+            visible_document_types=self.visible_document_types,
+            frozen_rule_set=None,
+            locator_policy=self.locator_policy,
+            applicability_gate_mode="off",
+        )
+
+    def predict_with_vonly_draft_then_full_final(
+        self, record: dict[str, Any]
+    ) -> VOnlyDraftFullFinalPrediction:
+        """Let a full-source V-only read advise, never own, a V/E final read."""
+        if self.count_tokens is None:
+            raise ValueError("V-only draft full-final requires exact tokenizer admission")
+        draft_pipeline = self._labels_only_draft_pipeline()
+        draft_contexts = draft_pipeline.contexts_for_record(record)
+        draft_messages = tuple(
+            tuple(draft_pipeline.messages_for_context(record, context))
+            for context in draft_contexts
+        )
+        draft = draft_pipeline.predict(record)
+        draft_available = not bool(draft.parse_errors)
+
+        def final_messages_for(context: str | None) -> list[dict[str, str]]:
+            messages = self.messages_for_context(record, context)
+            return (
+                append_untrusted_review_draft(messages, draft.judgment, self.active_items)
+                if draft_available else messages
+            )
+
+        visible = self._visible_record(record)
+        final_contexts = pack_contexts_to_token_budget(
+            visible,
+            self.system_prompt_for_record(record),
+            self.count_tokens,
+            self.prompt_budget_tokens,
+            self.notice_anchor_chars,
+            message_builder=final_messages_for,
+        )
+        final_messages = [final_messages_for(context) for context in final_contexts]
+        completions = [
+            self.client.complete(messages, self.response_schema)
+            for messages in final_messages
+        ]
+        final = self.finalize(record, completions, final_contexts)
+        recovery = bool(final.parse_errors)
+        if recovery:
+            final = self.predict(record)
+        return VOnlyDraftFullFinalPrediction(
+            draft=draft,
+            draft_messages_by_context=draft_messages,
+            final=final,
+            final_messages_by_context=tuple(tuple(messages) for messages in final_messages),
+            draft_available=draft_available,
+            final_recovery_used=recovery,
         )
 
     def _triage_messages_for_context(

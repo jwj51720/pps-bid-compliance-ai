@@ -35,6 +35,7 @@ from src.prompt import (  # noqa: E402
     append_fact_inventory,
     append_procedure_fact_navigation,
     append_timeline_fact_navigation,
+    append_untrusted_review_draft,
     append_locator_navigation,
     build_fact_inventory_system_prompt,
     build_procedure_fact_system_prompt,
@@ -260,6 +261,17 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                     messages = append_timeline_fact_navigation(
                         messages, {role: () for role in TIMELINE_FACT_ROLES}
                     )
+            elif staged_mode == "vonly_draft_full_final_v1":
+                draft_pipeline = pipeline._labels_only_draft_pipeline()
+                source_stage_messages[record_id] = [
+                    draft_pipeline.messages_for_context(by_id[record_id], context)
+                    for context in draft_pipeline.contexts_for_record(by_id[record_id])
+                ]
+                messages = append_untrusted_review_draft(
+                    pipeline.messages_for_context(by_id[record_id], None),
+                    {item: {"위반여부": 0, "근거문구": None} for item in ITEMS},
+                    ITEMS,
+                )
             else:
                 messages = final_messages_for_record(pipeline, by_id[record_id], staged_mode)
             sample_messages[record_id] = messages
@@ -280,6 +292,7 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                 "fact_inventory_full_final_timeline_v23",
                 "fact_inventory_full_final_source_only_v1",
                 "procedure_inventory_full_final_v1",
+                "vonly_draft_full_final_v1",
             }:
                 rendered += "\n## Source fact-collection messages\n"
                 for index, source_messages in enumerate(source_stage_messages[record_id], 1):
@@ -384,6 +397,7 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                     "fact_inventory_full_final_timeline_v23",
                     "fact_inventory_full_final_source_only_v1",
                     "procedure_inventory_full_final_v1",
+                    "vonly_draft_full_final_v1",
                 }:
                     rendered_text = "\n".join(
                         message[1]["content"] for message in source_stage_messages[record_id]

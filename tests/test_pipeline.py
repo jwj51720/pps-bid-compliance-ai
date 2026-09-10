@@ -175,6 +175,38 @@ def test_locator_then_final_keeps_all_items_in_final_stage() -> None:
     assert "`찾지 못함`을 0으로 해석하지 않는다" in prediction.final_messages[-1]["content"]
 
 
+def test_vonly_draft_full_final_keeps_ve_final_owner() -> None:
+    item_table = {
+        item: {
+            "항목명": item,
+            "부재탐지": item in {"v10", "v11", "v16", "v18", "v20"},
+            "국가계약법": "",
+            "지방계약법": "",
+            "비고": "",
+        }
+        for item in ITEMS
+    }
+    pipeline = BaselinePipeline(
+        item_table=item_table,
+        client=MockClient(),
+        max_document_chars=4000,
+        context_strategy="single",
+        overflow_split_enabled=False,
+        count_tokens=lambda messages: len(messages),
+        prompt_profile="official_baseline_v1",
+        output_mode="labels_and_evidence",
+    )
+
+    prediction = pipeline.predict_with_vonly_draft_then_full_final(_record())
+
+    assert prediction.draft_available
+    assert set(prediction.draft.judgment) == set(ITEMS)
+    assert all(cell["근거문구"] in {None, ""} for cell in prediction.draft.judgment.values())
+    assert set(prediction.final.judgment) == set(ITEMS)
+    assert "1차 검토 초안" in prediction.final_messages_by_context[0][1]["content"]
+    assert not prediction.final_recovery_used
+
+
 def test_triage_then_strict_routes_absence_items_even_when_triage_says_not_applicable() -> None:
     item_table = {
         item: {
