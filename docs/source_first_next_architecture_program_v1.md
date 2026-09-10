@@ -23,8 +23,8 @@ frozen EXP123 v2/v3/v21 postprocess, model parameters는 고정한다. 각 실�
 
 | 후보 | 새 역할 | final label 소유자 | 최소 topology | 지금 상태 |
 | --- | --- | --- | --- | --- |
-| A. 조건부 관계 navigation | 기존 7 category가 표현하지 못하는 하나의 source relation을 source-only로 역할화 | 기존 full-source final Gemma | EXP171 + 적용 notice당 1 source-only pass | v23 timeline의 EXP180 계획이 있음; 아직 미통합 |
-| B. notice procedure model | qualification/product/schedule/documents/contract/metadata counterpart 관계를 source-grounded ledger로 모델링 | 기존 full-source final Gemma | EXP171 + 1 whole-notice source-only relation pass | 먼저 label-blind representability audit 필요 |
+| A. 조건부 관계 navigation | 기존 7 category가 표현하지 못하는 하나의 source relation을 source-only로 역할화 | 기존 full-source final Gemma | EXP171 + 적용 notice당 1 source-only pass | EXP180 v23은 fast20에서 하락해 기각 |
+| B. notice procedure model | qualification/product/schedule/documents/contract/metadata counterpart 관계를 source-grounded ledger로 모델링 | 기존 full-source final Gemma | **교체형** one whole-notice source-only relation pass + final | EXP182/183은 fast gain이 holdout에서 붕괴해 기각 |
 | C. final-source consistency review | final V/E가 원문·card·metadata와 양립하는지 별도 Gemma가 검토 | reviewer Gemma; Python은 reviewer의 JSON만 전달 | EXP171 + 1 full-source review pass | runtime/semantic contract proof 전에는 구현·유료 실행 금지 |
 
 세 후보 모두 navigation/review가 empty 또는 malformed일 때 Python이 어떤 v를 0으로 만들지
@@ -124,9 +124,13 @@ runtime의 독립 근거가 없으면 제출 후보로 승격하지 않는다.
 
 1. EXP171 제출 후보의 evaluator runtime 관측을 확보할 수 있을 때까지 canonical policy는
    `submit-exp171-source-first-full-final-v1`로 동결한다.
-2. 다음 연구 작업은 B의 label-blind representability audit이다. 이것이 broad relation
-model이 필요한지, 또는 A의 item-scoped relation만 정당한지 판별한다.
-3. A는 그 audit과 병렬로 smallest relation proof를 만족하는 경우만 진행한다. 현재는
-   EXP180 v23이 그 후보일 뿐 우선권을 자동으로 갖지 않는다.
-4. C는 admission/runtime proof가 A/B보다 무거우므로, full-source final의 quality gain이
-   reviewer로 더 개선될 근거가 생기기 전까지 설계 상태로 유지한다.
+2. EXP180의 conditional v23 timeline은 fast20 `0.241667` (EXP179 `0.287500`)으로, EXP182의
+replacement procedure ledger는 fast20 `0.319444`였으나 frozen holdout20 `0.125000`
+(EXP168 `0.229167`)으로 각각 기각됐다. relation field wording·excerpt cap·item follow-up
+tuning은 이 후보군을 되살리지 않는다.
+3. C는 EXP146의 전역 second-adjudication 기각과 같은 위험을 다시 갖고, third full-source
+stage의 runtime 근거도 없다. 따라서 새 quality mechanism 또는 evaluator runtime 관측이
+생기기 전까지 구현하거나 유료 실행하지 않는다.
+4. 다음 구조 후보는 이미 기각된 relation/adjudication family를 재포장하지 않아야 하며,
+EXP171의 source-first/full-final contract를 보존하는 별도 information-flow hypothesis부터
+문서로 증명한다.
