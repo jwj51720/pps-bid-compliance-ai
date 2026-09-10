@@ -1,0 +1,11 @@
+inherits: config.exp169-complete-source-2500-fast-panel-c4.yaml
+experiment:
+  id: exp-189a-announcement-packed-fast-panel
+  base_config: configs/config.exp169-complete-source-2500-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.visible_document_types]
+  derived_data: [decision_cards_v6, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-189a-announcement-packed-fast-panel
+prompt:
+  visible_document_types: [공고문]

@@ -108,6 +108,20 @@ def load_config(path: str | Path) -> ExperimentConfig:
     with config_path.open(encoding="utf-8") as handle:
         raw = yaml.safe_load(handle)
     raw = _mapping(raw, "config")
+    inherits = raw.get("inherits")
+    if inherits:
+        parent_path = (config_path.parent / str(inherits)).resolve()
+        with parent_path.open(encoding="utf-8") as handle:
+            parent = _mapping(yaml.safe_load(handle), "parent config")
+        merged = dict(parent)
+        for key, value in raw.items():
+            if key == "inherits":
+                continue
+            if isinstance(value, dict) and isinstance(merged.get(key), dict):
+                merged[key] = {**merged[key], **value}
+            else:
+                merged[key] = value
+        raw = merged
     experiment = _mapping(raw.get("experiment"), "experiment")
     if experiment.get("lifecycle") == "invalidated":
         raise ValueError(
@@ -274,7 +288,7 @@ def load_config(path: str | Path) -> ExperimentConfig:
             raise ValueError(
                 "complete_fact profiles require exact-token overflow_split_enabled: true"
             )
-        if config.visible_document_types is not None:
+        if config.visible_document_types is not None and experiment.get("lifecycle") != "diagnostic":
             raise ValueError(
                 "complete_fact profiles must not filter supplied document types"
             )
@@ -310,7 +324,7 @@ def load_config(path: str | Path) -> ExperimentConfig:
         raise ValueError("prompt.active_items must be a non-empty subset of v1..v24")
     if len(config.active_items) != len(set(config.active_items)):
         raise ValueError("prompt.active_items must not contain duplicates")
-    if config.context_strategy not in {"single", "single_no_split", "split", "full_split_merge"}:
+    if config.context_strategy not in {"single", "single_no_split", "single_prefix", "split", "full_split_merge"}:
         raise ValueError("prompt.context_strategy must be single, single_no_split, split, or full_split_merge")
     if config.context_strategy == "split" and config.max_document_chars is None:
         raise ValueError("split context strategy requires prompt.max_document_chars")

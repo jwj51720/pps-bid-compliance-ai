@@ -1537,6 +1537,14 @@ class BaselinePipeline:
                     f"budget is {self.prompt_budget_tokens}"
                 )
             return [None]
+        if self.context_strategy == "single_prefix":
+            if self.count_tokens is None:
+                raise ValueError("single_prefix requires an exact tokenizer token counter")
+            return [pack_contexts_to_token_budget(
+                record, system_prompt, self.count_tokens, self.prompt_budget_tokens,
+                self.notice_anchor_chars, competition_product_context=competition_context,
+                message_builder=lambda context: self.messages_for_context(record, context),
+            )[0]]
         forced_contexts: list[str | None] = (
             build_split_document_contexts(
                 record, self.max_document_chars or 0, self.notice_anchor_chars
