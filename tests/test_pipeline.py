@@ -19,6 +19,7 @@ from src.pipeline import (
     parse_locator_response,
     parse_inventory_response,
     parse_fact_inventory_response,
+    parse_procedure_fact_response,
     parse_timeline_fact_response,
     parse_pass_response,
     parse_triage_response,
@@ -510,6 +511,10 @@ def test_procedure_navigation_is_source_only_and_advisory() -> None:
     schema = procedure_fact_schema()
     assert tuple(schema["required"]) == PROCEDURE_FACT_FIELDS
     assert schema["properties"][PROCEDURE_FACT_FIELDS[0]]["maxItems"] == 2
+    payload = {field: [] for field in PROCEDURE_FACT_FIELDS}
+    assert parse_procedure_fact_response(json.dumps(payload, ensure_ascii=False)) == payload
+    with pytest.raises(PredictionError, match="up to 2 strings"):
+        parse_procedure_fact_response(json.dumps({field: ["x", "y", "z"] for field in PROCEDURE_FACT_FIELDS}))
     messages = append_procedure_fact_navigation(
         [{"role": "system", "content": "final"}, {"role": "user", "content": "source"}],
         {field: tuple() for field in PROCEDURE_FACT_FIELDS},

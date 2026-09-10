@@ -19,6 +19,7 @@ from src.context_budget import (
     pack_document_contexts_to_token_budget,
 )
 from src.prompt import (
+    append_procedure_fact_navigation,
     append_timeline_fact_navigation,
     append_untrusted_review_draft,
     append_locator_navigation,
@@ -29,6 +30,7 @@ from src.prompt import (
     build_locator_system_prompt,
     build_inventory_system_prompt,
     build_fact_inventory_system_prompt,
+    build_procedure_fact_system_prompt,
     build_source_only_fact_messages,
     build_timeline_fact_system_prompt,
     build_split_document_contexts,
@@ -42,6 +44,7 @@ from src.schema import (
     EVIDENCE_MAX_CHARS,
     FACT_INVENTORY_CATEGORIES,
     FACT_INVENTORY_CATEGORIES_V2,
+    PROCEDURE_FACT_FIELDS,
     TIMELINE_FACT_ROLES,
     ITEMS,
     V8_COMPOSITE_STATES,
@@ -50,6 +53,7 @@ from src.schema import (
     locator_schema,
     inventory_schema,
     fact_inventory_schema,
+    procedure_fact_schema,
     timeline_fact_schema,
     triage_schema,
 )
@@ -202,6 +206,7 @@ class FactInventoryFullFinalPrediction:
     timeline_latency_seconds: tuple[float, ...] = ()
     timeline_parse_errors: tuple[str, ...] = ()
     timeline_messages: tuple[tuple[dict[str, str], ...], ...] = ()
+    procedure_navigation: bool = False
 
 
 def extract_json(text: str) -> Any:
@@ -470,6 +475,22 @@ def parse_timeline_fact_response(text: str) -> dict[str, list[str]]:
         ):
             raise PredictionError(f"{role} timeline value must be up to 2 strings")
         result[role] = values
+    return result
+
+
+def parse_procedure_fact_response(text: str) -> dict[str, list[str]]:
+    """Parse EXP182 source-only relation excerpts without label semantics."""
+    payload = extract_json(text)
+    if not isinstance(payload, dict) or set(payload) != set(PROCEDURE_FACT_FIELDS):
+        raise PredictionError("procedure response keys do not match relation fields")
+    result: dict[str, list[str]] = {}
+    for field in PROCEDURE_FACT_FIELDS:
+        values = payload[field]
+        if not isinstance(values, list) or len(values) > 2 or not all(
+            isinstance(value, str) for value in values
+        ):
+            raise PredictionError(f"{field} procedure value must be up to 2 strings")
+        result[field] = values
     return result
 
 
@@ -1135,6 +1156,7 @@ class BaselinePipeline:
         inventory_position: str = "after_source",
         inventory_categories: tuple[str, ...] = FACT_INVENTORY_CATEGORIES,
         timeline_v23: bool = False,
+        procedure_navigation: bool = False,
     ) -> FactInventoryFullFinalPrediction:
         """Use non-final source facts while retaining every source in final V/E.
 
@@ -1145,11 +1167,16 @@ class BaselinePipeline:
         if self.count_tokens is None:
             raise ValueError("fact-inventory full-final requires exact tokenizer admission")
         stage_contexts = self.contexts_for_record(record)
-        inventory_system = build_fact_inventory_system_prompt(
-            inventory_max_items, categories=inventory_categories,
+        inventory_system = (
+            build_procedure_fact_system_prompt()
+            if procedure_navigation
+            else build_fact_inventory_system_prompt(
+                inventory_max_items, categories=inventory_categories,
+            )
         )
+        navigation_fields = PROCEDURE_FACT_FIELDS if procedure_navigation else inventory_categories
         collected: dict[str, list[tuple[str, str]]] = {
-            category: [] for category in inventory_categories
+            category: [] for category in navigation_fields
         }
         raw: list[str] = []
         usages: list[dict[str, Any]] = []
@@ -1161,29 +1188,37 @@ class BaselinePipeline:
             source = context.text if isinstance(context, DocumentContext) else (
                 context if context is not None else build_official_baseline_context(visible, None)
             )
-            messages = build_messages(
-                visible, inventory_system, self.max_document_chars,
-                document_context=source,
-                prompt_profile=self.prompt_profile,
-                metadata_style=self.metadata_style,
-                output_mode="labels_only",
+            messages = (
+                build_source_only_fact_messages(inventory_system, source)
+                if procedure_navigation else build_messages(
+                    visible, inventory_system, self.max_document_chars,
+                    document_context=source,
+                    prompt_profile=self.prompt_profile,
+                    metadata_style=self.metadata_style,
+                    output_mode="labels_only",
+                )
             )
             messages_log.append(tuple(messages))
             completion = self.client.complete(
-                messages, fact_inventory_schema(inventory_max_items, categories=inventory_categories),
+                messages,
+                procedure_fact_schema() if procedure_navigation
+                else fact_inventory_schema(inventory_max_items, categories=inventory_categories),
             )
             raw.append(completion.content)
             usages.append(completion.usage)
             latencies.append(completion.latency_seconds)
             try:
-                parsed = parse_fact_inventory_response(
-                    completion.content,
-                    max_items=inventory_max_items,
-                    categories=inventory_categories,
+                parsed = (
+                    parse_procedure_fact_response(completion.content)
+                    if procedure_navigation else parse_fact_inventory_response(
+                        completion.content,
+                        max_items=inventory_max_items,
+                        categories=inventory_categories,
+                    )
                 )
             except PredictionError as exc:
                 errors.append(str(exc))
-                parsed = {category: [] for category in inventory_categories}
+                parsed = {category: [] for category in navigation_fields}
             for category, values in parsed.items():
                 for value in values:
                     excerpt = _clean_evidence(value, source)
@@ -1242,10 +1277,15 @@ class BaselinePipeline:
             timeline = {role: tuple(values) for role, values in timeline_collected.items()}
 
         def final_messages_for(context: str | None) -> list[dict[str, str]]:
-            messages = append_fact_inventory(
-                self.messages_for_context(record, context), inventory,
-                position=inventory_position,
-                categories=inventory_categories,
+            messages = (
+                append_procedure_fact_navigation(
+                    self.messages_for_context(record, context), inventory,
+                )
+                if procedure_navigation else append_fact_inventory(
+                    self.messages_for_context(record, context), inventory,
+                    position=inventory_position,
+                    categories=inventory_categories,
+                )
             )
             return append_timeline_fact_navigation(messages, timeline) if timeline is not None else messages
 
@@ -1282,6 +1322,7 @@ class BaselinePipeline:
             timeline_latency_seconds=tuple(timeline_latencies),
             timeline_parse_errors=tuple(timeline_errors),
             timeline_messages=tuple(timeline_messages),
+            procedure_navigation=procedure_navigation,
         )
 
     def contexts_for_record(

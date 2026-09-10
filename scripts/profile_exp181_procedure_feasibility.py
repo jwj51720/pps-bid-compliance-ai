@@ -41,7 +41,12 @@ def profile(config_path: Path, predictions_path: Path) -> dict:
     records = load_records(config.data.input_path)
     saved = _saved_inventory(predictions_path)
     budget = config.max_model_len - config.output_reserve_tokens
-    scenarios = {"empty_procedure": 0, "procedure_schema_upper": 2}
+    scenarios = {
+        "added_empty_procedure": (True, 0),
+        "added_procedure_schema_upper": (True, 2),
+        "replacement_empty_procedure": (False, 0),
+        "replacement_procedure_schema_upper": (False, 2),
+    }
     result = {
         "experiment_id": config.experiment_id,
         "method": "exact Gemma chat-template admission; no labels or provider calls",
@@ -49,7 +54,7 @@ def profile(config_path: Path, predictions_path: Path) -> dict:
         "prompt_budget_tokens": budget,
         "scenarios": {},
     }
-    for name, per_field in scenarios.items():
+    for name, (include_generic, per_field) in scenarios.items():
         rows, omissions = [], []
         procedure = {
             field: tuple(("synthetic", "가" * 360) for _ in range(per_field))
@@ -59,8 +64,11 @@ def profile(config_path: Path, predictions_path: Path) -> dict:
             inventory = saved[record["id"]]
 
             def messages_for(context: str | None):
+                base_messages = pipeline.messages_for_context(record, context)
+                if include_generic:
+                    base_messages = append_fact_inventory(base_messages, inventory)
                 return append_procedure_fact_navigation(
-                    append_fact_inventory(pipeline.messages_for_context(record, context), inventory),
+                    base_messages,
                     procedure,
                 )
 
@@ -77,10 +85,10 @@ def profile(config_path: Path, predictions_path: Path) -> dict:
         final_calls = sum(row["final_passes"] for row in rows)
         result["scenarios"][name] = {
             "procedure_excerpts_per_field": per_field,
-            "generic_stage_calls": stage_calls,
+            "generic_stage_calls": stage_calls if include_generic else 0,
             "procedure_stage_calls": stage_calls,
             "final_calls": final_calls,
-            "total_calls": stage_calls * 2 + final_calls,
+            "total_calls": stage_calls * (2 if include_generic else 1) + final_calls,
             "final_pass_distribution": dict(sorted(Counter(row["final_passes"] for row in rows).items())),
             "source_document_omission_count": len(omissions),
             "rows": rows,

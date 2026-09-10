@@ -33,9 +33,11 @@ from src.data import load_decision_cards, load_item_table, load_records  # noqa:
 from src.prompt import (  # noqa: E402
     _render_card_text,
     append_fact_inventory,
+    append_procedure_fact_navigation,
     append_timeline_fact_navigation,
     append_locator_navigation,
     build_fact_inventory_system_prompt,
+    build_procedure_fact_system_prompt,
     build_source_only_fact_messages,
     build_timeline_fact_system_prompt,
     build_messages,
@@ -46,6 +48,7 @@ from src.schema import (  # noqa: E402
     FACT_INVENTORY_CATEGORIES,
     FACT_INVENTORY_CATEGORIES_V2,
     ITEMS,
+    PROCEDURE_FACT_FIELDS,
     TIMELINE_FACT_ROLES,
 )
 
@@ -166,51 +169,69 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                 "fact_inventory_full_final_v3",
                 "fact_inventory_full_final_v4",
                 "fact_inventory_full_final_timeline_v23",
+                "procedure_inventory_full_final_v1",
             }:
                 visible = pipeline._visible_record(by_id[record_id])
                 source_stage_messages[record_id] = [
-                    build_messages(
-                        visible,
-                        build_fact_inventory_system_prompt(
-                            4 if staged_mode == "fact_inventory_full_final_v2" else 3,
-                            categories=(
-                                FACT_INVENTORY_CATEGORIES_V2
-                                if staged_mode == "fact_inventory_full_final_v4"
-                                else FACT_INVENTORY_CATEGORIES
+                    (
+                        build_source_only_fact_messages(
+                            build_procedure_fact_system_prompt(),
+                            context.text if hasattr(context, "text") else (
+                                context if context is not None
+                                else build_official_baseline_context(visible, None)
                             ),
-                        ),
-                        pipeline.max_document_chars,
-                        document_context=(context.text if hasattr(context, "text") else context),
-                        prompt_profile=pipeline.prompt_profile,
-                        metadata_style=pipeline.metadata_style,
-                        output_mode="labels_only",
+                        )
+                        if staged_mode == "procedure_inventory_full_final_v1"
+                        else build_messages(
+                            visible,
+                            build_fact_inventory_system_prompt(
+                                4 if staged_mode == "fact_inventory_full_final_v2" else 3,
+                                categories=(
+                                    FACT_INVENTORY_CATEGORIES_V2
+                                    if staged_mode == "fact_inventory_full_final_v4"
+                                    else FACT_INVENTORY_CATEGORIES
+                                ),
+                            ),
+                            pipeline.max_document_chars,
+                            document_context=(context.text if hasattr(context, "text") else context),
+                            prompt_profile=pipeline.prompt_profile,
+                            metadata_style=pipeline.metadata_style,
+                            output_mode="labels_only",
+                        )
                     )
                     for context in pipeline.contexts_for_record(by_id[record_id])
                 ]
                 final_context = (
-                    None if staged_mode in {"fact_inventory_full_final_v1", "fact_inventory_full_final_v2", "fact_inventory_full_final_v3", "fact_inventory_full_final_v4", "fact_inventory_full_final_timeline_v23"}
+                    None if staged_mode in {"fact_inventory_full_final_v1", "fact_inventory_full_final_v2", "fact_inventory_full_final_v3", "fact_inventory_full_final_v4", "fact_inventory_full_final_timeline_v23", "procedure_inventory_full_final_v1"}
                     else build_official_baseline_context(visible, 4000)
                 )
-                messages = append_fact_inventory(
-                    pipeline.messages_for_context(by_id[record_id], final_context),
-                    {
-                        category: ()
-                        for category in (
+                messages = (
+                    append_procedure_fact_navigation(
+                        pipeline.messages_for_context(by_id[record_id], final_context),
+                        {field: () for field in PROCEDURE_FACT_FIELDS},
+                    )
+                    if staged_mode == "procedure_inventory_full_final_v1"
+                    else append_fact_inventory(
+                        pipeline.messages_for_context(by_id[record_id], final_context),
+                        {
+                            category: ()
+                            for category in (
+                                FACT_INVENTORY_CATEGORIES_V2
+                                if staged_mode == "fact_inventory_full_final_v4"
+                                else FACT_INVENTORY_CATEGORIES
+                            )
+                        },
+                        position=(
+                            "before_source"
+                            if staged_mode == "fact_inventory_full_final_v3"
+                            else "after_source"
+                        ),
+                        categories=(
                             FACT_INVENTORY_CATEGORIES_V2
                             if staged_mode == "fact_inventory_full_final_v4"
                             else FACT_INVENTORY_CATEGORIES
-                        )
-                    },
-                    position=(
-                        "before_source"
-                        if staged_mode == "fact_inventory_full_final_v3"
-                        else "after_source"
-                    ),
-                    categories=(
-                        FACT_INVENTORY_CATEGORIES_V2
-                        if staged_mode == "fact_inventory_full_final_v4"
-                        else FACT_INVENTORY_CATEGORIES
-                    ),
+                        ),
+                    )
                 )
                 meta = by_id[record_id].get("meta", {})
                 if (
@@ -249,6 +270,7 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                 "fact_inventory_full_final_v3",
                 "fact_inventory_full_final_v4",
                 "fact_inventory_full_final_timeline_v23",
+                "procedure_inventory_full_final_v1",
             }:
                 rendered += "\n## Source fact-collection messages\n"
                 for index, source_messages in enumerate(source_stage_messages[record_id], 1):
@@ -351,6 +373,7 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                     "fact_inventory_full_final_v3",
                     "fact_inventory_full_final_v4",
                     "fact_inventory_full_final_timeline_v23",
+                    "procedure_inventory_full_final_v1",
                 }:
                     rendered_text = "\n".join(
                         message[1]["content"] for message in source_stage_messages[record_id]
