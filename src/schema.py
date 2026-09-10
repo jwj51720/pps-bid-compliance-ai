@@ -244,3 +244,11 @@ def procedure_fact_schema() -> dict[str, Any]:
             for field in PROCEDURE_FACT_FIELDS
         },
     }
+
+
+def item_fact_schema() -> dict[str, Any]:
+    """Schema for EXP188's one source-only candidate per item."""
+    return {
+        "type": "object", "additionalProperties": False, "required": list(ITEMS),
+        "properties": {item: {"type": ["string", "null"], "maxLength": 180} for item in ITEMS},
+    }

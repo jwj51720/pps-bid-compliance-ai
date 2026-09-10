@@ -20,6 +20,7 @@ from src.context_budget import (
 )
 from src.prompt import (
     append_procedure_fact_navigation,
+    append_item_fact_navigation,
     append_untrusted_vonly_drafts,
     append_timeline_fact_navigation,
     append_untrusted_review_draft,
@@ -32,6 +33,7 @@ from src.prompt import (
     build_inventory_system_prompt,
     build_fact_inventory_system_prompt,
     build_procedure_fact_system_prompt,
+    build_item_fact_system_prompt,
     build_source_only_fact_messages,
     build_timeline_fact_system_prompt,
     build_split_document_contexts,
@@ -54,6 +56,7 @@ from src.schema import (
     locator_schema,
     inventory_schema,
     fact_inventory_schema,
+    item_fact_schema,
     procedure_fact_schema,
     timeline_fact_schema,
     triage_schema,
@@ -232,6 +235,7 @@ class FactInventoryFullFinalPrediction:
     timeline_messages: tuple[tuple[dict[str, str], ...], ...] = ()
     procedure_navigation: bool = False
     source_only_inventory: bool = False
+    item_navigation: bool = False
 
 
 def extract_json(text: str) -> Any:
@@ -516,6 +520,20 @@ def parse_procedure_fact_response(text: str) -> dict[str, list[str]]:
         ):
             raise PredictionError(f"{field} procedure value must be up to 2 strings")
         result[field] = values
+    return result
+
+
+def parse_item_fact_response(text: str) -> dict[str, list[str]]:
+    """Parse one optional source excerpt per v without a legal conclusion."""
+    payload = extract_json(text)
+    if not isinstance(payload, dict) or set(payload) != set(ITEMS):
+        raise PredictionError("item fact response keys do not match v1..v24")
+    result: dict[str, list[str]] = {}
+    for item in ITEMS:
+        value = payload[item]
+        if value is not None and not isinstance(value, str):
+            raise PredictionError(f"{item} item fact must be a string or null")
+        result[item] = [] if value is None else [value]
     return result
 
 
@@ -1314,6 +1332,7 @@ class BaselinePipeline:
         timeline_v23: bool = False,
         procedure_navigation: bool = False,
         source_only_inventory: bool = False,
+        item_navigation: bool = False,
     ) -> FactInventoryFullFinalPrediction:
         """Use non-final source facts while retaining every source in final V/E.
 
@@ -1327,11 +1346,13 @@ class BaselinePipeline:
         inventory_system = (
             build_procedure_fact_system_prompt()
             if procedure_navigation
+            else build_item_fact_system_prompt(self._item_table)
+            if item_navigation
             else build_fact_inventory_system_prompt(
                 inventory_max_items, categories=inventory_categories,
             )
         )
-        navigation_fields = PROCEDURE_FACT_FIELDS if procedure_navigation else inventory_categories
+        navigation_fields = ITEMS if item_navigation else (PROCEDURE_FACT_FIELDS if procedure_navigation else inventory_categories)
         collected: dict[str, list[tuple[str, str]]] = {
             category: [] for category in navigation_fields
         }
@@ -1347,7 +1368,7 @@ class BaselinePipeline:
             )
             messages = (
                 build_source_only_fact_messages(inventory_system, source)
-                if procedure_navigation or source_only_inventory else build_messages(
+                if procedure_navigation or source_only_inventory or item_navigation else build_messages(
                     visible, inventory_system, self.max_document_chars,
                     document_context=source,
                     prompt_profile=self.prompt_profile,
@@ -1358,21 +1379,22 @@ class BaselinePipeline:
             messages_log.append(tuple(messages))
             completion = self.client.complete(
                 messages,
-                procedure_fact_schema() if procedure_navigation
+                item_fact_schema() if item_navigation else procedure_fact_schema() if procedure_navigation
                 else fact_inventory_schema(inventory_max_items, categories=inventory_categories),
             )
             raw.append(completion.content)
             usages.append(completion.usage)
             latencies.append(completion.latency_seconds)
             try:
-                parsed = (
-                    parse_procedure_fact_response(completion.content)
-                    if procedure_navigation else parse_fact_inventory_response(
-                        completion.content,
-                        max_items=inventory_max_items,
+                if item_navigation:
+                    parsed = parse_item_fact_response(completion.content)
+                elif procedure_navigation:
+                    parsed = parse_procedure_fact_response(completion.content)
+                else:
+                    parsed = parse_fact_inventory_response(
+                        completion.content, max_items=inventory_max_items,
                         categories=inventory_categories,
                     )
-                )
             except PredictionError as exc:
                 errors.append(str(exc))
                 parsed = {category: [] for category in navigation_fields}
@@ -1435,9 +1457,10 @@ class BaselinePipeline:
 
         def final_messages_for(context: str | None) -> list[dict[str, str]]:
             messages = (
-                append_procedure_fact_navigation(
+                append_item_fact_navigation(
                     self.messages_for_context(record, context), inventory,
                 )
+                if item_navigation else append_procedure_fact_navigation(self.messages_for_context(record, context), inventory)
                 if procedure_navigation else append_fact_inventory(
                     self.messages_for_context(record, context), inventory,
                     position=inventory_position,
@@ -1481,6 +1504,7 @@ class BaselinePipeline:
             timeline_messages=tuple(timeline_messages),
             procedure_navigation=procedure_navigation,
             source_only_inventory=source_only_inventory,
+            item_navigation=item_navigation,
         )
 
     def contexts_for_record(

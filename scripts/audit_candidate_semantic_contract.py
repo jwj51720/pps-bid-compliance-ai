@@ -37,11 +37,13 @@ from src.prompt import (  # noqa: E402
     append_timeline_fact_navigation,
     append_untrusted_review_draft,
     append_untrusted_vonly_drafts,
+    append_item_fact_navigation,
     append_locator_navigation,
     build_fact_inventory_system_prompt,
     build_procedure_fact_system_prompt,
     build_source_only_fact_messages,
     build_timeline_fact_system_prompt,
+    build_item_fact_system_prompt,
     build_messages,
     build_official_baseline_context,
 )
@@ -284,6 +286,24 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                     pipeline.messages_for_context(by_id[record_id], None),
                     (zero_draft, zero_draft), ITEMS,
                 )
+            elif staged_mode == "item_inventory_full_final_v1":
+                item_system = build_item_fact_system_prompt(pipeline._item_table)
+                source_stage_messages[record_id] = [
+                    build_source_only_fact_messages(
+                        item_system,
+                        context.text if hasattr(context, "text") else (
+                            context if context is not None
+                            else build_official_baseline_context(
+                                pipeline._visible_record(by_id[record_id]), None,
+                            )
+                        ),
+                    )
+                    for context in pipeline.contexts_for_record(by_id[record_id])
+                ]
+                messages = append_item_fact_navigation(
+                    pipeline.messages_for_context(by_id[record_id], None),
+                    {item: () for item in ITEMS},
+                )
             else:
                 messages = final_messages_for_record(pipeline, by_id[record_id], staged_mode)
             sample_messages[record_id] = messages
@@ -306,6 +326,7 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                 "procedure_inventory_full_final_v1",
                 "vonly_draft_full_final_v1",
                 "vonly_consensus_full_source_v1",
+                "item_inventory_full_final_v1",
             }:
                 rendered += "\n## Source fact-collection messages\n"
                 for index, source_messages in enumerate(source_stage_messages[record_id], 1):
@@ -412,6 +433,7 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                     "procedure_inventory_full_final_v1",
                     "vonly_draft_full_final_v1",
                     "vonly_consensus_full_source_v1",
+                    "item_inventory_full_final_v1",
                 }:
                     rendered_text = "\n".join(
                         message[1]["content"] for message in source_stage_messages[record_id]

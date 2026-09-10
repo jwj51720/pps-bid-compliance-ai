@@ -8,6 +8,7 @@ import pytest
 
 from src.context_budget import DocumentContext
 from src.external.openrouter import MockClient
+from src.external.openrouter import Completion
 from src.pipeline import (
     BaselinePipeline,
     ContextAdmissionError,
@@ -242,6 +243,35 @@ def test_vonly_consensus_does_not_apply_parent_frozen_rule() -> None:
     prediction = pipeline.predict_with_vonly_consensus(record)
 
     assert prediction.final.judgment["v2"] == {"위반여부": 0, "근거문구": ""}
+
+
+def test_item_navigation_keeps_source_candidate_advisory_and_full_final() -> None:
+    class ItemFactClient:
+        def complete(self, messages, response_schema):
+            if response_schema["properties"]["v1"].get("type") == ["string", "null"]:
+                payload = {item: None for item in ITEMS}
+                payload["v1"] = "서울특별시에 본사를 둔 업체로 제한한다"
+            else:
+                payload = _judgment()
+            return Completion(json.dumps(payload, ensure_ascii=False), "test", 0.0, {})
+
+    item_table = {
+        item: {"항목명": item, "부재탐지": False, "국가계약법": "", "지방계약법": "", "비고": ""}
+        for item in ITEMS
+    }
+    pipeline = BaselinePipeline(
+        item_table=item_table, client=ItemFactClient(), max_document_chars=None,
+        context_strategy="single", overflow_split_enabled=True,
+        count_tokens=lambda messages: len(messages), prompt_profile="complete_fact_v1",
+    )
+    prediction = pipeline.predict_with_fact_inventory_then_full_final(
+        _record(), item_navigation=True,
+    )
+    assert prediction.item_navigation
+    assert prediction.inventory_by_category["v1"] == (("D0", "서울특별시에 본사를 둔 업체로 제한한다"),)
+    rendered = "\n".join(message["content"] for message in prediction.final_messages_by_context[0])
+    assert "후보없음 (이는 0이 아님)" in rendered
+    assert "서울특별시에 본사를 둔 업체로 제한한다" in rendered
 
 
 def test_triage_then_strict_routes_absence_items_even_when_triage_says_not_applicable() -> None:

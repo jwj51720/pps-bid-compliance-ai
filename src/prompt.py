@@ -171,6 +171,33 @@ def append_fact_inventory(
     ]
 
 
+def build_item_fact_system_prompt(item_table: dict[str, dict[str, Any]]) -> str:
+    """Build EXP188 source-only item slots without cards or legal conclusions."""
+    lines = [
+        "당신은 공공 입찰공고 원문에서 항목별 사실 후보를 탐색한다.",
+        "위반 여부, 0/1, 법령 적용, 허용·예외 결론, metadata 값, 계산을 하지 않는다.",
+        "각 v에는 아래 원문에서 해당 항목명과 가장 직접 관련된 변경 없는 연속 문자열 하나만 복사한다.",
+        "관련 원문이 없거나 하나만으로 관계를 왜곡할 우려가 있으면 null이다. 요약·추측은 금지한다.",
+        "항목명은 탐색 방향일 뿐 법적 판단 기준이 아니다.",
+    ]
+    lines.extend(f"- {item}: {item_table[item]['항목명']}" for item in ITEMS)
+    return "\n".join(lines)
+
+
+def append_item_fact_navigation(
+    messages: list[dict[str, str]], facts: dict[str, tuple[tuple[str, str], ...]],
+) -> list[dict[str, str]]:
+    """Attach advisory one-slot-per-item source excerpts to the full final."""
+    if set(facts) != set(ITEMS):
+        raise ValueError("item navigation must provide every v1..v24 key")
+    lines = ["[항목별 원문 관계 후보 — 최종 판정 아님]",
+             "후보는 source-only 탐색 결과다. null·누락은 0이 아니며, 카드·metadata·공고 원문을 다시 읽어 최종 판단한다."]
+    for item in ITEMS:
+        values = facts[item]
+        lines.append(f"- {item}: " + (" | ".join(f"[{doc_id}] {text}" for doc_id, text in values) if values else "후보없음 (이는 0이 아님)"))
+    return [*messages, {"role": "user", "content": messages[-1]["content"] + "\n\n" + "\n".join(lines)}]
+
+
 TIMELINE_FACT_SYSTEM = """당신은 공공 입찰공고 원문에서 일정 사실만 정리한다.
 위반 여부, v 항목의 0/1, 최소 기간 계산, 허용 여부를 판단하지 않는다.
 아래 원문에 실제로 있는 연속 문구만 역할별로 최대 2개씩 그대로 복사한다.
