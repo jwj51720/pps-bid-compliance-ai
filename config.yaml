@@ -1,9 +1,9 @@
-# Canonical final policy: EXP135 two-way organizer-format output partition.
+# Canonical control policy: exact organizer-format single-call V/E baseline.
 # Submission runtime values must match this file; historical experiments live
-# in configs/.  Each notice is read twice with the same 4,000-character
-# organizer context; the two disjoint item groups form one final 24-item row.
+# in configs/.  EXP135's two-way partition is preserved under configs/ but was
+# rejected as a default after its public result (see submission_lessons.md).
 experiment:
-  id: final-exp135-two-way-g02-organizer-v1
+  id: final-exp125a-exact-organizer-control-v1
   derived_data: []
 
 data:
@@ -14,14 +14,14 @@ data:
   fast_panel_ids_path: configs/dev_fast_panel_v1.json # default local fast gate; submission does not read this field
 
 output:
-  dir: outputs/final-exp135-two-way-g02-organizer-v1
+  dir: outputs/final-exp125a-exact-organizer-control-v1
 
 prompt:
   max_document_chars: 4000
   context_strategy: single # options: single, split, full_split_merge
   overflow_split_enabled: false # options: true, false
   strict_document_evidence: false # options: true, false; full_split_merge only
-  profile: official_baseline_subset_v1 # options: default, official_baseline_v1, official_baseline_subset_v1
+  profile: official_baseline_v1 # options: default, official_baseline_v1, official_baseline_subset_v1
   layout: plain # options: plain, markdown, markdown_v2
   role_directive: standard # options: standard, compliance_expert_v1, source_first_v1
   item_catalog_style: minimal # options: minimal, official_references
@@ -54,10 +54,3 @@ llm:
 run:
   resume: true # options: true, false
   concurrency: 4
-
-# Submission/runtime execution policy.  The groups partition v1..v24 exactly
-# once; no OR/AND vote, label override, or document-level split is involved.
-grouped_run:
-  grouping: document_restrictions_two_way_v1
-  reference_mode: none
-  reference_navigation: none

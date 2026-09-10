@@ -1,0 +1,57 @@
+# EXP158: independent holdout confirmation of EXP157. Policy is identical;
+# only the fixed label-blind cohort and output path differ.
+experiment:
+  id: exp-158-source-fact-inventory-32k-holdout
+  base_config: configs/config.exp157-source-fact-inventory-32k-fast-panel.yaml
+  allowed_policy_changes: []
+  derived_data: [decision_cards_v6, competition_products_v1, dev_prompt_holdout_v1]
+  lifecycle: diagnostic
+data:
+  root: data/raw/open
+  input: dev.jsonl.gz
+  labels: dev_labels.csv
+  item_table: data/항목표.json
+  fast_panel_ids_path: configs/dev_prompt_holdout_v1.json
+output:
+  dir: outputs/exp-158-source-fact-inventory-32k-holdout
+prompt:
+  max_document_chars: null
+  context_strategy: single
+  overflow_split_enabled: true
+  strict_document_evidence: false
+  absence_detection_strategy: per_pass_and
+  decision_cards_path: data/derived/decision_cards_v6.json
+  competition_products_path: data/derived/competition_products_v1.json
+  profile: complete_fact_v1
+  layout: plain
+  role_directive: standard
+  metadata_style: official_lines
+  output_mode: labels_and_evidence
+  max_model_len: 32768
+  output_reserve_tokens: 2500
+  notice_anchor_chars: 4000
+  mode: baseline
+  include_normalized_facts: false
+postprocess:
+  frozen_rule_set: exp123_v1
+llm:
+  provider: openrouter
+  model: google/gemma-4-26b-a4b-it
+  api_key_env: OPENROUTER_API_KEY
+  api_url: https://openrouter.ai/api/v1/chat/completions
+  tokenizer_source: google/gemma-4-26b-a4b-it
+  temperature: 0.0
+  max_tokens: 2500
+  seed: 20260826
+  timeout_seconds: 180
+  request_retries: 3
+  prediction_attempts: 2
+  provider_sort: throughput
+  require_parameters: true
+  min_request_interval_seconds: 1.0
+run:
+  resume: true
+  concurrency: 20
+  local_limit: null
+staged_run:
+  mode: fact_inventory_then_final_v1
