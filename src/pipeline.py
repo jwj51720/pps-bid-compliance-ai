@@ -207,6 +207,7 @@ class FactInventoryFullFinalPrediction:
     timeline_parse_errors: tuple[str, ...] = ()
     timeline_messages: tuple[tuple[dict[str, str], ...], ...] = ()
     procedure_navigation: bool = False
+    source_only_inventory: bool = False
 
 
 def extract_json(text: str) -> Any:
@@ -1157,6 +1158,7 @@ class BaselinePipeline:
         inventory_categories: tuple[str, ...] = FACT_INVENTORY_CATEGORIES,
         timeline_v23: bool = False,
         procedure_navigation: bool = False,
+        source_only_inventory: bool = False,
     ) -> FactInventoryFullFinalPrediction:
         """Use non-final source facts while retaining every source in final V/E.
 
@@ -1190,7 +1192,7 @@ class BaselinePipeline:
             )
             messages = (
                 build_source_only_fact_messages(inventory_system, source)
-                if procedure_navigation else build_messages(
+                if procedure_navigation or source_only_inventory else build_messages(
                     visible, inventory_system, self.max_document_chars,
                     document_context=source,
                     prompt_profile=self.prompt_profile,
@@ -1323,6 +1325,7 @@ class BaselinePipeline:
             timeline_parse_errors=tuple(timeline_errors),
             timeline_messages=tuple(timeline_messages),
             procedure_navigation=procedure_navigation,
+            source_only_inventory=source_only_inventory,
         )
 
     def contexts_for_record(

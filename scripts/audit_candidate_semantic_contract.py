@@ -169,19 +169,27 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                 "fact_inventory_full_final_v3",
                 "fact_inventory_full_final_v4",
                 "fact_inventory_full_final_timeline_v23",
+                "fact_inventory_full_final_source_only_v1",
                 "procedure_inventory_full_final_v1",
             }:
                 visible = pipeline._visible_record(by_id[record_id])
                 source_stage_messages[record_id] = [
                     (
                         build_source_only_fact_messages(
-                            build_procedure_fact_system_prompt(),
+                            (
+                                build_procedure_fact_system_prompt()
+                                if staged_mode == "procedure_inventory_full_final_v1"
+                                else build_fact_inventory_system_prompt()
+                            ),
                             context.text if hasattr(context, "text") else (
                                 context if context is not None
                                 else build_official_baseline_context(visible, None)
                             ),
                         )
-                        if staged_mode == "procedure_inventory_full_final_v1"
+                        if staged_mode in {
+                            "procedure_inventory_full_final_v1",
+                            "fact_inventory_full_final_source_only_v1",
+                        }
                         else build_messages(
                             visible,
                             build_fact_inventory_system_prompt(
@@ -202,7 +210,7 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                     for context in pipeline.contexts_for_record(by_id[record_id])
                 ]
                 final_context = (
-                    None if staged_mode in {"fact_inventory_full_final_v1", "fact_inventory_full_final_v2", "fact_inventory_full_final_v3", "fact_inventory_full_final_v4", "fact_inventory_full_final_timeline_v23", "procedure_inventory_full_final_v1"}
+                    None if staged_mode in {"fact_inventory_full_final_v1", "fact_inventory_full_final_v2", "fact_inventory_full_final_v3", "fact_inventory_full_final_v4", "fact_inventory_full_final_timeline_v23", "fact_inventory_full_final_source_only_v1", "procedure_inventory_full_final_v1"}
                     else build_official_baseline_context(visible, 4000)
                 )
                 messages = (
@@ -270,6 +278,7 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                 "fact_inventory_full_final_v3",
                 "fact_inventory_full_final_v4",
                 "fact_inventory_full_final_timeline_v23",
+                "fact_inventory_full_final_source_only_v1",
                 "procedure_inventory_full_final_v1",
             }:
                 rendered += "\n## Source fact-collection messages\n"
@@ -373,6 +382,7 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                     "fact_inventory_full_final_v3",
                     "fact_inventory_full_final_v4",
                     "fact_inventory_full_final_timeline_v23",
+                    "fact_inventory_full_final_source_only_v1",
                     "procedure_inventory_full_final_v1",
                 }:
                     rendered_text = "\n".join(

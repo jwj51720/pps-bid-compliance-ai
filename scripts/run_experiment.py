@@ -163,6 +163,8 @@ def _prediction_to_json(
             "staged_run": {"mode": (
                 "procedure_inventory_full_final_v1"
                 if prediction.procedure_navigation
+                else "fact_inventory_full_final_source_only_v1"
+                if prediction.source_only_inventory
                 else "fact_inventory_full_final_timeline_v23"
                 if prediction.timeline_by_role is not None
                 else "fact_inventory_full_final_v4"
@@ -432,6 +434,7 @@ def _write_staged_input_examples_markdown(
             "fact_inventory_full_final_v2",
             "fact_inventory_full_final_v3",
             "fact_inventory_full_final_v4",
+            "fact_inventory_full_final_source_only_v1",
         }
         procedure_mode = mode == "procedure_inventory_full_final_v1"
         if inventory_mode or procedure_mode:
@@ -579,6 +582,7 @@ def _predict_with_retries(
     fact_inventory_categories: tuple[str, ...] = FACT_INVENTORY_CATEGORIES,
     fact_inventory_timeline_v23: bool = False,
     procedure_inventory_full_final: bool = False,
+    source_only_inventory: bool = False,
 ) -> tuple[Prediction | TwoPassAdjudicationPrediction | TriageThenStrictPrediction | LocatorThenFinalPrediction | InventoryThenFinalPrediction | FactInventoryThenFinalPrediction | None, list[dict[str, Any]]]:
     failed_attempts: list[dict[str, Any]] = []
     for attempt in range(1, attempts + 1):
@@ -601,6 +605,7 @@ def _predict_with_retries(
                     inventory_categories=fact_inventory_categories,
                     timeline_v23=fact_inventory_timeline_v23,
                     procedure_navigation=procedure_inventory_full_final,
+                    source_only_inventory=source_only_inventory,
                 )
                 if fact_inventory_full_final
                 else pipeline.predict(record)
@@ -847,12 +852,13 @@ def main() -> int:
                     config.staged_run is not None and config.staged_run.mode == "locator_then_final_v1",
                     config.staged_run is not None and config.staged_run.mode == "inventory_then_final_v1",
                     config.staged_run is not None and config.staged_run.mode == "fact_inventory_then_final_v1",
-                    config.staged_run is not None and config.staged_run.mode in {"fact_inventory_full_final_v1", "fact_inventory_full_final_v2", "fact_inventory_full_final_v3", "fact_inventory_full_final_v4", "fact_inventory_full_final_timeline_v23", "procedure_inventory_full_final_v1"},
+                    config.staged_run is not None and config.staged_run.mode in {"fact_inventory_full_final_v1", "fact_inventory_full_final_v2", "fact_inventory_full_final_v3", "fact_inventory_full_final_v4", "fact_inventory_full_final_timeline_v23", "procedure_inventory_full_final_v1", "fact_inventory_full_final_source_only_v1"},
                     4 if config.staged_run is not None and config.staged_run.mode == "fact_inventory_full_final_v2" else 3,
                     "before_source" if config.staged_run is not None and config.staged_run.mode == "fact_inventory_full_final_v3" else "after_source",
                     FACT_INVENTORY_CATEGORIES_V2 if config.staged_run is not None and config.staged_run.mode == "fact_inventory_full_final_v4" else FACT_INVENTORY_CATEGORIES,
                     config.staged_run is not None and config.staged_run.mode == "fact_inventory_full_final_timeline_v23",
                     config.staged_run is not None and config.staged_run.mode == "procedure_inventory_full_final_v1",
+                    config.staged_run is not None and config.staged_run.mode == "fact_inventory_full_final_source_only_v1",
                 ): (position, record)
                 for position, record in pending
             }
