@@ -19,6 +19,7 @@ from src.context_budget import (
     pack_document_contexts_to_token_budget,
 )
 from src.prompt import (
+    append_timeline_fact_navigation,
     append_untrusted_review_draft,
     append_locator_navigation,
     append_fact_inventory,
@@ -28,6 +29,8 @@ from src.prompt import (
     build_locator_system_prompt,
     build_inventory_system_prompt,
     build_fact_inventory_system_prompt,
+    build_source_only_fact_messages,
+    build_timeline_fact_system_prompt,
     build_split_document_contexts,
     build_system_prompt,
     build_triage_system_prompt,
@@ -39,6 +42,7 @@ from src.schema import (
     EVIDENCE_MAX_CHARS,
     FACT_INVENTORY_CATEGORIES,
     FACT_INVENTORY_CATEGORIES_V2,
+    TIMELINE_FACT_ROLES,
     ITEMS,
     V8_COMPOSITE_STATES,
     judgment_schema,
@@ -46,6 +50,7 @@ from src.schema import (
     locator_schema,
     inventory_schema,
     fact_inventory_schema,
+    timeline_fact_schema,
     triage_schema,
 )
 
@@ -191,6 +196,12 @@ class FactInventoryFullFinalPrediction:
     final: Prediction
     final_messages_by_context: tuple[tuple[dict[str, str], ...], ...]
     final_recovery_used: bool
+    timeline_raw_responses: tuple[str, ...] = ()
+    timeline_by_role: dict[str, tuple[tuple[str, str], ...]] | None = None
+    timeline_usage: tuple[dict[str, Any], ...] = ()
+    timeline_latency_seconds: tuple[float, ...] = ()
+    timeline_parse_errors: tuple[str, ...] = ()
+    timeline_messages: tuple[tuple[dict[str, str], ...], ...] = ()
 
 
 def extract_json(text: str) -> Any:
@@ -443,6 +454,22 @@ def parse_fact_inventory_response(
                 f"{category} fact inventory value must be up to {max_items} strings"
             )
         result[category] = values
+    return result
+
+
+def parse_timeline_fact_response(text: str) -> dict[str, list[str]]:
+    """Parse source-only date-role excerpts without any v23 judgment."""
+    payload = extract_json(text)
+    if not isinstance(payload, dict) or set(payload) != set(TIMELINE_FACT_ROLES):
+        raise PredictionError("timeline response keys do not match date roles")
+    result: dict[str, list[str]] = {}
+    for role in TIMELINE_FACT_ROLES:
+        values = payload[role]
+        if not isinstance(values, list) or len(values) > 2 or not all(
+            isinstance(value, str) for value in values
+        ):
+            raise PredictionError(f"{role} timeline value must be up to 2 strings")
+        result[role] = values
     return result
 
 
@@ -1107,6 +1134,7 @@ class BaselinePipeline:
         self, record: dict[str, Any], inventory_max_items: int = 3,
         inventory_position: str = "after_source",
         inventory_categories: tuple[str, ...] = FACT_INVENTORY_CATEGORIES,
+        timeline_v23: bool = False,
     ) -> FactInventoryFullFinalPrediction:
         """Use non-final source facts while retaining every source in final V/E.
 
@@ -1169,13 +1197,57 @@ class BaselinePipeline:
                         collected[category].append((doc_id, excerpt))
 
         inventory = {category: tuple(values) for category, values in collected.items()}
+        timeline: dict[str, tuple[tuple[str, str], ...]] | None = None
+        timeline_raw: list[str] = []
+        timeline_usages: list[dict[str, Any]] = []
+        timeline_latencies: list[float] = []
+        timeline_errors: list[str] = []
+        timeline_messages: list[tuple[dict[str, str], ...]] = []
+        meta = record.get("meta", {})
+        is_local_negotiated = (
+            str(meta.get("적용계약법", "")) == "지방계약법"
+            and str(meta.get("낙찰방법", "")) == "협상에의한계약"
+        )
+        if timeline_v23 and is_local_negotiated:
+            timeline_collected: dict[str, list[tuple[str, str]]] = {
+                role: [] for role in TIMELINE_FACT_ROLES
+            }
+            timeline_system = build_timeline_fact_system_prompt()
+            for context in stage_contexts:
+                source = context.text if isinstance(context, DocumentContext) else (
+                    context if context is not None else build_official_baseline_context(visible, None)
+                )
+                messages = build_source_only_fact_messages(timeline_system, source)
+                timeline_messages.append(tuple(messages))
+                completion = self.client.complete(messages, timeline_fact_schema())
+                timeline_raw.append(completion.content)
+                timeline_usages.append(completion.usage)
+                timeline_latencies.append(completion.latency_seconds)
+                try:
+                    parsed = parse_timeline_fact_response(completion.content)
+                except PredictionError as exc:
+                    timeline_errors.append(str(exc))
+                    parsed = {role: [] for role in TIMELINE_FACT_ROLES}
+                for role, values in parsed.items():
+                    for value in values:
+                        excerpt = _clean_evidence(value, source)
+                        if not excerpt:
+                            continue
+                        doc_id = next(
+                            (doc["doc_id"] for doc in visible["docs"] if excerpt in doc["text"]),
+                            "source",
+                        )
+                        if (doc_id, excerpt) not in timeline_collected[role]:
+                            timeline_collected[role].append((doc_id, excerpt))
+            timeline = {role: tuple(values) for role, values in timeline_collected.items()}
 
         def final_messages_for(context: str | None) -> list[dict[str, str]]:
-            return append_fact_inventory(
+            messages = append_fact_inventory(
                 self.messages_for_context(record, context), inventory,
                 position=inventory_position,
                 categories=inventory_categories,
             )
+            return append_timeline_fact_navigation(messages, timeline) if timeline is not None else messages
 
         final_contexts = pack_contexts_to_token_budget(
             visible,
@@ -1204,6 +1276,12 @@ class BaselinePipeline:
             final=final,
             final_messages_by_context=tuple(tuple(messages) for messages in final_messages),
             final_recovery_used=recovery,
+            timeline_raw_responses=tuple(timeline_raw),
+            timeline_by_role=timeline,
+            timeline_usage=tuple(timeline_usages),
+            timeline_latency_seconds=tuple(timeline_latencies),
+            timeline_parse_errors=tuple(timeline_errors),
+            timeline_messages=tuple(timeline_messages),
         )
 
     def contexts_for_record(

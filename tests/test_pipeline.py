@@ -19,6 +19,7 @@ from src.pipeline import (
     parse_locator_response,
     parse_inventory_response,
     parse_fact_inventory_response,
+    parse_timeline_fact_response,
     parse_pass_response,
     parse_triage_response,
     postprocess_judgment,
@@ -466,6 +467,35 @@ def test_fact_inventory_contract_is_source_only_and_non_final() -> None:
     )
     assert len(before_source) == 2
     assert before_source[-1]["content"].index("최종 판정 아님") < before_source[-1]["content"].index("[공고 자료 원문]")
+
+
+def test_timeline_navigation_is_role_grounded_and_never_a_final_label() -> None:
+    from src.prompt import (
+        append_timeline_fact_navigation,
+        build_source_only_fact_messages,
+        build_timeline_fact_system_prompt,
+    )
+    from src.schema import TIMELINE_FACT_ROLES, timeline_fact_schema
+
+    prompt = build_timeline_fact_system_prompt()
+    assert "최소 기간 계산" in prompt
+    assert "위반 여부" in prompt
+    source_only = build_source_only_fact_messages(prompt, "공고일: 2026. 1. 1.")
+    assert len(source_only) == 2
+    assert "나라장터 입력 메타" not in source_only[1]["content"]
+    schema = timeline_fact_schema()
+    assert tuple(schema["required"]) == TIMELINE_FACT_ROLES
+    payload = {role: [] for role in TIMELINE_FACT_ROLES}
+    payload["제안서_접수마감"] = ["제안서 제출: 2026. 1. 2."]
+    assert parse_timeline_fact_response(json.dumps(payload, ensure_ascii=False)) == payload
+    with pytest.raises(PredictionError, match="up to 2 strings"):
+        parse_timeline_fact_response(json.dumps({role: ["x", "y", "z"] for role in TIMELINE_FACT_ROLES}))
+    messages = append_timeline_fact_navigation(
+        [{"role": "system", "content": "final"}, {"role": "user", "content": "source"}],
+        {role: tuple() for role in TIMELINE_FACT_ROLES},
+    )
+    assert "후보가 없다고 0이 아니며" in messages[-1]["content"]
+    assert "최종 판정 아님" in messages[-1]["content"]
 
 
 def test_official_profile_renders_product_context_and_full_context_when_requested() -> None:

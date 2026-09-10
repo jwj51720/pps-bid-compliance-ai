@@ -181,6 +181,19 @@ TIMELINE_FACT_SYSTEM = """당신은 공공 입찰공고 원문에서 일정 사�
 관련 문구가 없으면 빈 배열이다. 메타데이터, 법령 설명, 요약, 위반 판단은 쓰지 않는다."""
 
 
+def build_timeline_fact_system_prompt() -> str:
+    """Return the fixed source-only v23 role-extraction contract."""
+    return TIMELINE_FACT_SYSTEM
+
+
+def build_source_only_fact_messages(system_prompt: str, source: str) -> list[dict[str, str]]:
+    """Make a source-only navigation message with no metadata or card facts."""
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"[공고 자료 원문]\n{source}"},
+    ]
+
+
 def append_timeline_fact_navigation(messages: list[dict[str, str]], facts: dict[str, tuple[tuple[str, str], ...]]) -> list[dict[str, str]]:
     """Append source-grounded date roles without any label implication."""
     lines = ["[일정 원문 사실 안내 — 최종 판정 아님]",

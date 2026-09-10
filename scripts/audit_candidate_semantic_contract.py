@@ -33,8 +33,11 @@ from src.data import load_decision_cards, load_item_table, load_records  # noqa:
 from src.prompt import (  # noqa: E402
     _render_card_text,
     append_fact_inventory,
+    append_timeline_fact_navigation,
     append_locator_navigation,
     build_fact_inventory_system_prompt,
+    build_source_only_fact_messages,
+    build_timeline_fact_system_prompt,
     build_messages,
     build_official_baseline_context,
 )
@@ -43,6 +46,7 @@ from src.schema import (  # noqa: E402
     FACT_INVENTORY_CATEGORIES,
     FACT_INVENTORY_CATEGORIES_V2,
     ITEMS,
+    TIMELINE_FACT_ROLES,
 )
 
 
@@ -131,6 +135,7 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
     sample_active_items: dict[str, tuple[str, ...]] = {}
     sample_gated_items: dict[str, dict[str, str]] = {}
     source_stage_messages: dict[str, list[list[dict[str, str]]]] = {}
+    timeline_stage_messages: dict[str, list[list[dict[str, str]]]] = {}
     sample_previews: dict[str, list[dict[str, Any]]] = {}
     for record_id in review_ids:
         if grouped:
@@ -160,6 +165,7 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                 "fact_inventory_full_final_v2",
                 "fact_inventory_full_final_v3",
                 "fact_inventory_full_final_v4",
+                "fact_inventory_full_final_timeline_v23",
             }:
                 visible = pipeline._visible_record(by_id[record_id])
                 source_stage_messages[record_id] = [
@@ -182,7 +188,7 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                     for context in pipeline.contexts_for_record(by_id[record_id])
                 ]
                 final_context = (
-                    None if staged_mode in {"fact_inventory_full_final_v1", "fact_inventory_full_final_v2", "fact_inventory_full_final_v3", "fact_inventory_full_final_v4"}
+                    None if staged_mode in {"fact_inventory_full_final_v1", "fact_inventory_full_final_v2", "fact_inventory_full_final_v3", "fact_inventory_full_final_v4", "fact_inventory_full_final_timeline_v23"}
                     else build_official_baseline_context(visible, 4000)
                 )
                 messages = append_fact_inventory(
@@ -206,6 +212,25 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                         else FACT_INVENTORY_CATEGORIES
                     ),
                 )
+                meta = by_id[record_id].get("meta", {})
+                if (
+                    staged_mode == "fact_inventory_full_final_timeline_v23"
+                    and str(meta.get("적용계약법", "")) == "지방계약법"
+                    and str(meta.get("낙찰방법", "")) == "협상에의한계약"
+                ):
+                    timeline_stage_messages[record_id] = [
+                        build_source_only_fact_messages(
+                            build_timeline_fact_system_prompt(),
+                            context.text if hasattr(context, "text") else (
+                                context if context is not None
+                                else build_official_baseline_context(visible, None)
+                            ),
+                        )
+                        for context in pipeline.contexts_for_record(by_id[record_id])
+                    ]
+                    messages = append_timeline_fact_navigation(
+                        messages, {role: () for role in TIMELINE_FACT_ROLES}
+                    )
             else:
                 messages = final_messages_for_record(pipeline, by_id[record_id], staged_mode)
             sample_messages[record_id] = messages
@@ -223,6 +248,7 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                 "fact_inventory_full_final_v2",
                 "fact_inventory_full_final_v3",
                 "fact_inventory_full_final_v4",
+                "fact_inventory_full_final_timeline_v23",
             }:
                 rendered += "\n## Source fact-collection messages\n"
                 for index, source_messages in enumerate(source_stage_messages[record_id], 1):
@@ -230,6 +256,13 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                         f"\n### Source pack {index}\n\n```text\n{source_messages[0]['content']}\n```\n\n"
                         f"```text\n{source_messages[1]['content']}\n```\n"
                     )
+                if record_id in timeline_stage_messages:
+                    rendered += "\n## Timeline source fact-collection messages\n"
+                    for index, source_messages in enumerate(timeline_stage_messages[record_id], 1):
+                        rendered += (
+                            f"\n### Source pack {index}\n\n```text\n{source_messages[0]['content']}\n```\n\n"
+                            f"```text\n{source_messages[1]['content']}\n```\n"
+                        )
             rendered_dir.joinpath(f"{record_id.lower()}.final.messages.md").write_text(rendered, encoding="utf-8")
 
     item_table = load_item_table(config.data.item_table_path)
@@ -317,6 +350,7 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                     "fact_inventory_full_final_v2",
                     "fact_inventory_full_final_v3",
                     "fact_inventory_full_final_v4",
+                    "fact_inventory_full_final_timeline_v23",
                 }:
                     rendered_text = "\n".join(
                         message[1]["content"] for message in source_stage_messages[record_id]

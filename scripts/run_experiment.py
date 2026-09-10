@@ -136,18 +136,24 @@ def _prediction_to_json(
 ) -> dict[str, Any]:
     if isinstance(prediction, FactInventoryFullFinalPrediction):
         final = prediction.final
-        stages = [*prediction.inventory_usage, final.usage]
+        stages = [*prediction.inventory_usage, *prediction.timeline_usage, final.usage]
         return {
             "id": final.record_id, "judgment": final.judgment,
             "row": judgment_to_row(final.record_id, final.judgment),
             "raw_response": final.raw_response, "model": final.model,
-            "latency_seconds": sum(prediction.inventory_latency_seconds) + final.latency_seconds,
+            "latency_seconds": (
+                sum(prediction.inventory_latency_seconds)
+                + sum(prediction.timeline_latency_seconds)
+                + final.latency_seconds
+            ),
             "usage": {key: sum(_usage_number(stage.get(key, 0)) for stage in stages)
                       for key in set().union(*(set(stage) for stage in stages))},
             "finish_reason": final.finish_reason, "pass_judgments": list(final.pass_judgments),
             "v8_observations": list(final.v8_observations), "parse_errors": list(final.parse_errors),
             "staged_run": {"mode": (
-                "fact_inventory_full_final_v4"
+                "fact_inventory_full_final_timeline_v23"
+                if prediction.timeline_by_role is not None
+                else "fact_inventory_full_final_v4"
                 if prediction.inventory_categories == FACT_INVENTORY_CATEGORIES_V2
                 else "fact_inventory_full_final_v3"
                 if prediction.inventory_position == "before_source"
@@ -159,6 +165,11 @@ def _prediction_to_json(
                     "by_category": {k: list(v) for k, v in prediction.inventory_by_category.items()},
                     "parse_errors": list(prediction.inventory_parse_errors),
                     "messages": [list(value) for value in prediction.inventory_messages]},
+                "timeline": ({"raw_responses": list(prediction.timeline_raw_responses),
+                    "by_role": {k: list(v) for k, v in prediction.timeline_by_role.items()},
+                    "parse_errors": list(prediction.timeline_parse_errors),
+                    "messages": [list(value) for value in prediction.timeline_messages]}
+                    if prediction.timeline_by_role is not None else None),
                 "final": {"messages_by_context": [list(value) for value in prediction.final_messages_by_context],
                           "judgment": final.judgment},
                 "final_recovery_used": prediction.final_recovery_used},
@@ -550,6 +561,7 @@ def _predict_with_retries(
     fact_inventory_max_items: int = 3,
     fact_inventory_position: str = "after_source",
     fact_inventory_categories: tuple[str, ...] = FACT_INVENTORY_CATEGORIES,
+    fact_inventory_timeline_v23: bool = False,
 ) -> tuple[Prediction | TwoPassAdjudicationPrediction | TriageThenStrictPrediction | LocatorThenFinalPrediction | InventoryThenFinalPrediction | FactInventoryThenFinalPrediction | None, list[dict[str, Any]]]:
     failed_attempts: list[dict[str, Any]] = []
     for attempt in range(1, attempts + 1):
@@ -570,6 +582,7 @@ def _predict_with_retries(
                     inventory_max_items=fact_inventory_max_items,
                     inventory_position=fact_inventory_position,
                     inventory_categories=fact_inventory_categories,
+                    timeline_v23=fact_inventory_timeline_v23,
                 )
                 if fact_inventory_full_final
                 else pipeline.predict(record)
@@ -816,10 +829,11 @@ def main() -> int:
                     config.staged_run is not None and config.staged_run.mode == "locator_then_final_v1",
                     config.staged_run is not None and config.staged_run.mode == "inventory_then_final_v1",
                     config.staged_run is not None and config.staged_run.mode == "fact_inventory_then_final_v1",
-                    config.staged_run is not None and config.staged_run.mode in {"fact_inventory_full_final_v1", "fact_inventory_full_final_v2", "fact_inventory_full_final_v3", "fact_inventory_full_final_v4"},
+                    config.staged_run is not None and config.staged_run.mode in {"fact_inventory_full_final_v1", "fact_inventory_full_final_v2", "fact_inventory_full_final_v3", "fact_inventory_full_final_v4", "fact_inventory_full_final_timeline_v23"},
                     4 if config.staged_run is not None and config.staged_run.mode == "fact_inventory_full_final_v2" else 3,
                     "before_source" if config.staged_run is not None and config.staged_run.mode == "fact_inventory_full_final_v3" else "after_source",
                     FACT_INVENTORY_CATEGORIES_V2 if config.staged_run is not None and config.staged_run.mode == "fact_inventory_full_final_v4" else FACT_INVENTORY_CATEGORIES,
+                    config.staged_run is not None and config.staged_run.mode == "fact_inventory_full_final_timeline_v23",
                 ): (position, record)
                 for position, record in pending
             }
