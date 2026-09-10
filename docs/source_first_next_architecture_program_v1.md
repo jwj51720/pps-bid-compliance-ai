@@ -126,8 +126,10 @@ runtime의 독립 근거가 없으면 제출 후보로 승격하지 않는다.
    `submit-exp171-source-first-full-final-v1`로 동결한다.
 2. EXP180의 conditional v23 timeline은 fast20 `0.241667` (EXP179 `0.287500`)으로, EXP182의
 replacement procedure ledger는 fast20 `0.319444`였으나 frozen holdout20 `0.125000`
-(EXP168 `0.229167`)으로 각각 기각됐다. relation field wording·excerpt cap·item follow-up
-tuning은 이 후보군을 되살리지 않는다.
+(EXP168 `0.229167`)으로 각각 기각됐다. EXP184 strict source-only broad inventory도
+tokenizer stage-1 입력 66,089 tokens를 줄였지만 fast20 `0.283333`으로 기각됐다. relation
+field wording·excerpt cap·item follow-up 또는 source-only wording tuning은 이 후보군을
+되살리지 않는다.
 3. C는 EXP146의 전역 second-adjudication 기각과 같은 위험을 다시 갖고, third full-source
 stage의 runtime 근거도 없다. 따라서 새 quality mechanism 또는 evaluator runtime 관측이
 생기기 전까지 구현하거나 유료 실행하지 않는다.

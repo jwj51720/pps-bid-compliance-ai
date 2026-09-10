@@ -68,3 +68,23 @@ The source-stage messages in these artifacts were read alongside the final messa
 contain exact source only, while the latter retain cards, friendly metadata/product fact, advisory
 inventory, and complete admitted original source. The next permitted action is one fast20 provider
 probe; no card/schema/merge/provider change accompanies it.
+
+## Result and decision — 2026-09-10
+
+`outputs/exp-184-source-only-inventory-fast-panel-c4/` completed 20/20 at macro positive-F1
+`0.283333`, below EXP179's exact repeat `0.287500` (`-0.004167`). Both runs have 23 stage-1 and
+24 final calls (47 total). EXP184 had no stage parse error but one final-recovery event
+(`PPS-DEV-051`); the recovery completed with no persisted final parse error. CSV validation passed
+with two invalid-positive-evidence warnings, the same count as EXP182 but fewer than EXP179's
+three. Remote elapsed time (`149.954s`) and provider token totals are not evaluator runtime proof.
+
+Relative to EXP179, EXP184 gains v22 one TP and removes v9 two FPs and v24 one FP, but loses v1
+one TP, v4 one TP, and v23 one TP; it also introduces two v13 FPs and one v15 FP. The changed-cell
+ledger is preserved in the experiment `predictions.jsonl` and `errors.csv`. The small aggregate
+drop and recovery mean this cannot be treated as a quality improvement despite the strict input
+contract and 66,089-token first-stage reduction.
+
+**Decision: reject EXP184.** Do not run its holdout or dev200 extension, and do not tune the
+source-only instruction, category cap, navigation location, cards, or merge. The submitted EXP171
+artifact remains immutable; for continued experiments, the metadata-bearing broad inventory is the
+empirical incumbent rather than silently replacing it with this stricter message builder.
