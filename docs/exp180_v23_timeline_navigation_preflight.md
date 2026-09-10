@@ -70,3 +70,43 @@ coverage, parser/recovery, evidence validity, stage/final/timeline call counts, 
 Advance only if v23 improves over EXP179 with no non-v23 global damage and operational gates stay
 clean. Then use an unchanged policy on independent holdout20; only a same-direction holdout result
 can justify dev200. A fast-only gain cannot alter the submission candidate.
+
+## Fast20 result — rejected (2026-09-10)
+
+The paid run completed all 20 fixed-panel notices:
+`outputs/exp-180-v23-timeline-navigation-fast-panel-c4/`.
+
+| Metric | EXP179 repeat base | EXP180 | Delta |
+| --- | ---: | ---: | ---: |
+| Macro positive-F1 | .287500 | **.241667** | -.045833 |
+| v23 TP / FP / FN | 1 / 3 / 0 | 0 / 2 / 1 | v23 F1 .400 → .000 |
+| generic stage / timeline stage / final calls | 23 / 0 / 24 | 23 / 8 / 24 | +8 calls |
+| validation warnings | 3 | 3 | v23 warning moves from PPS-DEV-191 to PPS-DEV-131 |
+
+The result fails the first gate. Do **not** run the declared holdout20 or dev200 extension, and do
+not tune roles, dates, card text, router predicates, merge logic, or source-excerpt limits from
+these labels.
+
+### Changed-cell analysis
+
+Only seven v cells changed against EXP179. The v23 changes were one useful FP→TN
+(`PPS-DEV-062`), one TP→FN (`PPS-DEV-141`), one further FP→TN
+(`PPS-DEV-169`), and one TN→FP (`PPS-DEV-131`). Thus role extraction did not make the final
+v23 judgment reliable: it removed the sole v23 TP and introduced a new unsupported positive.
+
+The timeline stage was schema-valid (eight calls, zero parse errors) and returned role-labelled
+unchanged source excerpts for the eligible notices. The failure is therefore not a parser or
+admission failure. It is a quality failure of adding the role ledger to the final model task.
+
+Three changes outside v23 also appeared: `PPS-DEV-062 v4` TP→FN, `PPS-DEV-072 v1` TP→FN, and
+`PPS-DEV-169 v9` FP→TN. Because OpenRouter is not bit-level deterministic, these non-v23 changes
+cannot be attributed solely to the timeline prompt; regardless, they violate the no-global-damage
+gate and reinforce rejection.
+
+Remote wall time was 139.3 s versus EXP179's 263.4 s, but it is not used as evaluator-runtime
+evidence. The provider again reported a completion above the configured 2,500 cap (PPS-DEV-169:
+4,375), so remote token/runtime figures are not vLLM projections.
+
+The next architecture search returns to the label-blind procedure-model audit in
+`source_first_next_architecture_program_v1.md`. EXP180 is a completed negative small-relation
+probe, not a basis for a v23 rule or further prompt variation.
