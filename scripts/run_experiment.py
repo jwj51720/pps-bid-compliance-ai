@@ -48,6 +48,7 @@ from src.pipeline import (
     TriageThenStrictPrediction,
     TwoPassAdjudicationPrediction,
     VOnlyDraftFullFinalPrediction,
+    VOnlyConsensusPrediction,
     judgment_to_row,
 )
 from src.submission import validate_submission, write_submission
@@ -133,8 +134,28 @@ def _usage_number(value: Any) -> float:
 
 
 def _prediction_to_json(
-    prediction: Prediction | TwoPassAdjudicationPrediction | VOnlyDraftFullFinalPrediction | TriageThenStrictPrediction | LocatorThenFinalPrediction | InventoryThenFinalPrediction | FactInventoryThenFinalPrediction | FactInventoryFullFinalPrediction,
+    prediction: Prediction | TwoPassAdjudicationPrediction | VOnlyDraftFullFinalPrediction | VOnlyConsensusPrediction | TriageThenStrictPrediction | LocatorThenFinalPrediction | InventoryThenFinalPrediction | FactInventoryThenFinalPrediction | FactInventoryFullFinalPrediction,
 ) -> dict[str, Any]:
+    if isinstance(prediction, VOnlyConsensusPrediction):
+        final = prediction.final
+        stages = [*(draft.usage for draft in prediction.drafts), final.usage]
+        return {
+            "id": final.record_id, "judgment": final.judgment,
+            "row": judgment_to_row(final.record_id, final.judgment),
+            "raw_response": final.raw_response, "model": final.model,
+            "latency_seconds": sum(draft.latency_seconds for draft in prediction.drafts) + final.latency_seconds,
+            "usage": {key: sum(_usage_number(stage.get(key, 0)) for stage in stages) for key in set().union(*(set(stage) for stage in stages))},
+            "finish_reason": final.finish_reason, "pass_judgments": list(final.pass_judgments),
+            "v8_observations": list(final.v8_observations), "parse_errors": list(final.parse_errors),
+            "staged_run": {"mode": "vonly_consensus_full_source_v1",
+                "vonly_drafts": [{"raw_response": draft.raw_response, "judgment": draft.judgment,
+                    "usage": draft.usage, "latency_seconds": draft.latency_seconds,
+                    "parse_errors": list(draft.parse_errors),
+                    "messages_by_context": [list(messages) for messages in message_packs]}
+                    for draft, message_packs in zip(prediction.drafts, prediction.draft_messages_by_context)],
+                "final": {"messages_by_context": [list(messages) for messages in prediction.final_messages_by_context], "judgment": final.judgment},
+                "final_recovery_used": prediction.final_recovery_used},
+        }
     if isinstance(prediction, VOnlyDraftFullFinalPrediction):
         final = prediction.final
         stages = [prediction.draft.usage, final.usage]
@@ -479,10 +500,14 @@ def _write_staged_input_examples_markdown(
         }
         procedure_mode = mode == "procedure_inventory_full_final_v1"
         vonly_draft_mode = mode == "vonly_draft_full_final_v1"
-        if inventory_mode or procedure_mode or vonly_draft_mode:
+        vonly_consensus_mode = mode == "vonly_consensus_full_source_v1"
+        if inventory_mode or procedure_mode or vonly_draft_mode or vonly_consensus_mode:
             first_name, first = (
                 ("V-only draft", staged.get("vonly_draft", {}))
                 if vonly_draft_mode
+                else
+                ("Two independent V-only drafts", {"drafts": staged.get("vonly_drafts", [])})
+                if vonly_consensus_mode
                 else
                 ("Procedure relation ledger", staged.get("procedure", {}))
                 if procedure_mode
@@ -491,6 +516,8 @@ def _write_staged_input_examples_markdown(
             second_name, second = "Final V/E", staged.get("final", {})
             first_result: Any = (
                 first.get("judgment", {}) if vonly_draft_mode else {
+                "draft_count": len(first.get("drafts", []))
+                } if vonly_consensus_mode else {
                 field: len(excerpts)
                 for field, excerpts in first.get(
                     "by_field" if procedure_mode else "by_category", {}
@@ -500,6 +527,12 @@ def _write_staged_input_examples_markdown(
             first_messages = first.get(
                 "messages_by_context" if vonly_draft_mode else "messages", []
             )
+            if vonly_consensus_mode:
+                first_messages = [
+                    pack
+                    for draft in first.get("drafts", [])
+                    for pack in draft.get("messages_by_context", [])
+                ]
             second_messages = second.get("messages_by_context", second.get("messages", []))
         else:
             first_name, first = (
@@ -633,7 +666,8 @@ def _predict_with_retries(
     procedure_inventory_full_final: bool = False,
     source_only_inventory: bool = False,
     vonly_draft_full_final: bool = False,
-) -> tuple[Prediction | TwoPassAdjudicationPrediction | VOnlyDraftFullFinalPrediction | TriageThenStrictPrediction | LocatorThenFinalPrediction | InventoryThenFinalPrediction | FactInventoryThenFinalPrediction | None, list[dict[str, Any]]]:
+    vonly_consensus: bool = False,
+) -> tuple[Prediction | TwoPassAdjudicationPrediction | VOnlyDraftFullFinalPrediction | VOnlyConsensusPrediction | TriageThenStrictPrediction | LocatorThenFinalPrediction | InventoryThenFinalPrediction | FactInventoryThenFinalPrediction | None, list[dict[str, Any]]]:
     failed_attempts: list[dict[str, Any]] = []
     for attempt in range(1, attempts + 1):
         try:
@@ -660,6 +694,8 @@ def _predict_with_retries(
                 if fact_inventory_full_final
                 else pipeline.predict_with_vonly_draft_then_full_final(record)
                 if vonly_draft_full_final
+                else pipeline.predict_with_vonly_consensus(record)
+                if vonly_consensus
                 else pipeline.predict(record)
             )
             return prediction, failed_attempts
@@ -912,6 +948,7 @@ def main() -> int:
                     config.staged_run is not None and config.staged_run.mode == "procedure_inventory_full_final_v1",
                     config.staged_run is not None and config.staged_run.mode == "fact_inventory_full_final_source_only_v1",
                     config.staged_run is not None and config.staged_run.mode == "vonly_draft_full_final_v1",
+                    config.staged_run is not None and config.staged_run.mode == "vonly_consensus_full_source_v1",
                 ): (position, record)
                 for position, record in pending
             }

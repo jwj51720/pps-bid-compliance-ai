@@ -20,6 +20,7 @@ from src.context_budget import (
 )
 from src.prompt import (
     append_procedure_fact_navigation,
+    append_untrusted_vonly_drafts,
     append_timeline_fact_navigation,
     append_untrusted_review_draft,
     append_locator_navigation,
@@ -123,6 +124,17 @@ class VOnlyDraftFullFinalPrediction:
     final: Prediction
     final_messages_by_context: tuple[tuple[dict[str, str], ...], ...]
     draft_available: bool
+    final_recovery_used: bool
+
+
+@dataclass(frozen=True)
+class VOnlyConsensusPrediction:
+    """Two independent V-only readings and a model-owned V-only resolver."""
+
+    drafts: tuple[Prediction, ...]
+    draft_messages_by_context: tuple[tuple[tuple[dict[str, str], ...], ...], ...]
+    final: Prediction
+    final_messages_by_context: tuple[tuple[dict[str, str], ...], ...]
     final_recovery_used: bool
 
 
@@ -897,6 +909,52 @@ class BaselinePipeline:
             final=final,
             final_messages_by_context=tuple(tuple(messages) for messages in final_messages),
             draft_available=draft_available,
+            final_recovery_used=recovery,
+        )
+
+    def predict_with_vonly_consensus(
+        self, record: dict[str, Any]
+    ) -> VOnlyConsensusPrediction:
+        """Use two full-source V-only drafts only as non-voting model context."""
+        if self.count_tokens is None or self.output_mode != "labels_only":
+            raise ValueError("V-only consensus requires exact admission and labels_only output")
+        raw_draft_pipeline = self._labels_only_draft_pipeline()
+        draft_contexts = raw_draft_pipeline.contexts_for_record(record)
+        draft_messages = tuple(
+            tuple(raw_draft_pipeline.messages_for_context(record, context))
+            for context in draft_contexts
+        )
+        drafts = (raw_draft_pipeline.predict(record), raw_draft_pipeline.predict(record))
+        if any(draft.parse_errors for draft in drafts):
+            raise PredictionError("V-only consensus draft parse failure")
+        final_pipeline = self._labels_only_draft_pipeline()
+
+        def final_messages_for(context: str | None) -> list[dict[str, str]]:
+            return append_untrusted_vonly_drafts(
+                final_pipeline.messages_for_context(record, context),
+                tuple(draft.judgment for draft in drafts), self.active_items,
+            )
+
+        visible = final_pipeline._visible_record(record)
+        final_contexts = pack_contexts_to_token_budget(
+            visible, final_pipeline.system_prompt_for_record(record), self.count_tokens,
+            final_pipeline.prompt_budget_tokens, final_pipeline.notice_anchor_chars,
+            message_builder=final_messages_for,
+        )
+        final_messages = [final_messages_for(context) for context in final_contexts]
+        final = final_pipeline.finalize(
+            record,
+            [self.client.complete(messages, final_pipeline.response_schema) for messages in final_messages],
+            final_contexts,
+        )
+        recovery = bool(final.parse_errors)
+        if recovery:
+            final = final_pipeline.predict(record)
+        return VOnlyConsensusPrediction(
+            drafts=drafts,
+            draft_messages_by_context=(draft_messages, draft_messages),
+            final=final,
+            final_messages_by_context=tuple(tuple(messages) for messages in final_messages),
             final_recovery_used=recovery,
         )
 

@@ -1201,6 +1201,32 @@ def append_untrusted_review_draft(
     return [messages[0], {"role": "user", "content": messages[1]["content"] + review_text}]
 
 
+def append_untrusted_vonly_drafts(
+    messages: list[dict[str, str]],
+    judgments: tuple[dict[str, dict[str, Any]], ...],
+    active_items: tuple[str, ...] = ITEMS,
+) -> list[dict[str, str]]:
+    """Append multiple advisory V-only readings; the resolver still owns labels."""
+    if len(messages) != 2 or messages[0].get("role") != "system" or messages[1].get("role") != "user":
+        raise ValueError("V-only draft review requires one system message and one user message")
+    if len(judgments) < 2:
+        raise ValueError("V-only draft review requires at least two independent drafts")
+    lines = [
+        "\n\n[독립 V-only 검토 초안 — 공고 자료가 아님]",
+        "아래 값들은 서로 독립된 임시 판단일 뿐이며, 사실·법령·근거문구가 아니다. "
+        "다수결이나 어느 초안도 따르지 말고, 위의 metadata·판정 카드·공고 자료 원문을 "
+        "다시 읽어 각 항목을 독립적으로 최종 판단한다.",
+    ]
+    for index, judgment in enumerate(judgments, 1):
+        if any(item not in judgment or judgment[item].get("위반여부") not in {0, 1} for item in active_items):
+            raise ValueError("V-only draft is missing a valid active-item label")
+        lines.append(f"- 독립초안 {index}: " + ", ".join(
+            f"{item}={judgment[item]['위반여부']}" for item in active_items
+        ))
+    lines.extend(["", "[최종 V-only 재판정]", "지정된 모든 v를 0 또는 1로 JSON 하나에 출력한다."])
+    return [messages[0], {"role": "user", "content": messages[1]["content"] + "\n".join(lines)}]
+
+
 def build_inventory_system_prompt(
     item_table: dict[str, dict[str, Any]],
     decision_cards: dict[str, dict[str, Any]] | None,

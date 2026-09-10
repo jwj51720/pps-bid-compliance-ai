@@ -207,6 +207,43 @@ def test_vonly_draft_full_final_keeps_ve_final_owner() -> None:
     assert not prediction.final_recovery_used
 
 
+def test_vonly_consensus_uses_model_owned_resolver_not_python_vote() -> None:
+    item_table = {
+        item: {"항목명": item, "부재탐지": False, "국가계약법": "", "지방계약법": "", "비고": ""}
+        for item in ITEMS
+    }
+    pipeline = BaselinePipeline(
+        item_table=item_table, client=MockClient(), max_document_chars=4000,
+        context_strategy="single", overflow_split_enabled=False,
+        count_tokens=lambda messages: len(messages), prompt_profile="official_baseline_v1",
+        output_mode="labels_only",
+    )
+    prediction = pipeline.predict_with_vonly_consensus(_record())
+    assert len(prediction.drafts) == 2
+    assert set(prediction.final.judgment) == set(ITEMS)
+    assert "독립초안 1" in prediction.final_messages_by_context[0][1]["content"]
+    assert "다수결" in prediction.final_messages_by_context[0][1]["content"]
+
+
+def test_vonly_consensus_does_not_apply_parent_frozen_rule() -> None:
+    item_table = {
+        item: {"항목명": item, "부재탐지": False, "국가계약법": "", "지방계약법": "", "비고": ""}
+        for item in ITEMS
+    }
+    record = _record("단일 실적 3억원 이상인 업체")
+    record["meta"] = {"입찰추정가격": "100000000", "업무구분": "용역"}
+    pipeline = BaselinePipeline(
+        item_table=item_table, client=MockClient(), max_document_chars=4000,
+        context_strategy="single", overflow_split_enabled=False,
+        count_tokens=lambda messages: len(messages), prompt_profile="official_baseline_v1",
+        output_mode="labels_only", frozen_rule_set="exp123_v1",
+    )
+
+    prediction = pipeline.predict_with_vonly_consensus(record)
+
+    assert prediction.final.judgment["v2"] == {"위반여부": 0, "근거문구": ""}
+
+
 def test_triage_then_strict_routes_absence_items_even_when_triage_says_not_applicable() -> None:
     item_table = {
         item: {
