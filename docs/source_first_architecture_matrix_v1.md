@@ -141,6 +141,24 @@ loss is a decision-quality failure rather than substring validation failure.
 item slots, or combine this navigation with a verifier. Those would be density/item-group variants
 already ruled out by EXP174/155/156 and would not repair this topology's recall loss.
 
+## Architecture-search stop criterion — 2026-09-10
+
+The complete-source branch has now tested every presently evidenced way to alter source navigation:
+category cap, placement, exception taxonomy, conditional timeline relations, relation-ledger
+replacement, item slots, and V-only/model-review loops. Only EXP171's original seven-category
+source-first/full-final topology has same-direction fast, holdout, repeat, and dev200 evidence.
+The other topology changes either lower fast quality or reverse on holdout. Repackaging any rejected
+variant as a different candidate count, field name, verifier trigger, or v subset is not a new
+structural hypothesis.
+
+Accordingly, do not spend additional provider tokens on this family before one of the following
+new evidence sources exists: (1) public feedback for the already submitted EXP171 archive, (2) a
+real evaluator-vLLM runtime measurement that makes a different call topology feasible, or (3) a
+label-blind source/provenance audit demonstrating a truth relation that seven categories cannot
+represent and which is not the v23/procedure/item-slot family already tested. Until then,
+`dist/pps_20260910_100059.zip` and its EXP171 tracked policy remain the incumbent; no change to
+submission assets is warranted.
+
 기존 계획의 다음 항목은 implementation 이후에만 수행한다.
 
 1. item-aware schema의 worst JSON 크기, exact tokenizer admission, stage/final pack 수,
