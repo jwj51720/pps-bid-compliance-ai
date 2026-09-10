@@ -39,12 +39,18 @@ from src.law_bundles import MetadataLawBundleRouter
 from src.pipeline import (
     BaselinePipeline,
     ContextAdmissionError,
+    FactInventoryThenFinalPrediction,
+    FactInventoryFullFinalPrediction,
+    LocatorThenFinalPrediction,
+    InventoryThenFinalPrediction,
     Prediction,
     PredictionError,
+    TriageThenStrictPrediction,
     TwoPassAdjudicationPrediction,
     judgment_to_row,
 )
 from src.submission import validate_submission, write_submission
+from src.schema import FACT_INVENTORY_CATEGORIES, FACT_INVENTORY_CATEGORIES_V2
 
 
 def _logger(output_dir: Path) -> logging.Logger:
@@ -113,14 +119,187 @@ def _git_commit() -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
+def _usage_number(value: Any) -> float:
+    """Normalize provider usage/cost values before staged-run aggregation."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    if isinstance(value, dict):
+        for key in ("cost", "total_cost", "total"):
+            nested = value.get(key)
+            if isinstance(nested, (int, float)) and not isinstance(nested, bool):
+                return float(nested)
+    return 0.0
+
+
 def _prediction_to_json(
-    prediction: Prediction | TwoPassAdjudicationPrediction,
+    prediction: Prediction | TwoPassAdjudicationPrediction | TriageThenStrictPrediction | LocatorThenFinalPrediction | InventoryThenFinalPrediction | FactInventoryThenFinalPrediction | FactInventoryFullFinalPrediction,
 ) -> dict[str, Any]:
+    if isinstance(prediction, FactInventoryFullFinalPrediction):
+        final = prediction.final
+        stages = [*prediction.inventory_usage, final.usage]
+        return {
+            "id": final.record_id, "judgment": final.judgment,
+            "row": judgment_to_row(final.record_id, final.judgment),
+            "raw_response": final.raw_response, "model": final.model,
+            "latency_seconds": sum(prediction.inventory_latency_seconds) + final.latency_seconds,
+            "usage": {key: sum(_usage_number(stage.get(key, 0)) for stage in stages)
+                      for key in set().union(*(set(stage) for stage in stages))},
+            "finish_reason": final.finish_reason, "pass_judgments": list(final.pass_judgments),
+            "v8_observations": list(final.v8_observations), "parse_errors": list(final.parse_errors),
+            "staged_run": {"mode": (
+                "fact_inventory_full_final_v4"
+                if prediction.inventory_categories == FACT_INVENTORY_CATEGORIES_V2
+                else "fact_inventory_full_final_v3"
+                if prediction.inventory_position == "before_source"
+                else "fact_inventory_full_final_v2"
+                if prediction.inventory_max_items == 4
+                else "fact_inventory_full_final_v1"
+            ),
+                "inventory": {"raw_responses": list(prediction.inventory_raw_responses),
+                    "by_category": {k: list(v) for k, v in prediction.inventory_by_category.items()},
+                    "parse_errors": list(prediction.inventory_parse_errors),
+                    "messages": [list(value) for value in prediction.inventory_messages]},
+                "final": {"messages_by_context": [list(value) for value in prediction.final_messages_by_context],
+                          "judgment": final.judgment},
+                "final_recovery_used": prediction.final_recovery_used},
+        }
+    if isinstance(prediction, FactInventoryThenFinalPrediction):
+        final = prediction.final
+        stages = [*prediction.inventory_usage, final.usage]
+        return {
+            "id": final.record_id, "judgment": final.judgment,
+            "row": judgment_to_row(final.record_id, final.judgment),
+            "raw_response": final.raw_response, "model": final.model,
+            "latency_seconds": sum(prediction.inventory_latency_seconds) + final.latency_seconds,
+            "usage": {key: sum(_usage_number(stage.get(key, 0)) for stage in stages)
+                      for key in set().union(*(set(stage) for stage in stages))},
+            "finish_reason": final.finish_reason, "pass_judgments": list(final.pass_judgments),
+            "v8_observations": list(final.v8_observations), "parse_errors": list(final.parse_errors),
+            "staged_run": {"mode": "fact_inventory_then_final_v1",
+                "inventory": {"raw_responses": list(prediction.inventory_raw_responses),
+                    "by_category": {k: list(v) for k, v in prediction.inventory_by_category.items()},
+                    "parse_errors": list(prediction.inventory_parse_errors),
+                    "messages": [list(value) for value in prediction.inventory_messages]},
+                "final": {"messages": list(prediction.final_messages), "judgment": final.judgment},
+                "final_recovery_used": prediction.final_recovery_used},
+        }
+    if isinstance(prediction, InventoryThenFinalPrediction):
+        final = prediction.final
+        stages = [*prediction.inventory_usage, final.usage]
+        return {
+            "id": final.record_id, "judgment": final.judgment,
+            "row": judgment_to_row(final.record_id, final.judgment),
+            "raw_response": final.raw_response, "model": final.model,
+            "latency_seconds": sum(prediction.inventory_latency_seconds) + final.latency_seconds,
+            "usage": {key: sum(_usage_number(stage.get(key, 0)) for stage in stages)
+                      for key in set().union(*(set(stage) for stage in stages))},
+            "finish_reason": final.finish_reason, "pass_judgments": list(final.pass_judgments),
+            "v8_observations": list(final.v8_observations), "parse_errors": list(final.parse_errors),
+            "staged_run": {"mode": "inventory_then_final_v1",
+                "inventory": {"raw_responses": list(prediction.inventory_raw_responses),
+                    "by_item": {k: list(v) for k, v in prediction.inventory_by_item.items()},
+                    "absence_summary": prediction.absence_pack_summary,
+                    "parse_errors": list(prediction.inventory_parse_errors),
+                    "messages": [list(value) for value in prediction.inventory_messages]},
+                "final": {"messages": list(prediction.final_messages), "judgment": final.judgment},
+                "final_recovery_used": prediction.final_recovery_used},
+        }
+    if isinstance(prediction, LocatorThenFinalPrediction):
+        final = prediction.final
+        stages = [prediction.locator_usage, final.usage]
+        latencies = [prediction.locator_latency_seconds, final.latency_seconds]
+        if prediction.final_recovery_used:
+            stages.append(final.usage)
+            latencies.append(final.latency_seconds)
+        combined_usage = {
+            key: sum(_usage_number(stage.get(key, 0)) for stage in stages)
+            for key in set().union(*(set(stage) for stage in stages))
+        }
+        return {
+            "id": final.record_id,
+            "judgment": final.judgment,
+            "row": judgment_to_row(final.record_id, final.judgment),
+            "raw_response": final.raw_response,
+            "model": final.model,
+            "latency_seconds": sum(latencies),
+            "usage": combined_usage,
+            "finish_reason": final.finish_reason,
+            "pass_judgments": list(final.pass_judgments),
+            "v8_observations": list(final.v8_observations),
+            "parse_errors": list(final.parse_errors),
+            "staged_run": {
+                "mode": "locator_then_final_v1",
+                "locator": {
+                    "raw_response": prediction.locator_raw_response,
+                    "snippets": prediction.locator_snippets,
+                    "latency_seconds": prediction.locator_latency_seconds,
+                    "usage": prediction.locator_usage,
+                    "finish_reason": prediction.locator_finish_reason,
+                    "parse_error": prediction.locator_parse_error,
+                    "messages": list(prediction.locator_messages),
+                },
+                "final": {
+                    "raw_response": final.raw_response,
+                    "judgment": final.judgment,
+                    "latency_seconds": final.latency_seconds,
+                    "usage": final.usage,
+                    "parse_errors": list(final.parse_errors),
+                    "messages": list(prediction.final_messages),
+                },
+                "final_recovery_used": prediction.final_recovery_used,
+            },
+        }
+    if isinstance(prediction, TriageThenStrictPrediction):
+        final = prediction.final
+        stages = [prediction.triage_usage, prediction.strict.usage]
+        latencies = [prediction.triage_latency_seconds, prediction.strict.latency_seconds]
+        if prediction.strict_recovery_used:
+            stages.append(final.usage)
+            latencies.append(final.latency_seconds)
+        combined_usage = {
+            key: sum(_usage_number(stage.get(key, 0)) for stage in stages)
+            for key in set().union(*(set(stage) for stage in stages))
+        }
+        return {
+            "id": final.record_id,
+            "judgment": final.judgment,
+            "row": judgment_to_row(final.record_id, final.judgment),
+            "raw_response": final.raw_response,
+            "model": final.model,
+            "latency_seconds": sum(latencies),
+            "usage": combined_usage,
+            "finish_reason": final.finish_reason,
+            "pass_judgments": list(final.pass_judgments),
+            "v8_observations": list(final.v8_observations),
+            "parse_errors": list(final.parse_errors),
+            "staged_run": {
+                "mode": "triage_then_strict_v1",
+                "triage": {
+                    "raw_response": prediction.triage_raw_response,
+                    "states": prediction.triage_states,
+                    "latency_seconds": prediction.triage_latency_seconds,
+                    "usage": prediction.triage_usage,
+                    "finish_reason": prediction.triage_finish_reason,
+                    "parse_error": prediction.triage_parse_error,
+                    "messages": list(prediction.triage_messages),
+                },
+                "strict": {
+                    "items": list(prediction.strict_items),
+                    "raw_response": prediction.strict.raw_response,
+                    "judgment": prediction.strict.judgment,
+                    "latency_seconds": prediction.strict.latency_seconds,
+                    "usage": prediction.strict.usage,
+                    "parse_errors": list(prediction.strict.parse_errors),
+                    "messages": list(prediction.strict_messages),
+                },
+                "strict_recovery_used": prediction.strict_recovery_used,
+            },
+        }
     if isinstance(prediction, TwoPassAdjudicationPrediction):
         final = prediction.final
         combined_usage = {
-            key: float(prediction.pass_a.usage.get(key, 0) or 0)
-            + float(prediction.pass_b.usage.get(key, 0) or 0)
+            key: _usage_number(prediction.pass_a.usage.get(key, 0))
+            + _usage_number(prediction.pass_b.usage.get(key, 0))
             for key in set(prediction.pass_a.usage) | set(prediction.pass_b.usage)
         }
         return {
@@ -165,6 +344,7 @@ def _prediction_to_json(
         "pass_judgments": list(prediction.pass_judgments),
         "v8_observations": list(prediction.v8_observations),
         "parse_errors": list(prediction.parse_errors),
+        "applicability_inactive_items": dict(prediction.applicability_inactive_items),
     }
 
 
@@ -209,6 +389,91 @@ def _write_input_examples_markdown(path: Path, entries: list[dict[str, Any]]) ->
             ]
         )
     path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def _write_staged_input_examples_markdown(
+    path: Path, values: list[dict[str, Any]], limit: int
+) -> None:
+    """Export actual messages for every supported staged execution mode."""
+    lines = [
+        "# Staged 모델 입력 예시",
+        "",
+        "각 fenced block은 해당 stage에서 모델에 실제 전달된 메시지 내용이다.",
+        "1차 stage의 결과는 final label이나 evidence가 아니며, 2차 stage만 최종 V/E를 낸다.",
+        "",
+    ]
+    for value in values[:limit]:
+        staged = value.get("staged_run", {})
+        mode = staged.get("mode")
+        inventory_mode = mode in {
+            "inventory_then_final_v1",
+            "fact_inventory_then_final_v1",
+            "fact_inventory_full_final_v1",
+            "fact_inventory_full_final_v2",
+            "fact_inventory_full_final_v3",
+            "fact_inventory_full_final_v4",
+        }
+        if inventory_mode:
+            first_name, first = "Fact inventory", staged.get("inventory", {})
+            second_name, second = "Final V/E", staged.get("final", {})
+            first_result: Any = {
+                category: len(excerpts)
+                for category, excerpts in first.get("by_category", {}).items()
+            }
+            first_messages = first.get("messages", [])
+            second_messages = second.get("messages_by_context", second.get("messages", []))
+        else:
+            first_name, first = (
+                ("Triage", staged.get("triage", {}))
+                if mode == "triage_then_strict_v1"
+                else ("Locator", staged.get("locator", {}))
+            )
+            second_name, second = (
+                ("Strict final", staged.get("strict", {}))
+                if mode == "triage_then_strict_v1"
+                else ("Final V/E", staged.get("final", {}))
+            )
+            first_result = first.get("states", first.get("snippets", {}))
+            first_messages = first.get("messages", [])
+            second_messages = second.get("messages", [])
+
+        def flatten_message_packs(messages: list[Any]) -> list[dict[str, Any]]:
+            """Flatten source-pack message lists while preserving their order."""
+            flattened: list[dict[str, Any]] = []
+            for message_or_pack in messages:
+                if isinstance(message_or_pack, list):
+                    flattened.extend(
+                        message for message in message_or_pack
+                        if isinstance(message, dict)
+                    )
+                elif isinstance(message_or_pack, dict):
+                    flattened.append(message_or_pack)
+            return flattened
+
+        lines.extend([
+            f"## {value['id']}",
+            "",
+            f"- mode: `{mode}`",
+            f"- first-stage result: `{json.dumps(first_result, ensure_ascii=False)}`",
+            f"- strict items: `{', '.join(second.get('items', []))}`",
+            f"- recovery used: `{staged.get('strict_recovery_used', staged.get('final_recovery_used'))}`",
+            "",
+        ])
+        for title, messages in (
+            (first_name, flatten_message_packs(first_messages)),
+            (second_name, flatten_message_packs(second_messages)),
+        ):
+            lines.extend([f"### {title}", ""])
+            for message in messages:
+                lines.extend([
+                    f"#### {message.get('role', 'unknown')}",
+                    "",
+                    "```text",
+                    str(message.get("content", "")),
+                    "```",
+                    "",
+                ])
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _make_client(config: ExperimentConfig, mock: bool):
@@ -277,13 +542,36 @@ def _predict_with_retries(
     record: dict[str, Any],
     attempts: int,
     two_pass_adjudication: bool = False,
-) -> tuple[Prediction | TwoPassAdjudicationPrediction | None, list[dict[str, Any]]]:
+    triage_then_strict: bool = False,
+    locator_then_final: bool = False,
+    inventory_then_final: bool = False,
+    fact_inventory_then_final: bool = False,
+    fact_inventory_full_final: bool = False,
+    fact_inventory_max_items: int = 3,
+    fact_inventory_position: str = "after_source",
+    fact_inventory_categories: tuple[str, ...] = FACT_INVENTORY_CATEGORIES,
+) -> tuple[Prediction | TwoPassAdjudicationPrediction | TriageThenStrictPrediction | LocatorThenFinalPrediction | InventoryThenFinalPrediction | FactInventoryThenFinalPrediction | None, list[dict[str, Any]]]:
     failed_attempts: list[dict[str, Any]] = []
     for attempt in range(1, attempts + 1):
         try:
             prediction = (
                 pipeline.predict_with_untrusted_label_review(record)
                 if two_pass_adjudication
+                else pipeline.predict_with_triage_then_strict(record)
+                if triage_then_strict
+                else pipeline.predict_with_locator_then_final(record)
+                if locator_then_final
+                else pipeline.predict_with_inventory_then_final(record)
+                if inventory_then_final
+                else pipeline.predict_with_fact_inventory_then_final(record)
+                if fact_inventory_then_final
+                else pipeline.predict_with_fact_inventory_then_full_final(
+                    record,
+                    inventory_max_items=fact_inventory_max_items,
+                    inventory_position=fact_inventory_position,
+                    inventory_categories=fact_inventory_categories,
+                )
+                if fact_inventory_full_final
                 else pipeline.predict(record)
             )
             return prediction, failed_attempts
@@ -426,6 +714,11 @@ def main() -> int:
         metadata_style=config.metadata_style,
         output_mode=config.output_mode,
         visible_document_types=config.visible_document_types,
+        frozen_rule_set=config.frozen_rule_set,
+        locator_policy=(config.staged_run.locator_policy
+                        if config.staged_run and config.staged_run.locator_policy
+                        else "strict_v1"),
+        applicability_gate_mode=config.applicability_gate_mode,
     )
     excluded_admissions: list[dict[str, str]] = []
     if config.context_strategy == "single_no_split":
@@ -519,6 +812,14 @@ def main() -> int:
                     record,
                     config.llm.prediction_attempts,
                     config.review_run is not None,
+                    config.staged_run is not None and config.staged_run.mode == "triage_then_strict_v1",
+                    config.staged_run is not None and config.staged_run.mode == "locator_then_final_v1",
+                    config.staged_run is not None and config.staged_run.mode == "inventory_then_final_v1",
+                    config.staged_run is not None and config.staged_run.mode == "fact_inventory_then_final_v1",
+                    config.staged_run is not None and config.staged_run.mode in {"fact_inventory_full_final_v1", "fact_inventory_full_final_v2", "fact_inventory_full_final_v3", "fact_inventory_full_final_v4"},
+                    4 if config.staged_run is not None and config.staged_run.mode == "fact_inventory_full_final_v2" else 3,
+                    "before_source" if config.staged_run is not None and config.staged_run.mode == "fact_inventory_full_final_v3" else "after_source",
+                    FACT_INVENTORY_CATEGORIES_V2 if config.staged_run is not None and config.staged_run.mode == "fact_inventory_full_final_v4" else FACT_INVENTORY_CATEGORIES,
                 ): (position, record)
                 for position, record in pending
             }
@@ -545,11 +846,7 @@ def main() -> int:
                 checkpoint[record["id"]] = value
                 checkpoint_handle.write(json.dumps(value, ensure_ascii=False) + "\n")
                 checkpoint_handle.flush()
-                total_latency = (
-                    prediction.pass_a.latency_seconds + prediction.pass_b.latency_seconds
-                    if isinstance(prediction, TwoPassAdjudicationPrediction)
-                    else prediction.latency_seconds
-                )
+                total_latency = float(value["latency_seconds"])
                 logged_usage = value["usage"]
                 logger.info(
                     "[%d/%d] %s %.2fs prompt=%s completion=%s",
@@ -568,6 +865,10 @@ def main() -> int:
         raise RuntimeError(f"{len(failures)} predictions failed; rerun to resume")
 
     ordered_values = [checkpoint[record["id"]] for record in records]
+    if args.dump_inputs and config.staged_run is not None:
+        _write_staged_input_examples_markdown(
+            output_dir / "staged_input_examples.md", ordered_values, args.input_example_limit
+        )
     submission_path = output_dir / "submission.csv"
     write_submission([value["row"] for value in ordered_values], submission_path)
     validation = validate_submission(submission_path, records)
@@ -599,7 +900,7 @@ def main() -> int:
 
     usage_keys = ("prompt_tokens", "completion_tokens", "total_tokens", "cost")
     usage = {
-        key: sum(float(value.get("usage", {}).get(key, 0) or 0) for value in ordered_values)
+        key: sum(_usage_number(value.get("usage", {}).get(key, 0)) for value in ordered_values)
         for key in usage_keys
     }
     run_meta = {
@@ -643,6 +944,11 @@ def main() -> int:
                 "final_judgment_source": config.review_run.final_judgment_source,
             }
             if config.review_run
+            else None
+        ),
+        "staged_run": (
+            {"mode": config.staged_run.mode}
+            if config.staged_run
             else None
         ),
         "model": getattr(client, "model", config.llm.model),

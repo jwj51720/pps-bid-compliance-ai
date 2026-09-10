@@ -12,7 +12,7 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-STAGING = ROOT / "submission/build/final_exp135_two_way_g02_organizer_v1"
+STAGING = ROOT / "submission/build/final_exp125a_exact_organizer_control_v1"
 DIST_DIR = ROOT / "dist"
 
 

@@ -7,7 +7,12 @@ import re
 from collections import Counter
 from typing import Any
 
-from src.schema import ABSENCE_ITEMS, ITEMS
+from src.schema import (
+    ABSENCE_ITEMS,
+    FACT_INVENTORY_CATEGORIES,
+    FACT_INVENTORY_CATEGORIES_V2,
+    ITEMS,
+)
 
 DOCUMENT_ORDER = ("공고문", "규격서", "과업지시서", "제안요청서", "예외공표서")
 PRODUCT_NAME_WITH_CODE = re.compile(r"([^,\[\]]+)\[\d{10}\]")
@@ -49,6 +54,146 @@ OFFICIAL_BASELINE_LABELS_ONLY_HEAD = """당신은 공공 입찰공고의 법령 
 OFFICIAL_BASELINE_LABELS_ONLY_TAIL = """
 출력은 JSON 하나로만 낸다. 키는 v1~v24이고 각 값은 0 또는 1이다.
 설명이나 머리말을 덧붙이지 않는다."""
+
+TRIAGE_SYSTEM_HEAD = """당신은 공공 입찰공고의 법령 위반 사전검토를 담당한다.
+아래 공고 자료와 나라장터 입력 메타를 읽고, 각 항목을 최종 위반 판정 전에
+어떤 검토 경로로 보낼지 분류한다. 이것은 최종 0/1 판정도, 근거문구 추출도 아니다.
+
+상태의 뜻
+1. `명시근거`: 공고 자료에 실제 제한·요구·불일치로 볼 만한 문구가 있어 엄격한 최종 판정이 필요하다.
+2. `부재검토`: 필요한 조건의 부재를 전체적으로 확인해야 하므로 엄격한 최종 판정이 필요하다.
+3. `불명확`: 관련 문구나 적용 전제가 있어 엄격한 최종 판정이 필요하다.
+4. `해당없음`: 현재 자료에서 관련 사실을 확인하지 못했다. 이는 최종 위반 아님이나 법적 결론이 아니다.
+
+`[근거 없음]` 표시 항목은 자료가 짧거나 적용 여부가 불명확해도 `해당없음`으로 끝내지 말고
+`부재검토`로 둔다. 항목명을 키워드만으로 넓혀 해석하지 말고, 공고 밖 사실을 보충하지 않는다.
+
+사전검토할 항목
+"""
+
+TRIAGE_SYSTEM_TAIL = """
+출력은 JSON 객체 하나로만 낸다. 키는 지정된 v이고 값은 `명시근거`, `부재검토`,
+`불명확`, `해당없음` 중 하나다. 설명, 위반여부, 근거문구를 덧붙이지 않는다."""
+
+LOCATOR_SYSTEM_HEAD = """당신은 공공 입찰공고 원문의 위치 탐색을 담당한다.
+아래 공고 자료와 나라장터 입력 메타를 읽고, 지정 항목과 관련된 실제 원문 문구가
+보이면 그 문구를 변경 없이 찾아낸다. 이것은 위반 여부 판정도, 법령 해석도,
+근거문구 확정도 아니다.
+
+각 항목에 대해 실제 제한·요구·불일치로 연결될 수 있는 공고 자료 원문의 연속
+부분문자열 하나만 반환한다. 관련 문구가 없거나 확실히 그대로 복사할 수 없으면 null을
+반환한다. null은 위반이 아니라는 뜻이 아니다. 메타데이터·판정 카드·공고 밖 사실을
+문구로 반환하지 않는다.
+
+탐색할 항목
+"""
+
+LOCATOR_SYSTEM_TAIL = """
+출력은 JSON 객체 하나로만 낸다. 키는 지정된 v이고 값은 원문 문자열 또는 null이다.
+설명, 위반여부, 근거문구라는 결론을 덧붙이지 않는다."""
+
+FACT_INVENTORY_SYSTEM = """당신은 공공 입찰공고 원문에서 사실을 빠짐없이 정리하는 담당자다.
+이 단계에서는 법령 위반 여부, v 항목의 0/1, 허용 여부, 예외 적용 여부를 판단하지 않는다.
+아래 공고 자료 원문만 읽고, 실제 참가자격·제한·요구·예외·금액·날짜·비교값이 담긴
+원문 문구를 해당 사실 유형별로 최대 3개씩 변경 없이 복사한다.
+
+반환 대상은 다음과 같다.
+- 참가자격_실적_지역: 기관·면허·실적·지역의 실제 참가조건
+- 제품_기업_직접생산: 세부품명, 직접생산, 중소/소기업 제한 또는 예외
+- 규격_모델_기술요구: 특정 제조사·모델·호환/동등품·기술 요구
+- 제출서류_확약서: 제안·입찰 전/후 제출해야 하는 확약서·서류와 시점
+- 계약방식_공동계약: 계약·낙찰 방식, 공동수급 방식, 구성원 지분 조건
+- 일정_설명회: 공고·설명회·제안서/입찰 마감의 실제 날짜와 참석 조건
+- 금액_메타대조: 예산·추정가격·기초금액과 문서에 명시된 계약/지역/업종 값
+
+관련 사실이 없으면 빈 배열로 둔다. 요약, 해석, 메타데이터의 값, 법령 설명, 위반 판단을
+쓰지 않는다. 문구는 반드시 아래 공고 자료 원문에 있는 연속 문자열이어야 한다."""
+
+
+def build_fact_inventory_system_prompt(
+    max_excerpts: int = 3,
+    categories: tuple[str, ...] = FACT_INVENTORY_CATEGORIES,
+) -> str:
+    """Return the source-only fact contract with a declared category cap."""
+    if max_excerpts not in {3, 4}:
+        raise ValueError("fact inventory max_excerpts must be 3 or 4")
+    if categories not in {FACT_INVENTORY_CATEGORIES, FACT_INVENTORY_CATEGORIES_V2}:
+        raise ValueError("fact inventory categories must be a supported version")
+    prompt = FACT_INVENTORY_SYSTEM.replace("최대 3개씩", f"최대 {max_excerpts}개씩")
+    if categories == FACT_INVENTORY_CATEGORIES_V2:
+        prompt = prompt.replace(
+            "\n\n관련 사실이 없으면",
+            "\n- 예외_허용_적용범위: 예외·면제·허용·대체 가능·동등 이상·불참 허용처럼 "
+            "제한·요구의 적용 범위를 실제로 바꾸는 문구\n\n관련 사실이 없으면",
+        )
+    return prompt
+
+
+def append_fact_inventory(
+    messages: list[dict[str, str]], inventory: dict[str, tuple[tuple[str, str], ...]],
+    position: str = "after_source",
+    categories: tuple[str, ...] = FACT_INVENTORY_CATEGORIES,
+) -> list[dict[str, str]]:
+    """Attach source-labelled factual excerpts as non-final navigation material."""
+    if categories not in {FACT_INVENTORY_CATEGORIES, FACT_INVENTORY_CATEGORIES_V2}:
+        raise ValueError("fact inventory categories must be a supported version")
+    if set(inventory) != set(categories):
+        raise ValueError("fact inventory must provide every factual category")
+    lines = [
+        "[전체 공고 자료에서 수집한 원문 사실 — 최종 판정 아님]",
+        "아래는 모든 공고 자료를 먼저 읽어 변경 없이 복사한 사실 후보이다. 누락·중복이 있을 수 있다.",
+        "각 후보를 0/1 또는 법령 해석으로 자동 변환하지 말고, 앞의 판정 카드·메타·공고 자료와 대조해 최종 판단한다.",
+        "후보가 없다는 것은 위반 없음이 아니다. 근거문구가 필요하면 아래 후보 또는 앞의 공고 자료에 있는 원문만 그대로 사용한다.",
+        "",
+    ]
+    for category in categories:
+        lines.append(f"- {category}:")
+        values = inventory[category]
+        if not values:
+            lines.append("  - 수집된 원문 후보 없음")
+        else:
+            for doc_id, excerpt in values:
+                lines.append(f"  - [{doc_id}] {excerpt}")
+    navigation = "\n".join(lines)
+    if position == "after_source":
+        return [*messages, {"role": "user", "content": navigation}]
+    if position != "before_source":
+        raise ValueError("fact inventory position must be after_source or before_source")
+    if not messages or messages[-1]["role"] != "user":
+        raise ValueError("before-source inventory requires a final user message")
+    prefix, marker, source = messages[-1]["content"].partition("[공고 자료 원문]\n")
+    if not marker:
+        raise ValueError("before-source inventory requires an organizer source section")
+    return [
+        *messages[:-1],
+        {"role": "user", "content": f"{prefix.rstrip()}\n\n{navigation}\n\n{marker}{source}"},
+    ]
+
+
+TIMELINE_FACT_SYSTEM = """당신은 공공 입찰공고 원문에서 일정 사실만 정리한다.
+위반 여부, v 항목의 0/1, 최소 기간 계산, 허용 여부를 판단하지 않는다.
+아래 원문에 실제로 있는 연속 문구만 역할별로 최대 2개씩 그대로 복사한다.
+- 공고일: 공고 게시·공고일 문구
+- 현장설명회일시: 현장·사업설명회 일시 문구
+- 제안서_접수마감: 제안서 제출·접수 마감 일시 문구
+- 가격입찰_마감: 가격입찰서 제출 마감 일시 문구
+- 긴급_재공고_표시: 긴급공고 또는 재공고 문구
+관련 문구가 없으면 빈 배열이다. 메타데이터, 법령 설명, 요약, 위반 판단은 쓰지 않는다."""
+
+
+def append_timeline_fact_navigation(messages: list[dict[str, str]], facts: dict[str, tuple[tuple[str, str], ...]]) -> list[dict[str, str]]:
+    """Append source-grounded date roles without any label implication."""
+    lines = ["[일정 원문 사실 안내 — 최종 판정 아님]",
+             "후보가 없다고 0이 아니며, 날짜 역할·기간·위반 여부는 공고 원문과 판정 카드를 다시 읽어 판단한다."]
+    for role, values in facts.items():
+        text = " | ".join(f"[{doc_id}] {excerpt}" for doc_id, excerpt in values)
+        lines.append(f"- {role}: {text or '후보없음 (이는 0이 아님)'}")
+    if not messages or messages[-1]["role"] != "user":
+        raise ValueError("timeline navigation requires a final user message")
+    return [
+        *messages[:-1],
+        {"role": "user", "content": messages[-1]["content"] + "\n\n" + "\n".join(lines)},
+    ]
 
 SYSTEM_HEAD = """당신은 공공 입찰공고의 법령 위반 여부를 점검한다.
 아래의 공고 자료와 나라장터 입력 메타데이터를 법령 기준과 대조하여, 지정 항목별 위반 여부와 근거 문구를 판정한다.
@@ -199,6 +344,79 @@ def _render_card_text(
     return "\n".join(f"{indent}- {part}" for part in parts)
 
 
+def build_triage_system_prompt(
+    item_table: dict[str, dict[str, Any]],
+    decision_cards: dict[str, dict[str, Any]] | None,
+    active_items: tuple[str, ...] = ITEMS,
+) -> str:
+    """Build B-stage routing instructions without a final-label contract."""
+    if not active_items or any(item not in item_table for item in active_items):
+        raise ValueError("triage prompt requires known active items")
+    lines = []
+    for item in active_items:
+        definition = item_table[item]
+        tag = "  [근거 없음]" if definition.get("부재탐지") else ""
+        note = f" ({definition['비고']})" if definition.get("비고") else ""
+        card = (
+            "\n  판정 카드: " + decision_cards[item]["prompt_text"]
+            if decision_cards else ""
+        )
+        lines.append(f"- {item}: {definition['항목명']}{note}{tag}{card}")
+    return TRIAGE_SYSTEM_HEAD + "\n".join(lines) + TRIAGE_SYSTEM_TAIL
+
+
+def build_locator_system_prompt(
+    item_table: dict[str, dict[str, Any]],
+    decision_cards: dict[str, dict[str, Any]] | None,
+    active_items: tuple[str, ...],
+    locator_policy: str = "strict_v1",
+) -> str:
+    """Build a non-final locator instruction for non-absence item snippets."""
+    if not active_items or any(item not in item_table or item in ABSENCE_ITEMS for item in active_items):
+        raise ValueError("locator prompt requires known non-absence active items")
+    if locator_policy not in {"strict_v1", "broad_candidate_v1"}:
+        raise ValueError("unsupported locator policy")
+    broad_guidance = ""
+    if locator_policy == "broad_candidate_v1":
+        broad_guidance = (
+            "\n[넓은 후보 탐색]\n"
+            "여기서는 항목의 1 조건을 충족하는지, 예외가 있는지, 위반인지 판단하지 않는다. "
+            "해당 항목과 관계될 수 있는 실제 제한·요구·금액·날짜·기관·지역·모델·확약서·"
+            "메타 대조 대상 문구를 넓게 하나 찾는다. 나중 최종 판단에서 0이 될 문구도 반환한다.\n"
+        )
+    lines = []
+    for item in active_items:
+        definition = item_table[item]
+        note = f" ({definition['비고']})" if definition.get("비고") else ""
+        card = (
+            "\n  판정 카드: " + decision_cards[item]["prompt_text"]
+            if decision_cards else ""
+        )
+        lines.append(f"- {item}: {definition['항목명']}{note}{card}")
+    return LOCATOR_SYSTEM_HEAD + broad_guidance + "\n".join(lines) + LOCATOR_SYSTEM_TAIL
+
+
+def append_locator_navigation(
+    messages: list[dict[str, str]], snippets: dict[str, str], active_items: tuple[str, ...]
+) -> list[dict[str, str]]:
+    """Append untrusted navigation cues without converting them into evidence."""
+    if set(snippets) != set(active_items):
+        raise ValueError("locator navigation must cover exactly the locator item set")
+    lines = [
+        "[원문 위치 탐색 보조 결과]",
+        "아래 결과는 별도 탐색 단계가 찾은 후보일 뿐이다. 누락·오류가 있을 수 있으며, "
+        "그 자체로 위반·무위반 또는 근거문구가 아니다.",
+        "반드시 앞의 공고 자료 원문, 나라장터 입력 메타, 항목별 판정 카드를 다시 대조해 "
+        "v1~v24의 최종 V/E를 판정한다. `찾지 못함`을 0으로 해석하지 않는다.",
+        "",
+    ]
+    for item in active_items:
+        value = snippets[item]
+        rendered = f"`{value}`" if value else "찾지 못함"
+        lines.append(f"- {item}: {rendered}")
+    return [*messages, {"role": "user", "content": "\n".join(lines)}]
+
+
 def build_system_prompt(
     item_table: dict[str, dict[str, Any]],
     mode: str = "baseline",
@@ -226,12 +444,15 @@ def build_system_prompt(
         if role_directive == "source_first_v1"
         else ""
     )
-    if profile in {"official_baseline_v1", "official_baseline_subset_v1"}:
+    if profile in {
+        "official_baseline_v1", "official_baseline_subset_v1", "complete_fact_v1",
+        "complete_fact_subset_v1",
+    }:
         if (
-            (profile == "official_baseline_v1" and active_items != ITEMS)
+            (profile in {"official_baseline_v1", "complete_fact_v1"} and active_items != ITEMS)
             or output_mode not in {"labels_and_evidence", "labels_only"}
         ):
-            raise ValueError("official_baseline_v1 requires all items and VE or labels-only output")
+            raise ValueError("official_baseline_v1 and complete_fact_v1 require all items and VE or labels-only output")
         if item_catalog_style not in {"minimal", "official_references"}:
             raise ValueError("item_catalog_style must be minimal or official_references")
         lines = []
@@ -269,7 +490,7 @@ def build_system_prompt(
                 lines.append(f"- {item}: {definition['항목명']}{note}{tag}{reference}{card}")
         head = OFFICIAL_BASELINE_LABELS_ONLY_HEAD if output_mode == "labels_only" else OFFICIAL_BASELINE_SYSTEM_HEAD
         tail = OFFICIAL_BASELINE_LABELS_ONLY_TAIL if output_mode == "labels_only" else OFFICIAL_BASELINE_SYSTEM_TAIL
-        if profile == "official_baseline_subset_v1":
+        if profile in {"official_baseline_subset_v1", "complete_fact_subset_v1"}:
             item_list = ", ".join(active_items)
             item_count = len(active_items)
             head = (
@@ -284,8 +505,8 @@ def build_system_prompt(
         return head + duty_text + "\n" + "\n".join(lines) + "\n" + tail
     if profile != "default":
         raise ValueError(
-            "profile must be default, official_baseline_v1, or "
-            "official_baseline_subset_v1"
+            "profile must be default, official_baseline_v1, official_baseline_subset_v1, or "
+            "complete_fact_v1, complete_fact_subset_v1"
         )
     lines = []
     sparse_anchor = output_mode == "labels_and_sparse_evidence"
@@ -682,7 +903,10 @@ def build_messages(
     output_mode: str = "labels_and_evidence",
     task_profile: str = "general",
 ) -> list[dict[str, str]]:
-    if prompt_profile in {"official_baseline_v1", "official_baseline_subset_v1"}:
+    if prompt_profile in {
+        "official_baseline_v1", "official_baseline_subset_v1", "complete_fact_v1",
+        "complete_fact_subset_v1",
+    }:
         if output_mode not in {"labels_and_evidence", "labels_only"}:
             raise ValueError("official_baseline_v1 supports VE or labels-only output")
         if metadata_style not in {"official_lines", "full_json"}:
@@ -706,6 +930,17 @@ def build_messages(
                 + "\n\n# 공고 자료\n" + context
                 + "\n\n# 출력\n모든 v의 위반여부와 근거문구를 JSON 객체 하나로 출력한다."
             )
+        elif prompt_profile in {"complete_fact_v1", "complete_fact_subset_v1"}:
+            product_section = (
+                "\n\n[대회 제공 경쟁제품 고시 확인]\n"
+                + competition_product_context.rstrip()
+                if competition_product_context else ""
+            )
+            user_prompt = (
+                f"[나라장터 입력 메타]\n{metadata}"
+                + product_section
+                + f"\n\n[공고 자료 원문]\n{context}\n"
+            )
         else:
             product_section = (
                 "\n\n[대회 제공 경쟁제품 고시 확인]\n"
@@ -721,8 +956,8 @@ def build_messages(
         return [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
     if prompt_profile != "default":
         raise ValueError(
-            "prompt_profile must be default, official_baseline_v1, or "
-            "official_baseline_subset_v1"
+            "prompt_profile must be default, official_baseline_v1, official_baseline_subset_v1, or "
+            "complete_fact_v1"
         )
     sparse_evidence = output_mode == "labels_and_sparse_evidence"
     semantic_output_mode = "labels_and_evidence" if sparse_evidence else output_mode
@@ -851,7 +1086,7 @@ def format_competition_product_context(
         raise ValueError(f"unknown competition product status: {status}")
     guidance: list[str] = []
     competition_items = [item for item in ("v10", "v11", "v13") if item in active_items]
-    general_items = [item for item in ("v16", "v18") if item in active_items]
+    general_items = [item for item in ("v12", "v14", "v15", "v16", "v17", "v18") if item in active_items]
     if competition_items:
         guidance.append(
             f"이 조회 결과는 {'·'.join(competition_items)}의 경쟁제품 적용대상 확인에만 사용합니다. "
@@ -900,6 +1135,76 @@ def append_untrusted_review_draft(
         "24개 항목을 모두 다시 판단하여, 지시된 JSON 하나만 출력한다."
     )
     return [messages[0], {"role": "user", "content": messages[1]["content"] + review_text}]
+
+
+def build_inventory_system_prompt(
+    item_table: dict[str, dict[str, Any]],
+    decision_cards: dict[str, dict[str, Any]] | None,
+    active_items: tuple[str, ...] = ITEMS,
+) -> str:
+    """Build stage-1 instructions that collect source facts, never labels."""
+    cards = build_system_prompt(
+        item_table,
+        decision_cards=decision_cards,
+        active_items=active_items,
+        profile="complete_fact_v1",
+    )
+    cards = cards.replace(
+        "공고문과 첨부 문서, 그리고 나라장터 입력 메타를 함께 읽고 아래 24개 항목 각각에 대해\n"
+        "위반 여부(1/0)와 근거 문구를 판정한다.",
+        "공고문과 첨부 문서, 그리고 나라장터 입력 메타를 함께 읽고 아래 항목의\n"
+        "최종 판정에 필요한 실제 원문 사실을 수집한다.",
+    ).replace(
+        "지켜야 할 것\n1. 24개 항목 전부에 답한다. 판단이 어려운 항목도 비워 두지 말고 0으로 낸다.\n"
+        "2. 근거 문구는 반드시 **주어진 문서에 그대로 있는 문장**을 옮긴다. 요약하거나 고쳐 쓰지 않는다.\n"
+        "   원문에 없는 문구는 근거로 인정되지 않는다. 500자를 넘기지 않는다.\n"
+        "3. 아래 '근거 없음' 표시가 붙은 항목은 **있어야 할 문구가 없는 것**이 위반이다.\n"
+        "   인용할 원문이 존재하지 않으므로 근거 문구를 null로 둔다.",
+        "수집 원칙\n- 모든 지정 항목에 대해 관련 원문 사실이 있으면 한 구절만 수집한다.\n"
+        "- 이 단계에서는 위반 여부·근거문구·부재 위반을 확정하지 않는다.",
+    )
+    cards = re.sub(r"\n출력은 JSON 하나로만 낸다\.[\s\S]*?설명이나 머리말을 덧붙이지 않는다\.", "", cards)
+    return cards + """
+
+[원문 사실 수집 — 최종 판정 아님]
+이번 작업은 위반 여부를 판정하지 않는다. 각 항목마다 이 문서 묶음에서 관련될 수 있는
+실제 원문 한 구절만 찾는다. 그 구절은 제한·요구·금액·날짜·기관·지역·제품·예외처럼
+나중 판단에 필요한 사실일 수 있으며, 위반을 뜻하지 않아도 된다.
+
+- 문서에 실제로 연속해서 있는 문구만 그대로 복사한다. 요약·추론·법령 문구는 쓰지 않는다.
+- 관련 문구를 찾지 못하면 null이다. null은 위반 없음이나 비적용이 아니다.
+- 부재탐지 항목은 필요한 조건 또는 예외 문구를 발견했을 때만 그 원문을 복사한다.
+  null은 이 문서 묶음에서만 발견하지 못했다는 관찰이다.
+- 각 항목은 최대 하나의 짧은 구절(500자 이하)만 반환한다.
+
+설명·판정·Markdown 없이 v별 문자열 또는 null만 가진 JSON 객체 하나를 출력한다.
+"""
+
+
+def append_source_inventory(
+    messages: list[dict[str, str]],
+    inventory: dict[str, list[tuple[str, str]]],
+    absence_pack_summary: dict[str, str],
+    active_items: tuple[str, ...] = ITEMS,
+) -> list[dict[str, str]]:
+    """Attach non-authoritative current-notice excerpts to the final task."""
+    if len(messages) != 2:
+        raise ValueError("source inventory requires system/user message pair")
+    lines = [
+        "[전체 공고 자료에서 수집한 원문 후보 — 최종 판정이나 법령 근거가 아님]",
+        "아래는 다른 단계가 현재 공고 자료에서 그대로 복사한 후보다. 후보가 있어도 위반이 아니며, 후보가 없어도 0이 아니다.",
+        "반드시 위 공고 자료·metadata·판정 카드를 다시 대조하여 독립적으로 모든 v를 판정한다.",
+    ]
+    for item in active_items:
+        candidates = inventory.get(item, [])
+        if candidates:
+            rendered = " | ".join(f"[{doc_id}] {text}" for doc_id, text in candidates)
+            lines.append(f"- {item}: {rendered}")
+        elif item in absence_pack_summary:
+            lines.append(f"- {item}: {absence_pack_summary[item]}")
+        else:
+            lines.append(f"- {item}: 후보없음 (이는 0이 아님)")
+    return [messages[0], {"role": "user", "content": messages[1]["content"] + "\n\n" + "\n".join(lines)}]
 
 
 def format_v24_comparison_context(record: dict[str, Any]) -> str:

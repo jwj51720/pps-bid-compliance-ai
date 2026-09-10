@@ -7,6 +7,7 @@ import argparse
 import json
 import shutil
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,7 @@ from src.evaluate import evaluate_submission, write_rows
 from src.law_bundles import FourProfileGroupLawBundleRouter, MetadataLawBundleRouter
 from src.legal_groups import groups_for_scheme
 from src.pipeline import BaselinePipeline, judgment_to_row, zero_judgment
+from src.schema import ABSENCE_ITEMS
 from src.submission import validate_submission, write_submission
 
 
@@ -38,7 +40,10 @@ _GROUP_CONTEXT_OVERRIDE_KEYS = {
     "max_document_chars", "context_strategy", "overflow_split_enabled",
     "absence_detection_strategy",
 }
-_PROMPT_PROFILES = {"default", "official_baseline_v1", "official_baseline_subset_v1"}
+_PROMPT_PROFILES = {
+    "default", "official_baseline_v1", "official_baseline_subset_v1",
+    "complete_fact_v1", "complete_fact_subset_v1",
+}
 
 
 def _group_decision_cards(
@@ -132,7 +137,12 @@ def _group_competition_products(
     return result, paths
 
 
-def _group_context_policy(config: Any, grouped_run: dict[str, Any], group_id: str) -> dict[str, Any]:
+def _group_context_policy(
+    config: Any,
+    grouped_run: dict[str, Any],
+    group_id: str,
+    items: tuple[str, ...],
+) -> dict[str, Any]:
     """Return the explicitly declared context policy for one execution group."""
     overrides = grouped_run.get("group_context_overrides", {})
     if not isinstance(overrides, dict):
@@ -153,8 +163,11 @@ def _group_context_policy(config: Any, grouped_run: dict[str, Any], group_id: st
         raise ValueError(f"max_document_chars must be positive for {group_id}")
     if policy["absence_detection_strategy"] not in {"per_pass_or", "per_pass_and"}:
         raise ValueError(f"invalid absence_detection_strategy for {group_id}")
-    if policy["absence_detection_strategy"] == "per_pass_and" and group_id != "G02_absence_items":
-        raise ValueError("per_pass_and is only valid for the dedicated absence group")
+    if (
+        policy["absence_detection_strategy"] == "per_pass_and"
+        and not set(items).intersection(ABSENCE_ITEMS)
+    ):
+        raise ValueError("per_pass_and requires an item group containing an absence item")
     return policy
 
 
@@ -167,7 +180,7 @@ def main() -> int:
     parser.add_argument("--prompt-layout", choices=("plain", "markdown", "markdown_v2"))
     parser.add_argument("--reference-mode", choices=("group_bundle", "none"))
     parser.add_argument("--reference-navigation", choices=("none", "per_item"))
-    parser.add_argument("--grouping", choices=("law_overlap_12", "four_way", "three_way", "absence_presence_v1", "absence_presence_consistency_v1", "document_restrictions_two_way_v1", "document_restrictions_overlay_v1", "semantic_verifier_overlay_v1", "document_restrictions_v9_source_v1"))
+    parser.add_argument("--grouping", choices=("law_overlap_12", "four_way", "three_way", "absence_presence_v1", "absence_presence_consistency_v1", "document_restrictions_two_way_v1", "complete_fact_balanced_two_way_v1", "document_restrictions_overlay_v1", "semantic_verifier_overlay_v1", "document_restrictions_v9_source_v1"))
     parser.add_argument("--mock", action="store_true")
     parser.add_argument("--fresh", action="store_true")
     args = parser.parse_args()
@@ -189,7 +202,7 @@ def main() -> int:
     reference_mode = args.reference_mode or str(grouped_run.get("reference_mode", "group_bundle"))
     reference_navigation = args.reference_navigation or str(grouped_run.get("reference_navigation", "per_item"))
     prompt_layout = args.prompt_layout or config.prompt_layout
-    if grouping not in {"law_overlap_12", "four_way", "three_way", "absence_presence_v1", "absence_presence_consistency_v1", "document_restrictions_two_way_v1", "document_restrictions_overlay_v1", "semantic_verifier_overlay_v1", "document_restrictions_v9_source_v1"}:
+    if grouping not in {"law_overlap_12", "four_way", "three_way", "absence_presence_v1", "absence_presence_consistency_v1", "document_restrictions_two_way_v1", "complete_fact_balanced_two_way_v1", "document_restrictions_overlay_v1", "semantic_verifier_overlay_v1", "document_restrictions_v9_source_v1"}:
         raise ValueError("invalid grouped_run.grouping")
     if reference_mode not in {"group_bundle", "none"}:
         raise ValueError("grouped_run.reference_mode must be group_bundle or none")
@@ -203,7 +216,7 @@ def main() -> int:
     item_groups = groups_for_scheme(grouping)
     group_prompt_profiles = _group_prompt_profiles(config, grouped_run, item_groups)
     group_context_policies = {
-        group.group_id: _group_context_policy(config, grouped_run, group.group_id)
+        group.group_id: _group_context_policy(config, grouped_run, group.group_id, group.items)
         for group in item_groups
     }
     selected_ids = (
@@ -357,6 +370,7 @@ def main() -> int:
                 visible_document_types=config.visible_document_types,
                 v8_composite_merge_enabled=config.v8_composite_merge_enabled,
                 v8_composite_merge_mode=config.v8_composite_merge_mode,
+                frozen_rule_set=config.frozen_rule_set,
             )
             contexts = pipeline.contexts_for_record(record)
             if record is records[0]:
@@ -382,6 +396,7 @@ def main() -> int:
         return {"id": record["id"], "row": judgment_to_row(record["id"], merged), "judgment": merged,
                 "profile": route.profile if route else None, "groups": group_results, "input_examples": examples}
 
+    started_at = time.perf_counter()
     pending = [record for record in records if record["id"] not in checkpoint]
     with checkpoint_path.open("a", encoding="utf-8") as handle:
         with ThreadPoolExecutor(max_workers=config.concurrency) as executor:
@@ -409,6 +424,32 @@ def main() -> int:
         write_rows(output_dir / "errors.csv", errors)
     examples = next((value["input_examples"] for value in ordered if value["input_examples"]), [])
     _write_input_examples_markdown(output_dir / "input_examples.md", examples)
+    group_calls = {
+        group.group_id: sum(
+            len(next(entry for entry in row["groups"] if entry["group"] == group.group_id)["pass_judgments"])
+            for row in ordered
+        )
+        for group in item_groups
+    }
+    usage_keys = {key for row in ordered for group in row["groups"] for key in group.get("usage", {})}
+    usage = {
+        key: sum(
+            float(group.get("usage", {}).get(key, 0) or 0)
+            for row in ordered for group in row["groups"]
+        )
+        for key in usage_keys
+    }
+    (output_dir / "run_meta.json").write_text(
+        json.dumps(
+            {
+                "wall_seconds": time.perf_counter() - started_at,
+                "record_count": len(ordered),
+                "call_count": sum(group_calls.values()),
+                "calls_by_group": group_calls,
+                "usage": usage,
+            }, ensure_ascii=False, indent=2
+        ) + "\n", encoding="utf-8"
+    )
     print(output_dir)
     return 0
 

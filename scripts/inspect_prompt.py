@@ -117,6 +117,11 @@ def build_pipeline_for_preview(config: Any) -> BaselinePipeline:
         metadata_style=config.metadata_style,
         output_mode=config.output_mode,
         visible_document_types=config.visible_document_types,
+        frozen_rule_set=config.frozen_rule_set,
+        locator_policy=(config.staged_run.locator_policy
+                        if config.staged_run and config.staged_run.locator_policy
+                        else "strict_v1"),
+        applicability_gate_mode=config.applicability_gate_mode,
     )
 
 
@@ -135,14 +140,22 @@ def main() -> int:
     if record is None:
         raise ValueError(f"record not found: {args.record_id}")
     pipeline = build_pipeline_for_preview(config)
-    contexts = pipeline.contexts_for_record(record)
-    messages_by_context = [pipeline.messages_for_context(record, context) for context in contexts]
+    effective_pipeline, inactive = pipeline.effective_pipeline_for_record(record)
+    contexts = effective_pipeline.contexts_for_record(record)
+    messages_by_context = [
+        effective_pipeline.messages_for_context(record, context) for context in contexts
+    ]
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     stem = args.record_id.lower()
     (output_dir / f"{stem}.request.json").write_text(
         json.dumps(
-            _request_preview(config, messages_by_context[0], pipeline.response_schema),
+            {
+                **_request_preview(
+                    config, messages_by_context[0], effective_pipeline.response_schema
+                ),
+                "applicability_inactive_items": inactive,
+            },
             ensure_ascii=False, indent=2,
         ) + "\n",
         encoding="utf-8",

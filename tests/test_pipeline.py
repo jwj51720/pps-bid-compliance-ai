@@ -7,6 +7,7 @@ import json
 import pytest
 
 from src.context_budget import DocumentContext
+from src.external.openrouter import MockClient
 from src.pipeline import (
     BaselinePipeline,
     ContextAdmissionError,
@@ -15,10 +16,18 @@ from src.pipeline import (
     _merge_notice_judgments,
     _usage_number,
     parse_judgment,
+    parse_locator_response,
+    parse_inventory_response,
+    parse_fact_inventory_response,
     parse_pass_response,
+    parse_triage_response,
     postprocess_judgment,
 )
 from src.prompt import (
+    append_locator_navigation,
+    append_source_inventory,
+    build_locator_system_prompt,
+    build_triage_system_prompt,
     build_document_context,
     build_messages,
     build_official_baseline_context,
@@ -29,7 +38,7 @@ from src.prompt import (
     format_v24_comparison_context,
     normalize_notice_facts,
 )
-from src.schema import ITEMS, judgment_schema
+from src.schema import ITEMS, TRIAGE_STATES, judgment_schema, locator_schema, inventory_schema, triage_schema
 from src.law_bundles import MetadataLawBundleRouter
 
 
@@ -54,6 +63,29 @@ def test_parse_judgment_requires_every_item() -> None:
         parse_judgment('{"v1": {"위반여부": 0, "근거문구": null}}')
 
 
+def test_inventory_contract_is_non_final_and_requires_every_active_item() -> None:
+    items = ("v1", "v10")
+    schema = inventory_schema(items)
+    assert schema["properties"]["v10"]["type"] == ["string", "null"]
+    assert parse_inventory_response('{"v1": "실제 제한 문구", "v10": null}', items) == {
+        "v1": "실제 제한 문구", "v10": None,
+    }
+    with pytest.raises(PredictionError):
+        parse_inventory_response('{"v1": null}', items)
+
+
+def test_source_inventory_says_missing_candidate_is_not_a_final_zero() -> None:
+    messages = append_source_inventory(
+        [{"role": "system", "content": "system"}, {"role": "user", "content": "source"}],
+        {"v1": [("D0", "실제 원문")]}, {"v10": "각 문서 묶음에서 관련 필수문구를 발견하지 못함 (최종 판정 아님)"},
+        ("v1", "v10"),
+    )
+    content = messages[1]["content"]
+    assert "[D0] 실제 원문" in content
+    assert "후보가 없어도 0이 아니다" in content
+    assert "최종 판정 아님" in content
+
+
 def test_parse_judgment_recovers_only_missing_outer_closure() -> None:
     items = ("v1", "v2")
     payload = {item: {"위반여부": 0, "근거문구": None} for item in items}
@@ -70,6 +102,109 @@ def test_group_schema_and_parser_require_only_requested_items() -> None:
     payload = {item: {"위반여부": 0, "근거문구": None} for item in items}
     assert parse_judgment(json.dumps(payload), items) == payload
     assert judgment_schema(items=items)["required"] == ["v2", "v3"]
+
+
+def test_triage_schema_and_prompt_are_non_final_routing_contracts() -> None:
+    item_table = {
+        "v1": {"항목명": "항목 1", "부재탐지": False, "비고": ""},
+        "v10": {"항목명": "항목 10", "부재탐지": True, "비고": ""},
+    }
+    cards = {
+        "v1": {"item_name": "항목 1", "prompt_text": "1 조건: A. 0 조건: B."},
+        "v10": {"item_name": "항목 10", "prompt_text": "부재탐지: C."},
+    }
+    prompt = build_triage_system_prompt(item_table, cards, ("v1", "v10"))
+    schema = triage_schema(("v1", "v10"))
+    assert "최종 0/1 판정도, 근거문구 추출도 아니다" in prompt
+    assert "v10: 항목 10  [근거 없음]" in prompt
+    assert "판정 카드: 1 조건: A. 0 조건: B." in prompt
+    assert schema["properties"]["v1"]["enum"] == list(TRIAGE_STATES)
+
+
+def test_triage_parser_rejects_missing_or_unknown_route_keys() -> None:
+    assert parse_triage_response('{"v1": "해당없음"}', ("v1",)) == {"v1": "해당없음"}
+    with pytest.raises(PredictionError, match="keys mismatch"):
+        parse_triage_response('{"v1": "해당없음", "v2": "해당없음"}', ("v1",))
+
+
+def test_locator_schema_parser_and_navigation_are_non_final() -> None:
+    items = ("v1", "v2")
+    assert locator_schema(items)["properties"]["v1"]["type"] == ["string", "null"]
+    assert parse_locator_response('{"v1": null, "v2": "실제 제한 문구"}', items) == {
+        "v1": None, "v2": "실제 제한 문구"
+    }
+    with pytest.raises(PredictionError, match="keys mismatch"):
+        parse_locator_response('{"v1": null}', items)
+    messages = append_locator_navigation(
+        [{"role": "system", "content": "s"}, {"role": "user", "content": "notice"}],
+        {"v1": "", "v2": "실제 제한 문구"}, items,
+    )
+    assert "`찾지 못함`을 0으로 해석하지 않는다" in messages[-1]["content"]
+    assert "위반·무위반" in messages[-1]["content"]
+
+
+def test_locator_then_final_keeps_all_items_in_final_stage() -> None:
+    item_table = {
+        item: {
+            "항목명": item,
+            "부재탐지": item in {"v10", "v11", "v16", "v18", "v20"},
+            "국가계약법": "",
+            "지방계약법": "",
+            "비고": "",
+        }
+        for item in ITEMS
+    }
+    pipeline = BaselinePipeline(
+        item_table=item_table,
+        client=MockClient(),
+        max_document_chars=4000,
+        context_strategy="single",
+        overflow_split_enabled=False,
+        prompt_profile="official_baseline_v1",
+        output_mode="labels_and_evidence",
+    )
+
+    prediction = pipeline.predict_with_locator_then_final(_record())
+
+    assert set(prediction.locator_snippets) == set(ITEMS) - {"v10", "v11", "v16", "v18", "v20"}
+    assert all(not value for value in prediction.locator_snippets.values())
+    assert set(prediction.final.judgment) == set(ITEMS)
+    assert "위반 여부 판정도" in prediction.locator_messages[0]["content"]
+    assert "`찾지 못함`을 0으로 해석하지 않는다" in prediction.final_messages[-1]["content"]
+
+
+def test_triage_then_strict_routes_absence_items_even_when_triage_says_not_applicable() -> None:
+    item_table = {
+        item: {
+            "항목명": item,
+            "부재탐지": item in {"v10", "v11", "v16", "v18", "v20"},
+            "국가계약법": "",
+            "지방계약법": "",
+            "비고": "",
+        }
+        for item in ITEMS
+    }
+    pipeline = BaselinePipeline(
+        item_table=item_table,
+        client=MockClient(),
+        max_document_chars=4000,
+        context_strategy="single",
+        overflow_split_enabled=False,
+        prompt_profile="official_baseline_v1",
+        output_mode="labels_and_evidence",
+    )
+
+    prediction = pipeline.predict_with_triage_then_strict(_record())
+
+    assert prediction.triage_states["v1"] == "해당없음"
+    assert prediction.strict_items == ("v10", "v11", "v16", "v18", "v20")
+    assert prediction.final.judgment["v1"]["위반여부"] == 0
+    assert prediction.final.judgment["v10"]["위반여부"] == 0
+    assert not prediction.triage_parse_error
+    assert not prediction.strict_recovery_used
+    assert "사전검토" in prediction.triage_messages[0]["content"]
+    assert "v10" in prediction.strict_messages[0]["content"]
+    assert "- v1:" not in prediction.strict_messages[0]["content"]
 
 
 def test_labels_only_schema_parser_and_postprocess_have_no_evidence() -> None:
@@ -266,6 +401,71 @@ def test_official_baseline_subset_keeps_renderer_but_limits_output_items() -> No
         metadata_style="official_lines",
     )
     assert messages[1]["content"].startswith("[공고 ID] test-id\n\n[나라장터 입력 메타]\n")
+
+
+def test_complete_fact_subset_keeps_clean_input_and_limits_output_items() -> None:
+    """Grouped complete-source runs must not inherit the full-24-item contract."""
+    item_table = {"v9": {"항목명": "특정 모델", "부재탐지": False, "비고": ""}}
+    system = build_system_prompt(
+        item_table,
+        active_items=("v9",),
+        profile="complete_fact_subset_v1",
+    )
+    assert "아래 지정 항목(v9) 각각" in system
+    assert "지정 항목(v9) 전부에 답한다" in system
+    assert "키는 v9," in system
+    messages = build_messages(
+        _record("공고 원문"), system, None,
+        prompt_profile="complete_fact_subset_v1",
+        metadata_style="official_lines",
+    )
+    assert not messages[1]["content"].startswith("[공고 ID]")
+    assert messages[1]["content"].startswith("[나라장터 입력 메타]\n")
+    assert "[공고 자료 원문]\n[공고문:D0]" in messages[1]["content"]
+
+
+def test_fact_inventory_contract_is_source_only_and_non_final() -> None:
+    from src.prompt import append_fact_inventory, build_fact_inventory_system_prompt
+    from src.schema import (
+        FACT_INVENTORY_CATEGORIES,
+        FACT_INVENTORY_CATEGORIES_V2,
+        fact_inventory_schema,
+    )
+
+    system = build_fact_inventory_system_prompt()
+    assert "위반 여부" in system
+    assert "판단하지 않는다" in system
+    schema = fact_inventory_schema()
+    assert tuple(schema["required"]) == FACT_INVENTORY_CATEGORIES
+    assert schema["properties"][FACT_INVENTORY_CATEGORIES[0]]["maxItems"] == 3
+    assert "최대 4개씩" in build_fact_inventory_system_prompt(4)
+    assert fact_inventory_schema(4)["properties"][FACT_INVENTORY_CATEGORIES[0]]["maxItems"] == 4
+    assert tuple(fact_inventory_schema(categories=FACT_INVENTORY_CATEGORIES_V2)["required"]) == FACT_INVENTORY_CATEGORIES_V2
+    assert "예외_허용_적용범위" in build_fact_inventory_system_prompt(
+        categories=FACT_INVENTORY_CATEGORIES_V2
+    )
+    payload = {category: ["원문1", "원문2", "원문3", "원문4"]
+               for category in FACT_INVENTORY_CATEGORIES}
+    text = json.dumps(payload, ensure_ascii=False)
+    assert parse_fact_inventory_response(text, max_items=4) == payload
+    with pytest.raises(PredictionError, match="up to 3 strings"):
+        parse_fact_inventory_response(text)
+    v2_payload = {category: [] for category in FACT_INVENTORY_CATEGORIES_V2}
+    assert parse_fact_inventory_response(
+        json.dumps(v2_payload, ensure_ascii=False), categories=FACT_INVENTORY_CATEGORIES_V2,
+    ) == v2_payload
+    messages = append_fact_inventory(
+        [{"role": "system", "content": "final"}, {"role": "user", "content": "notice"}],
+        {category: () for category in FACT_INVENTORY_CATEGORIES},
+    )
+    assert "후보가 없다는 것은 위반 없음이 아니다" in messages[-1]["content"]
+    assert "최종 판정 아님" in messages[-1]["content"]
+    before_source = append_fact_inventory(
+        [{"role": "system", "content": "final"}, {"role": "user", "content": "메타\n\n[공고 자료 원문]\n원문"}],
+        {category: () for category in FACT_INVENTORY_CATEGORIES}, position="before_source",
+    )
+    assert len(before_source) == 2
+    assert before_source[-1]["content"].index("최종 판정 아님") < before_source[-1]["content"].index("[공고 자료 원문]")
 
 
 def test_official_profile_renders_product_context_and_full_context_when_requested() -> None:
@@ -508,6 +708,23 @@ def test_competition_product_fact_is_visible_but_not_evidence() -> None:
     assert "matched_codes" not in content
 
 
+def test_official_prompt_hides_internal_notice_id_and_separates_source_text() -> None:
+    record = _record()
+    record["id"] = "INTERNAL-ONLY-ID"
+    messages = build_messages(
+        record,
+        "system",
+        None,
+        prompt_profile="complete_fact_v1",
+        metadata_style="official_lines",
+        competition_product_context="경쟁제품 확인 결과입니다.",
+    )
+
+    content = messages[-1]["content"]
+    assert "INTERNAL-ONLY-ID" not in content
+    assert "경쟁제품 확인 결과입니다.\n\n[공고 자료 원문]" in content
+
+
 def test_competition_product_not_matched_context_hides_internal_codes() -> None:
     record = _record()
     record["meta"]["세부품명번호목록"] = "잡지[5510150601]"
@@ -571,6 +788,27 @@ def test_product_context_is_omitted_for_an_unrelated_v_group() -> None:
     assert unrelated.competition_product_context_for_record(record) is None
     assert "v10" in (relevant.competition_product_context_for_record(record) or "")
     assert "v16" not in (relevant.competition_product_context_for_record(record) or "")
+
+
+def test_product_context_is_supplied_for_every_product_classification_item() -> None:
+    item_table = {
+        item: {"항목명": item, "부재탐지": False, "국가계약법": "", "지방계약법": "", "비고": ""}
+        for item in ITEMS
+    }
+    record = _record()
+    record["meta"]["세부품명번호목록"] = "잡석[8014199001]"
+    pipeline = BaselinePipeline(
+        item_table=item_table,
+        client=None,
+        max_document_chars=None,
+        competition_products={"8014199001": {"세부품명": "잡석"}},
+        active_items=("v12", "v14", "v15", "v17"),
+    )
+
+    context = pipeline.competition_product_context_for_record(record)
+
+    assert context is not None
+    assert "v12·v14·v15·v17" in context
 
 
 def test_split_contexts_preserve_order_anchor_and_long_document_text() -> None:

@@ -69,9 +69,11 @@ def _policy(config: ExperimentConfig) -> dict[str, Any]:
             "tokenizer_source": config.llm.tokenizer_source or config.llm.model,
         },
         "grouped_run": config.raw.get("grouped_run", {}),
+        "applicability_gate": {"mode": config.applicability_gate_mode},
         # A review loop is an execution/prompt policy, not a remembered CLI
         # option. Preview and paid configs must declare it explicitly.
         "review_run": config.raw.get("review_run", {}),
+        "staged_run": config.raw.get("staged_run", {}),
         # Remote scheduling can affect provider routing, timeout behavior, and
         # reproducibility.  Treat it as controlled in paid ablations too.
         "run": {
@@ -128,7 +130,10 @@ def main() -> int:
         raise ValueError("grouped_run.prompt_profile_overrides must be a mapping")
     invalid_profiles = {
         group_id: profile for group_id, profile in group_profile_overrides.items()
-        if profile not in {"default", "official_baseline_v1", "official_baseline_subset_v1"}
+        if profile not in {
+            "default", "official_baseline_v1", "official_baseline_subset_v1",
+            "complete_fact_v1", "complete_fact_subset_v1",
+        }
     }
     if invalid_profiles:
         raise ValueError(f"invalid group prompt profile override: {invalid_profiles}")

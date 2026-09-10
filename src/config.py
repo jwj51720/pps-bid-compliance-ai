@@ -46,6 +46,14 @@ class ReviewRunConfig:
 
 
 @dataclass(frozen=True)
+class StagedRunConfig:
+    """Declared multi-call operation with distinct non-final/final stages."""
+
+    mode: str
+    locator_policy: str | None = None
+
+
+@dataclass(frozen=True)
 class ExperimentConfig:
     path: Path
     raw: dict[str, Any]
@@ -79,8 +87,11 @@ class ExperimentConfig:
     item_catalog_style: str
     metadata_style: str
     output_mode: str
+    applicability_gate_mode: str
+    frozen_rule_set: str | None
     llm: LLMConfig
     review_run: ReviewRunConfig | None
+    staged_run: StagedRunConfig | None
     resume: bool
     concurrency: int
     local_limit: int | None
@@ -106,9 +117,11 @@ def load_config(path: str | Path) -> ExperimentConfig:
     data = _mapping(raw.get("data"), "data")
     output = _mapping(raw.get("output"), "output")
     prompt = _mapping(raw.get("prompt"), "prompt")
+    postprocess = _mapping(raw.get("postprocess", {}), "postprocess")
     llm = _mapping(raw.get("llm"), "llm")
     run = _mapping(raw.get("run", {}), "run")
     review_run = _mapping(raw["review_run"], "review_run") if raw.get("review_run") else None
+    staged_run = _mapping(raw["staged_run"], "staged_run") if raw.get("staged_run") else None
     v8_composite_merge = _mapping(raw.get("v8_composite_merge", {}), "v8_composite_merge")
 
     # Root config lives at the repository root, while historical/experimental
@@ -175,6 +188,11 @@ def load_config(path: str | Path) -> ExperimentConfig:
         item_catalog_style=str(prompt.get("item_catalog_style", "minimal")),
         metadata_style=str(prompt.get("metadata_style", "full_json")),
         output_mode=str(prompt.get("output_mode", "labels_and_evidence")),
+        applicability_gate_mode=str(
+            _mapping(raw.get("applicability_gate", {}), "applicability_gate").get("mode", "off")
+        ),
+        frozen_rule_set=(str(postprocess["frozen_rule_set"])
+                         if postprocess.get("frozen_rule_set") else None),
         llm=LLMConfig(
             provider=str(llm["provider"]),
             model=str(llm["model"]),
@@ -202,6 +220,14 @@ def load_config(path: str | Path) -> ExperimentConfig:
             if review_run is not None
             else None
         ),
+        staged_run=(
+            StagedRunConfig(
+                mode=str(staged_run["mode"]),
+                locator_policy=(str(staged_run["locator_policy"])
+                                if staged_run.get("locator_policy") else None),
+            )
+            if staged_run else None
+        ),
         resume=bool(run.get("resume", True)),
         concurrency=int(run.get("concurrency", 1)),
         local_limit=int(run["local_limit"]) if run.get("local_limit") is not None else None,
@@ -227,12 +253,31 @@ def load_config(path: str | Path) -> ExperimentConfig:
     if config.prompt_layout not in {"plain", "markdown", "markdown_v2"}:
         raise ValueError("prompt.layout must be plain, markdown, or markdown_v2")
     if config.prompt_profile not in {
-        "default", "official_baseline_v1", "official_baseline_subset_v1",
+        "default", "official_baseline_v1", "official_baseline_subset_v1", "complete_fact_v1",
+        "complete_fact_subset_v1",
     }:
         raise ValueError(
-            "prompt.profile must be default, official_baseline_v1, or "
-            "official_baseline_subset_v1"
+            "prompt.profile must be default, official_baseline_v1, official_baseline_subset_v1, or "
+            "complete_fact_v1, complete_fact_subset_v1"
         )
+    # ``complete_fact`` is a source-completeness policy, not a prettier name
+    # for the historical 4k control.  Keep the old controls loadable under
+    # their own profiles, but reject a candidate that silently turns the
+    # complete-fact profile back into a character-prefix or document-type
+    # selection policy.
+    if config.prompt_profile in {"complete_fact_v1", "complete_fact_subset_v1"}:
+        if config.max_document_chars is not None:
+            raise ValueError(
+                "complete_fact profiles require prompt.max_document_chars: null"
+            )
+        if not config.overflow_split_enabled:
+            raise ValueError(
+                "complete_fact profiles require exact-token overflow_split_enabled: true"
+            )
+        if config.visible_document_types is not None:
+            raise ValueError(
+                "complete_fact profiles must not filter supplied document types"
+            )
     if config.role_directive not in {
         "standard", "compliance_expert_v1", "source_first_v1"
     }:
@@ -245,6 +290,17 @@ def load_config(path: str | Path) -> ExperimentConfig:
         raise ValueError("prompt.metadata_style must be full_json or official_lines")
     if config.output_mode not in {"labels_and_evidence", "labels_only", "labels_and_anchor", "labels_and_sparse_evidence"}:
         raise ValueError("invalid prompt.output_mode")
+    if config.applicability_gate_mode not in {"off", "safe_v1"}:
+        raise ValueError("applicability_gate.mode must be off or safe_v1")
+    if config.applicability_gate_mode == "safe_v1":
+        if config.prompt_profile != "complete_fact_v1":
+            raise ValueError("safe_v1 applicability gate requires complete_fact_v1")
+        if config.competition_products_path is None:
+            raise ValueError("safe_v1 applicability gate requires competition_products_path")
+        if config.active_items != tuple(f"v{index}" for index in range(1, 25)):
+            raise ValueError("safe_v1 applicability gate owns the full v1..v24 row")
+    if config.frozen_rule_set not in {None, "exp123_v1"}:
+        raise ValueError("postprocess.frozen_rule_set must be exp123_v1 or null")
     if config.output_mode == "labels_only" and config.strict_document_evidence:
         raise ValueError("labels_only cannot use strict_document_evidence")
     if config.output_mode in {"labels_and_anchor", "labels_and_sparse_evidence"} and not config.strict_document_evidence:
@@ -274,8 +330,20 @@ def load_config(path: str | Path) -> ExperimentConfig:
         raise ValueError("strict_document_evidence requires full_split_merge context strategy")
     if config.absence_detection_strategy not in {"per_pass_or", "per_pass_and"}:
         raise ValueError("absence_detection_strategy must be per_pass_or or per_pass_and")
-    if config.absence_detection_strategy == "per_pass_and" and config.context_strategy != "full_split_merge":
-        raise ValueError("per_pass_and absence detection requires full_split_merge context strategy")
+    adaptive_multi_pack = (
+        config.context_strategy == "single"
+        and config.max_document_chars is None
+        and config.overflow_split_enabled
+    )
+    if (
+        config.absence_detection_strategy == "per_pass_and"
+        and config.context_strategy != "full_split_merge"
+        and not adaptive_multi_pack
+    ):
+        raise ValueError(
+            "per_pass_and absence detection requires full_split_merge or "
+            "exact-token adaptive single overflow packs"
+        )
     if config.v8_composite_merge_enabled and "v8" not in config.active_items:
         raise ValueError("v8_composite_merge.enabled requires prompt.active_items to include v8")
     if config.output_mode == "labels_only" and config.v8_composite_merge_enabled:
@@ -307,4 +375,26 @@ def load_config(path: str | Path) -> ExperimentConfig:
             raise ValueError("two-pass adjudication requires one fixed single context")
         if config.active_items != tuple(f"v{index}" for index in range(1, 25)):
             raise ValueError("two-pass adjudication requires all v1..v24 items")
+    if config.staged_run is not None:
+        if config.review_run is not None:
+            raise ValueError("staged_run and review_run are mutually exclusive")
+        if config.staged_run.mode not in {"triage_then_strict_v1", "locator_then_final_v1", "inventory_then_final_v1", "fact_inventory_then_final_v1", "fact_inventory_full_final_v1", "fact_inventory_full_final_v2", "fact_inventory_full_final_v3", "fact_inventory_full_final_v4"}:
+            raise ValueError("staged_run.mode is unsupported")
+        if (config.staged_run.mode not in {"inventory_then_final_v1", "fact_inventory_then_final_v1", "fact_inventory_full_final_v1", "fact_inventory_full_final_v2", "fact_inventory_full_final_v3", "fact_inventory_full_final_v4"}
+                and (config.context_strategy != "single" or config.overflow_split_enabled)):
+            raise ValueError("staged run requires one fixed single context")
+        if config.active_items != tuple(f"v{index}" for index in range(1, 25)):
+            raise ValueError("staged run requires all v1..v24 items")
+        if config.staged_run.mode not in {"inventory_then_final_v1", "fact_inventory_then_final_v1", "fact_inventory_full_final_v1", "fact_inventory_full_final_v2", "fact_inventory_full_final_v3", "fact_inventory_full_final_v4"} and config.prompt_profile != "official_baseline_v1":
+            raise ValueError("staged run requires the official full-item prompt profile")
+        if config.output_mode != "labels_and_evidence":
+            raise ValueError("staged run final stage requires V/E output")
+        if config.decision_cards_path is None:
+            raise ValueError("staged run requires versioned decision cards")
+        if config.reference_path or config.reference_bundle_dir:
+            raise ValueError("staged run v1 does not combine reference context")
+        if config.staged_run.mode == "locator_then_final_v1" and config.staged_run.locator_policy not in {None, "strict_v1", "broad_candidate_v1"}:
+            raise ValueError("locator_policy is unsupported")
+        if config.staged_run.mode == "triage_then_strict_v1" and config.staged_run.locator_policy is not None:
+            raise ValueError("triage-then-strict does not accept locator_policy")
     return config

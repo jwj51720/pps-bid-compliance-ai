@@ -159,6 +159,30 @@ class MockClient:
 
         del messages
         properties = response_schema["properties"]
+        fact_inventory = bool(properties) and all(
+            isinstance(value, dict) and value.get("type") == "array"
+            for value in properties.values()
+        )
+        if fact_inventory:
+            content = json.dumps({item: [] for item in properties}, ensure_ascii=False)
+            return Completion(content=content, model=self.model, latency_seconds=0.0, usage={})
+        triage = bool(properties) and all(
+            isinstance(value, dict)
+            and value.get("type") == "string"
+            and "enum" in value
+            for value in properties.values()
+        )
+        if triage:
+            payload = {item: "해당없음" for item in properties}
+            content = json.dumps(payload, ensure_ascii=False)
+            return Completion(content=content, model=self.model, latency_seconds=0.0, usage={})
+        locator = bool(properties) and all(
+            isinstance(value, dict) and value.get("type") == ["string", "null"]
+            for value in properties.values()
+        )
+        if locator:
+            content = json.dumps({item: None for item in properties}, ensure_ascii=False)
+            return Completion(content=content, model=self.model, latency_seconds=0.0, usage={})
         sparse = "판정" in properties and "발췌" in properties
         label_properties = properties["판정"]["properties"] if sparse else properties
         first_item = next(iter(label_properties))

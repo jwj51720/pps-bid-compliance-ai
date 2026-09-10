@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
+from src.applicability import safe_inactive_items
 from src.data import competition_product_fact, full_document_text
+from src.frozen_rules import apply_exp123_frozen_rules
 from src.law_bundles import MetadataLawBundleRouter
 from src.context_budget import (
     DocumentContext,
@@ -18,18 +20,33 @@ from src.context_budget import (
 )
 from src.prompt import (
     append_untrusted_review_draft,
+    append_locator_navigation,
+    append_fact_inventory,
+    append_source_inventory,
     build_messages,
+    build_official_baseline_context,
+    build_locator_system_prompt,
+    build_inventory_system_prompt,
+    build_fact_inventory_system_prompt,
     build_split_document_contexts,
     build_system_prompt,
+    build_triage_system_prompt,
     format_competition_product_context,
     format_v24_comparison_context,
 )
 from src.schema import (
     ABSENCE_ITEMS,
     EVIDENCE_MAX_CHARS,
+    FACT_INVENTORY_CATEGORIES,
+    FACT_INVENTORY_CATEGORIES_V2,
     ITEMS,
     V8_COMPOSITE_STATES,
     judgment_schema,
+    TRIAGE_STATES,
+    locator_schema,
+    inventory_schema,
+    fact_inventory_schema,
+    triage_schema,
 )
 
 JSON_FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
@@ -75,6 +92,7 @@ class Prediction:
     pass_judgments: tuple[dict[str, dict[str, Any]], ...] = ()
     v8_observations: tuple[dict[str, Any], ...] = ()
     parse_errors: tuple[dict[str, Any], ...] = ()
+    applicability_inactive_items: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -85,6 +103,94 @@ class TwoPassAdjudicationPrediction:
     pass_b: Prediction
     final: Prediction
     final_source: str
+
+
+@dataclass(frozen=True)
+class TriageThenStrictPrediction:
+    """B architecture: non-final routing followed by a strict subset pass.
+
+    Triage states are diagnostic routing signals only.  The strict pass owns
+    every non-frozen final label/evidence; absence items and malformed triage
+    are always routed, so no stage-1 state can silently become an absence 0.
+    """
+
+    triage_raw_response: str
+    triage_latency_seconds: float
+    triage_usage: dict[str, Any]
+    triage_finish_reason: str | None
+    triage_states: dict[str, str]
+    strict_items: tuple[str, ...]
+    strict: Prediction
+    final: Prediction
+    triage_parse_error: str | None
+    strict_recovery_used: bool
+    triage_messages: tuple[dict[str, str], ...]
+    strict_messages: tuple[dict[str, str], ...]
+
+
+@dataclass(frozen=True)
+class LocatorThenFinalPrediction:
+    """C architecture: non-final source locator followed by all-item V/E."""
+
+    locator_raw_response: str
+    locator_snippets: dict[str, str]
+    locator_latency_seconds: float
+    locator_usage: dict[str, Any]
+    locator_finish_reason: str | None
+    locator_parse_error: str | None
+    final: Prediction
+    final_recovery_used: bool
+    locator_messages: tuple[dict[str, str], ...]
+    final_messages: tuple[dict[str, str], ...]
+
+
+@dataclass(frozen=True)
+class InventoryThenFinalPrediction:
+    """F architecture: complete-source facts followed by a final V/E call."""
+
+    inventory_raw_responses: tuple[str, ...]
+    inventory_by_item: dict[str, tuple[tuple[str, str], ...]]
+    absence_pack_summary: dict[str, str]
+    inventory_usage: tuple[dict[str, Any], ...]
+    inventory_latency_seconds: tuple[float, ...]
+    inventory_parse_errors: tuple[str, ...]
+    inventory_messages: tuple[tuple[dict[str, str], ...], ...]
+    final: Prediction
+    final_messages: tuple[dict[str, str], ...]
+    final_recovery_used: bool
+
+
+@dataclass(frozen=True)
+class FactInventoryThenFinalPrediction:
+    """Source-category excerpts followed by one independent final V/E task."""
+
+    inventory_raw_responses: tuple[str, ...]
+    inventory_by_category: dict[str, tuple[tuple[str, str], ...]]
+    inventory_usage: tuple[dict[str, Any], ...]
+    inventory_latency_seconds: tuple[float, ...]
+    inventory_parse_errors: tuple[str, ...]
+    inventory_messages: tuple[tuple[dict[str, str], ...], ...]
+    final: Prediction
+    final_messages: tuple[dict[str, str], ...]
+    final_recovery_used: bool
+
+
+@dataclass(frozen=True)
+class FactInventoryFullFinalPrediction:
+    """Source fact navigation followed by a source-complete final V/E task."""
+
+    inventory_raw_responses: tuple[str, ...]
+    inventory_by_category: dict[str, tuple[tuple[str, str], ...]]
+    inventory_usage: tuple[dict[str, Any], ...]
+    inventory_latency_seconds: tuple[float, ...]
+    inventory_parse_errors: tuple[str, ...]
+    inventory_messages: tuple[tuple[dict[str, str], ...], ...]
+    inventory_max_items: int
+    inventory_position: str
+    inventory_categories: tuple[str, ...]
+    final: Prediction
+    final_messages_by_context: tuple[tuple[dict[str, str], ...], ...]
+    final_recovery_used: bool
 
 
 def extract_json(text: str) -> Any:
@@ -260,6 +366,86 @@ def parse_judgment(
     return _parse_judgment_payload(payload, items)
 
 
+def parse_triage_response(text: str, items: tuple[str, ...] = ITEMS) -> dict[str, str]:
+    """Parse a complete, closed route-state payload; never infer a route."""
+    payload = extract_json(text)
+    if not isinstance(payload, dict):
+        raise PredictionError("triage response must be a JSON object")
+    missing = [item for item in items if item not in payload]
+    unexpected = sorted(set(payload) - set(items))
+    if missing or unexpected:
+        raise PredictionError(
+            f"triage response keys mismatch: missing={missing}, unexpected={unexpected}"
+        )
+    states: dict[str, str] = {}
+    for item in items:
+        state = payload[item]
+        if state not in TRIAGE_STATES:
+            raise PredictionError(f"{item} has invalid triage state")
+        states[item] = state
+    return states
+
+
+def parse_locator_response(text: str, items: tuple[str, ...]) -> dict[str, str | None]:
+    """Parse locator excerpts; this parser intentionally has no label field."""
+    payload = extract_json(text)
+    if not isinstance(payload, dict):
+        raise PredictionError("locator response must be a JSON object")
+    missing = [item for item in items if item not in payload]
+    unexpected = sorted(set(payload) - set(items))
+    if missing or unexpected:
+        raise PredictionError(
+            f"locator response keys mismatch: missing={missing}, unexpected={unexpected}"
+        )
+    result: dict[str, str | None] = {}
+    for item in items:
+        value = payload[item]
+        if value is not None and not isinstance(value, str):
+            raise PredictionError(f"{item} locator value must be a string or null")
+        result[item] = value
+    return result
+
+
+def parse_inventory_response(text: str, items: tuple[str, ...]) -> dict[str, str | None]:
+    """Inventory uses the same primitive payload but includes absence items."""
+    payload = extract_json(text)
+    if not isinstance(payload, dict):
+        raise PredictionError("inventory response must be a JSON object")
+    if set(payload) != set(items):
+        raise PredictionError("inventory response keys do not match active items")
+    result: dict[str, str | None] = {}
+    for item in items:
+        value = payload[item]
+        if value is not None and not isinstance(value, str):
+            raise PredictionError(f"{item} inventory value must be a string or null")
+        result[item] = value
+    return result
+
+
+def parse_fact_inventory_response(
+    text: str,
+    max_items: int = 3,
+    categories: tuple[str, ...] = FACT_INVENTORY_CATEGORIES,
+) -> dict[str, list[str]]:
+    """Parse category excerpts without assigning any v label semantics."""
+    if max_items not in {3, 4}:
+        raise ValueError("fact inventory max_items must be 3 or 4")
+    if categories not in {FACT_INVENTORY_CATEGORIES, FACT_INVENTORY_CATEGORIES_V2}:
+        raise ValueError("fact inventory categories must be a supported version")
+    payload = extract_json(text)
+    if not isinstance(payload, dict) or set(payload) != set(categories):
+        raise PredictionError("fact inventory response keys do not match factual categories")
+    result: dict[str, list[str]] = {}
+    for category in categories:
+        values = payload[category]
+        if not isinstance(values, list) or len(values) > max_items or not all(isinstance(value, str) for value in values):
+            raise PredictionError(
+                f"{category} fact inventory value must be up to {max_items} strings"
+            )
+        result[category] = values
+    return result
+
+
 def parse_pass_response(
     text: str, v8_composite_enabled: bool, items: tuple[str, ...] = ITEMS,
     output_mode: str = "labels_and_evidence",
@@ -387,6 +573,9 @@ class BaselinePipeline:
         metadata_style: str = "full_json",
         output_mode: str = "labels_and_evidence",
         visible_document_types: tuple[str, ...] | None = None,
+        frozen_rule_set: str | None = None,
+        locator_policy: str = "strict_v1",
+        applicability_gate_mode: str = "off",
     ) -> None:
         self.client = client
         self.max_document_chars = max_document_chars
@@ -408,6 +597,23 @@ class BaselinePipeline:
         self.item_catalog_style = item_catalog_style
         self.metadata_style = metadata_style
         self.visible_document_types = visible_document_types
+        self._item_table = item_table
+        self._prompt_mode = prompt_mode
+        self._reference_text = reference_text
+        self._reference_navigation = reference_navigation
+        self._decision_cards = decision_cards
+        self._candidate_detection = candidate_detection
+        if locator_policy not in {"strict_v1", "broad_candidate_v1"}:
+            raise ValueError("locator_policy must be strict_v1 or broad_candidate_v1")
+        self.locator_policy = locator_policy
+        if applicability_gate_mode not in {"off", "safe_v1"}:
+            raise ValueError("applicability_gate_mode must be off or safe_v1")
+        if applicability_gate_mode == "safe_v1" and competition_products is None:
+            raise ValueError("safe_v1 applicability gate requires competition products")
+        self.applicability_gate_mode = applicability_gate_mode
+        if frozen_rule_set not in {None, "exp123_v1"}:
+            raise ValueError("frozen_rule_set must be exp123_v1 or null")
+        self.frozen_rule_set = frozen_rule_set
         if output_mode not in {"labels_and_evidence", "labels_only", "labels_and_anchor", "labels_and_sparse_evidence"}:
             raise ValueError("output_mode must be labels_and_evidence, labels_only, or labels_and_anchor")
         if output_mode == "labels_only" and strict_document_evidence:
@@ -481,6 +687,17 @@ class BaselinePipeline:
         return self._routed_system_prompts[route.profile]
 
     def predict(self, record: dict[str, Any]) -> Prediction:
+        effective, inactive = self.effective_pipeline_for_record(record)
+        if effective is not self:
+            prediction = effective.predict(record)
+            judgment = prediction.judgment
+            if self.frozen_rule_set == "exp123_v1":
+                judgment = apply_exp123_frozen_rules(record, judgment)
+            return replace(
+                prediction,
+                judgment=judgment,
+                applicability_inactive_items=tuple(sorted(inactive.items())),
+            )
         contexts = self.contexts_for_record(record)
         completions: list[Any] = []
         for context in contexts:
@@ -489,6 +706,19 @@ class BaselinePipeline:
             )
             completions.append(completion)
         return self.finalize(record, completions, contexts)
+
+    def effective_pipeline_for_record(
+        self, record: dict[str, Any]
+    ) -> tuple["BaselinePipeline", dict[str, str]]:
+        """Build a record-specific model subset only for explicit 0 preconditions."""
+        if self.applicability_gate_mode == "off":
+            return self, {}
+        assert self.competition_products is not None
+        inactive = safe_inactive_items(record, self.competition_products)
+        active = tuple(item for item in self.active_items if item not in inactive)
+        if not active:
+            raise RuntimeError("safe applicability gate cannot suppress every item")
+        return self._subset_pipeline(active, prompt_profile="complete_fact_subset_v1"), inactive
 
     def predict_with_untrusted_label_review(
         self, record: dict[str, Any]
@@ -522,6 +752,458 @@ class BaselinePipeline:
             pass_b=pass_b,
             final=pass_b,
             final_source="pass_b",
+        )
+
+    def _triage_messages_for_context(
+        self, record: dict[str, Any], context: str | DocumentContext | None
+    ) -> list[dict[str, str]]:
+        """Build the B-stage message with the same user material as final pass."""
+        record = self._visible_record(record)
+        system = build_triage_system_prompt(
+            self._item_table, self._decision_cards, self.active_items
+        )
+        return build_messages(
+            record,
+            system,
+            self.max_document_chars,
+            include_normalized_facts=self.include_normalized_facts,
+            document_context=context.text if isinstance(context, DocumentContext) else context,
+            competition_product_context=self.competition_product_context_for_record(record),
+            v24_comparison_context=(format_v24_comparison_context(record) if "v24" in self.active_items else None),
+            markdown_sections=self.prompt_layout in {"markdown", "markdown_v2"},
+            prompt_profile=self.prompt_profile,
+            metadata_style=self.metadata_style,
+            output_mode=self.prompt_output_mode,
+            task_profile=self.task_profile,
+        )
+
+    def _subset_pipeline(
+        self, active_items: tuple[str, ...], *, prompt_profile: str,
+    ) -> "BaselinePipeline":
+        """Create the B-stage final owner without carrying a frozen override.
+
+        The parent applies the single EXP123 replacement after the full final
+        row has been assembled.  This prevents a group/subset placeholder from
+        becoming a second, hidden source of v2/v3/v21 decisions.
+        """
+        return BaselinePipeline(
+            item_table=self._item_table,
+            client=self.client,
+            max_document_chars=self.max_document_chars,
+            prompt_mode=self._prompt_mode,
+            include_normalized_facts=self.include_normalized_facts,
+            context_strategy=self.context_strategy,
+            notice_anchor_chars=self.notice_anchor_chars,
+            overflow_split_enabled=self.overflow_split_enabled,
+            count_tokens=self.count_tokens,
+            prompt_budget_tokens=self.prompt_budget_tokens,
+            reference_text=self._reference_text,
+            reference_navigation=self._reference_navigation,
+            law_bundle_router=None,
+            strict_document_evidence=self.strict_document_evidence,
+            absence_detection_strategy=self.absence_detection_strategy,
+            decision_cards=self._decision_cards,
+            competition_products=self.competition_products,
+            v8_composite_merge_enabled=False,
+            v8_composite_merge_mode=self.v8_composite_merge_mode,
+            candidate_detection=self._candidate_detection,
+            active_items=active_items,
+            prompt_layout=self.prompt_layout,
+            prompt_profile=prompt_profile,
+            role_directive=self.role_directive,
+            item_catalog_style=self.item_catalog_style,
+            metadata_style=self.metadata_style,
+            output_mode=self.output_mode,
+            visible_document_types=self.visible_document_types,
+            frozen_rule_set=None,
+            locator_policy=self.locator_policy,
+            applicability_gate_mode="off",
+        )
+
+    def _strict_subset_pipeline(self, active_items: tuple[str, ...]) -> "BaselinePipeline":
+        """Create the triage final owner with the official subset rendering."""
+        return self._subset_pipeline(
+            active_items, prompt_profile="official_baseline_subset_v1",
+        )
+
+    def predict_with_triage_then_strict(
+        self, record: dict[str, Any]
+    ) -> TriageThenStrictPrediction:
+        """Run B triage and strict final without treating a route as a label."""
+        contexts = self.contexts_for_record(record)
+        if len(contexts) != 1:
+            raise ValueError("triage-then-strict requires exactly one notice context")
+        context = contexts[0]
+        triage_messages = self._triage_messages_for_context(record, context)
+        triage_completion = self.client.complete(triage_messages, triage_schema(self.active_items))
+        triage_error: str | None = None
+        try:
+            states = parse_triage_response(triage_completion.content, self.active_items)
+        except PredictionError as exc:
+            # A malformed or incomplete route must not discard an item.  The
+            # strict stage receives the complete original item set instead.
+            states = {item: "불명확" for item in self.active_items}
+            triage_error = str(exc)
+        strict_items = tuple(
+            item for item in self.active_items
+            if states[item] != "해당없음" or item in ABSENCE_ITEMS
+        )
+        if not strict_items:
+            raise RuntimeError("triage contract must route at least one item")
+        strict_pipeline = self._strict_subset_pipeline(strict_items)
+        strict_messages = strict_pipeline.messages_for_context(record, context)
+        strict_completion = self.client.complete(strict_messages, strict_pipeline.response_schema)
+        strict = strict_pipeline.finalize(record, [strict_completion], [context])
+        strict_recovery_used = bool(strict.parse_errors)
+        if strict_recovery_used:
+            # A parse failure in a subset cannot safely zero only that subset;
+            # recover with one ordinary all-item final call.  This is the sole
+            # third-call path and remains visible in the result manifest.
+            final = self.predict(record)
+        else:
+            final_judgment = zero_judgment()
+            for item in strict_items:
+                final_judgment[item] = strict.judgment[item]
+            if self.frozen_rule_set == "exp123_v1":
+                final_judgment = apply_exp123_frozen_rules(record, final_judgment)
+            final = Prediction(
+                record_id=record["id"],
+                judgment=final_judgment,
+                raw_response=strict.raw_response,
+                model=strict.model,
+                latency_seconds=triage_completion.latency_seconds + strict.latency_seconds,
+                usage=_combined_usage([triage_completion, strict_completion]),
+                finish_reason=strict.finish_reason,
+                pass_judgments=strict.pass_judgments,
+                v8_observations=strict.v8_observations,
+                parse_errors=strict.parse_errors,
+            )
+        return TriageThenStrictPrediction(
+            triage_raw_response=triage_completion.content,
+            triage_latency_seconds=triage_completion.latency_seconds,
+            triage_usage=triage_completion.usage,
+            triage_finish_reason=triage_completion.finish_reason,
+            triage_states=states,
+            strict_items=strict_items,
+            strict=strict,
+            final=final,
+            triage_parse_error=triage_error,
+            strict_recovery_used=strict_recovery_used,
+            triage_messages=tuple(triage_messages),
+            strict_messages=tuple(strict_messages),
+        )
+
+    def _locator_messages_for_context(
+        self,
+        record: dict[str, Any],
+        context: str | DocumentContext | None,
+        locator_items: tuple[str, ...],
+    ) -> list[dict[str, str]]:
+        record = self._visible_record(record)
+        system = build_locator_system_prompt(
+            self._item_table, self._decision_cards, locator_items, self.locator_policy
+        )
+        return build_messages(
+            record,
+            system,
+            self.max_document_chars,
+            include_normalized_facts=self.include_normalized_facts,
+            document_context=context.text if isinstance(context, DocumentContext) else context,
+            competition_product_context=self.competition_product_context_for_record(record),
+            v24_comparison_context=None,
+            markdown_sections=self.prompt_layout in {"markdown", "markdown_v2"},
+            prompt_profile=self.prompt_profile,
+            metadata_style=self.metadata_style,
+            output_mode=self.prompt_output_mode,
+            task_profile="general",
+        )
+
+    def predict_with_locator_then_final(
+        self, record: dict[str, Any]
+    ) -> LocatorThenFinalPrediction:
+        """Run C locator then an all-item V/E final pass.
+
+        Null/invalid locator excerpts are discarded as navigation information;
+        final V/E still receives all 24 items and the original notice context.
+        """
+        contexts = self.contexts_for_record(record)
+        if len(contexts) != 1:
+            raise ValueError("locator-then-final requires exactly one notice context")
+        context = contexts[0]
+        locator_items = tuple(item for item in self.active_items if item not in ABSENCE_ITEMS)
+        locator_messages = self._locator_messages_for_context(record, context, locator_items)
+        locator_completion = self.client.complete(locator_messages, locator_schema(locator_items))
+        locator_error: str | None = None
+        try:
+            parsed = parse_locator_response(locator_completion.content, locator_items)
+        except PredictionError as exc:
+            parsed = {item: None for item in locator_items}
+            locator_error = str(exc)
+        source_context = build_official_baseline_context(
+            self._visible_record(record), self.max_document_chars or 10**9
+        )
+        snippets = {
+            item: _clean_evidence(value, source_context) if value else ""
+            for item, value in parsed.items()
+        }
+        final_messages = append_locator_navigation(
+            self.messages_for_context(record, context), snippets, locator_items
+        )
+        final_completion = self.client.complete(final_messages, self.response_schema)
+        final = self.finalize(record, [final_completion], [context])
+        recovery_used = bool(final.parse_errors)
+        if recovery_used:
+            final = self.predict(record)
+        return LocatorThenFinalPrediction(
+            locator_raw_response=locator_completion.content,
+            locator_snippets=snippets,
+            locator_latency_seconds=locator_completion.latency_seconds,
+            locator_usage=locator_completion.usage,
+            locator_finish_reason=locator_completion.finish_reason,
+            locator_parse_error=locator_error,
+            final=final,
+            final_recovery_used=recovery_used,
+            locator_messages=tuple(locator_messages),
+            final_messages=tuple(final_messages),
+        )
+
+    def predict_with_inventory_then_final(
+        self, record: dict[str, Any]
+    ) -> InventoryThenFinalPrediction:
+        """Read every admitted source pack for facts, then make one final V/E call."""
+        contexts = self.contexts_for_record(record)
+        inventory_system = build_inventory_system_prompt(
+            self._item_table, self._decision_cards, self.active_items
+        )
+        collected: dict[str, list[tuple[str, str]]] = {item: [] for item in self.active_items}
+        raw: list[str] = []
+        usages: list[dict[str, Any]] = []
+        latencies: list[float] = []
+        errors: list[str] = []
+        messages_log: list[tuple[dict[str, str], ...]] = []
+        absence_present = {item: False for item in self.active_items if item in ABSENCE_ITEMS}
+        for context in contexts:
+            messages = build_messages(
+                self._visible_record(record), inventory_system, self.max_document_chars,
+                document_context=context.text if isinstance(context, DocumentContext) else context,
+                competition_product_context=self.competition_product_context_for_record(record),
+                prompt_profile=self.prompt_profile, metadata_style=self.metadata_style,
+                output_mode="labels_only",
+            )
+            messages_log.append(tuple(messages))
+            completion = self.client.complete(messages, inventory_schema(self.active_items))
+            raw.append(completion.content); usages.append(completion.usage); latencies.append(completion.latency_seconds)
+            try:
+                parsed = parse_inventory_response(completion.content, self.active_items)
+            except PredictionError as exc:
+                errors.append(str(exc)); parsed = {item: None for item in self.active_items}
+            source = context.text if isinstance(context, DocumentContext) else (
+                context if context is not None else build_official_baseline_context(self._visible_record(record), None)
+            )
+            for item, value in parsed.items():
+                excerpt = _clean_evidence(value, source)
+                if not excerpt:
+                    continue
+                doc_id = next((doc["doc_id"] for doc in self._visible_record(record)["docs"] if excerpt in doc["text"]), "source")
+                if (doc_id, excerpt) not in collected[item]:
+                    collected[item].append((doc_id, excerpt))
+                if item in absence_present:
+                    absence_present[item] = True
+        absence_summary = {
+            item: ("전체 문서 묶음에서 필요한 조건·예외 문구가 하나 이상 관찰됨 (최종 판정 아님)"
+                   if absence_present[item] else "각 문서 묶음에서 관련 필수문구를 발견하지 못함 (최종 판정 아님)")
+            for item in absence_present
+        }
+        final_context = build_official_baseline_context(self._visible_record(record), 4000)
+        final_messages = append_source_inventory(
+            self.messages_for_context(record, final_context), collected, absence_summary, self.active_items
+        )
+        completion = self.client.complete(final_messages, self.response_schema)
+        final = self.finalize(record, [completion], [final_context])
+        recovery = bool(final.parse_errors)
+        if recovery:
+            final = self.predict(record)
+        return InventoryThenFinalPrediction(
+            inventory_raw_responses=tuple(raw),
+            inventory_by_item={item: tuple(values) for item, values in collected.items()},
+            absence_pack_summary=absence_summary,
+            inventory_usage=tuple(usages), inventory_latency_seconds=tuple(latencies),
+            inventory_parse_errors=tuple(errors), inventory_messages=tuple(messages_log),
+            final=final, final_messages=tuple(final_messages), final_recovery_used=recovery,
+        )
+
+    def predict_with_fact_inventory_then_final(
+        self, record: dict[str, Any]
+    ) -> FactInventoryThenFinalPrediction:
+        """Compress complete source into factual, not item-labelled, excerpts."""
+        contexts = self.contexts_for_record(record)
+        inventory_system = build_fact_inventory_system_prompt()
+        collected: dict[str, list[tuple[str, str]]] = {
+            category: [] for category in FACT_INVENTORY_CATEGORIES
+        }
+        raw: list[str] = []
+        usages: list[dict[str, Any]] = []
+        latencies: list[float] = []
+        errors: list[str] = []
+        messages_log: list[tuple[dict[str, str], ...]] = []
+        visible = self._visible_record(record)
+        for context in contexts:
+            source = context.text if isinstance(context, DocumentContext) else (
+                context if context is not None else build_official_baseline_context(visible, None)
+            )
+            messages = build_messages(
+                visible, inventory_system, self.max_document_chars,
+                document_context=source,
+                prompt_profile=self.prompt_profile,
+                metadata_style=self.metadata_style,
+                output_mode="labels_only",
+            )
+            messages_log.append(tuple(messages))
+            completion = self.client.complete(messages, fact_inventory_schema())
+            raw.append(completion.content)
+            usages.append(completion.usage)
+            latencies.append(completion.latency_seconds)
+            try:
+                parsed = parse_fact_inventory_response(completion.content)
+            except PredictionError as exc:
+                errors.append(str(exc))
+                parsed = {category: [] for category in FACT_INVENTORY_CATEGORIES}
+            for category, values in parsed.items():
+                for value in values:
+                    excerpt = _clean_evidence(value, source)
+                    if not excerpt:
+                        continue
+                    doc_id = next(
+                        (doc["doc_id"] for doc in visible["docs"] if excerpt in doc["text"]),
+                        "source",
+                    )
+                    if (doc_id, excerpt) not in collected[category]:
+                        collected[category].append((doc_id, excerpt))
+        # The original notice anchor is supplementary orientation only. Complete
+        # source coverage belongs to the first factual stage, not this 4k block.
+        final_context = build_official_baseline_context(visible, 4000)
+        final_messages = append_fact_inventory(
+            self.messages_for_context(record, final_context),
+            {category: tuple(values) for category, values in collected.items()},
+        )
+        completion = self.client.complete(final_messages, self.response_schema)
+        final = self.finalize(record, [completion], [final_context])
+        recovery = bool(final.parse_errors)
+        if recovery:
+            final = self.predict(record)
+        return FactInventoryThenFinalPrediction(
+            inventory_raw_responses=tuple(raw),
+            inventory_by_category={category: tuple(values) for category, values in collected.items()},
+            inventory_usage=tuple(usages),
+            inventory_latency_seconds=tuple(latencies),
+            inventory_parse_errors=tuple(errors),
+            inventory_messages=tuple(messages_log),
+            final=final,
+            final_messages=tuple(final_messages),
+            final_recovery_used=recovery,
+        )
+
+    def predict_with_fact_inventory_then_full_final(
+        self, record: dict[str, Any], inventory_max_items: int = 3,
+        inventory_position: str = "after_source",
+        inventory_categories: tuple[str, ...] = FACT_INVENTORY_CATEGORIES,
+    ) -> FactInventoryFullFinalPrediction:
+        """Use non-final source facts while retaining every source in final V/E.
+
+        The navigation ledger is advisory only.  It is appended before exact
+        token admission, so its presence may create extra final source packs;
+        no source document is dropped and an empty ledger never becomes 0.
+        """
+        if self.count_tokens is None:
+            raise ValueError("fact-inventory full-final requires exact tokenizer admission")
+        stage_contexts = self.contexts_for_record(record)
+        inventory_system = build_fact_inventory_system_prompt(
+            inventory_max_items, categories=inventory_categories,
+        )
+        collected: dict[str, list[tuple[str, str]]] = {
+            category: [] for category in inventory_categories
+        }
+        raw: list[str] = []
+        usages: list[dict[str, Any]] = []
+        latencies: list[float] = []
+        errors: list[str] = []
+        messages_log: list[tuple[dict[str, str], ...]] = []
+        visible = self._visible_record(record)
+        for context in stage_contexts:
+            source = context.text if isinstance(context, DocumentContext) else (
+                context if context is not None else build_official_baseline_context(visible, None)
+            )
+            messages = build_messages(
+                visible, inventory_system, self.max_document_chars,
+                document_context=source,
+                prompt_profile=self.prompt_profile,
+                metadata_style=self.metadata_style,
+                output_mode="labels_only",
+            )
+            messages_log.append(tuple(messages))
+            completion = self.client.complete(
+                messages, fact_inventory_schema(inventory_max_items, categories=inventory_categories),
+            )
+            raw.append(completion.content)
+            usages.append(completion.usage)
+            latencies.append(completion.latency_seconds)
+            try:
+                parsed = parse_fact_inventory_response(
+                    completion.content,
+                    max_items=inventory_max_items,
+                    categories=inventory_categories,
+                )
+            except PredictionError as exc:
+                errors.append(str(exc))
+                parsed = {category: [] for category in inventory_categories}
+            for category, values in parsed.items():
+                for value in values:
+                    excerpt = _clean_evidence(value, source)
+                    if not excerpt:
+                        continue
+                    doc_id = next(
+                        (doc["doc_id"] for doc in visible["docs"] if excerpt in doc["text"]),
+                        "source",
+                    )
+                    if (doc_id, excerpt) not in collected[category]:
+                        collected[category].append((doc_id, excerpt))
+
+        inventory = {category: tuple(values) for category, values in collected.items()}
+
+        def final_messages_for(context: str | None) -> list[dict[str, str]]:
+            return append_fact_inventory(
+                self.messages_for_context(record, context), inventory,
+                position=inventory_position,
+                categories=inventory_categories,
+            )
+
+        final_contexts = pack_contexts_to_token_budget(
+            visible,
+            self.system_prompt_for_record(record),
+            self.count_tokens,
+            self.prompt_budget_tokens,
+            self.notice_anchor_chars,
+            message_builder=final_messages_for,
+        )
+        final_messages = [final_messages_for(context) for context in final_contexts]
+        completions = [self.client.complete(messages, self.response_schema) for messages in final_messages]
+        final = self.finalize(record, completions, final_contexts)
+        recovery = bool(final.parse_errors)
+        if recovery:
+            final = self.predict(record)
+        return FactInventoryFullFinalPrediction(
+            inventory_raw_responses=tuple(raw),
+            inventory_by_category=inventory,
+            inventory_usage=tuple(usages),
+            inventory_latency_seconds=tuple(latencies),
+            inventory_parse_errors=tuple(errors),
+            inventory_messages=tuple(messages_log),
+            inventory_max_items=inventory_max_items,
+            inventory_position=inventory_position,
+            inventory_categories=inventory_categories,
+            final=final,
+            final_messages_by_context=tuple(tuple(messages) for messages in final_messages),
+            final_recovery_used=recovery,
         )
 
     def contexts_for_record(
@@ -611,7 +1293,11 @@ class BaselinePipeline:
     def competition_product_context_for_record(self, record: dict[str, Any]) -> str | None:
         if self.competition_products is None:
             return None
-        product_items = {"v10", "v11", "v13", "v16", "v18"}
+        # Every v10–v18 condition depends on the organizer CSV's exact product
+        # classification.  The renderer decides which Korean clarification is
+        # relevant to the active subset; do not silently remove the underlying
+        # applicability fact for v12/v14/v15/v17.
+        product_items = {f"v{number}" for number in range(10, 19)}
         if not product_items.intersection(self.active_items):
             return None
         return format_competition_product_context(
@@ -683,6 +1369,8 @@ class BaselinePipeline:
         # group decision by the grouped orchestrator.
         judgment = zero_judgment()
         judgment.update(merged_active)
+        if self.frozen_rule_set == "exp123_v1":
+            judgment = apply_exp123_frozen_rules(record, judgment)
         completion = completions[0]
         return Prediction(
             record_id=record["id"],

@@ -69,7 +69,7 @@ def build_grouped_previews(
     item_groups = groups_for_scheme(grouping)
     prompt_profiles = _group_prompt_profiles(config, grouped_run, item_groups)
     policies = {
-        group.group_id: _group_context_policy(config, grouped_run, group.group_id)
+        group.group_id: _group_context_policy(config, grouped_run, group.group_id, group.items)
         for group in item_groups
     }
     item_table = load_item_table(config.data.item_table_path)

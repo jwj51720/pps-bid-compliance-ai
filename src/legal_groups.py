@@ -53,6 +53,21 @@ DOCUMENT_RESTRICTIONS_TWO_WAY_GROUPS = (
     LegalItemGroup("G02_document_restrictions", ("v6", "v7", "v8", "v9", "v19")),
 )
 
+# Complete-source 32k probe: two disjoint final jobs divided by truth-condition
+# family, not by dev labels or a post-hoc error list. The first job reads
+# qualification/document/procedure/metadata consistency conditions; the second
+# reads the mutually related exact-product and whole-notice absence conditions.
+COMPLETE_FACT_BALANCED_TWO_WAY_GROUPS = (
+    LegalItemGroup(
+        "G01_qualification_document_procedure_consistency",
+        ("v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9", "v19", "v21", "v22", "v23", "v24"),
+    ),
+    LegalItemGroup(
+        "G02_product_and_absence",
+        ("v10", "v11", "v12", "v13", "v14", "v15", "v16", "v17", "v18", "v20"),
+    ),
+)
+
 # This is deliberately not a general overlapping-group mechanism.  EXP139
 # preserves the original 24-item call, then makes one focused call for the
 # only five-item scope that improved on three cohorts in the prior audit.  The
@@ -143,6 +158,7 @@ def groups_for_scheme(scheme: str) -> tuple[LegalItemGroup, ...]:
         "law_overlap_12": LEGAL_ITEM_GROUPS,
         "four_way": FOUR_WAY_ITEM_GROUPS,
         "document_restrictions_two_way_v1": DOCUMENT_RESTRICTIONS_TWO_WAY_GROUPS,
+        "complete_fact_balanced_two_way_v1": COMPLETE_FACT_BALANCED_TWO_WAY_GROUPS,
         "document_restrictions_overlay_v1": DOCUMENT_RESTRICTIONS_OVERLAY_GROUPS,
         "semantic_verifier_overlay_v1": SEMANTIC_VERIFIER_OVERLAY_GROUPS,
         "document_restrictions_v9_source_v1": DOCUMENT_RESTRICTIONS_V9_SOURCE_GROUPS,

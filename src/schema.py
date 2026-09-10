@@ -10,6 +10,23 @@ SUBMISSION_COLUMNS = ("id", *ITEMS, *EVIDENCE_COLUMNS)
 ABSENCE_ITEMS = frozenset({"v10", "v11", "v16", "v18", "v20"})
 EVIDENCE_MAX_CHARS = 500
 V8_COMPOSITE_STATES = ("없음", "실적", "지역", "둘다", "검토")
+TRIAGE_STATES = ("명시근거", "부재검토", "불명확", "해당없음")
+FACT_INVENTORY_CATEGORIES = (
+    "참가자격_실적_지역",
+    "제품_기업_직접생산",
+    "규격_모델_기술요구",
+    "제출서류_확약서",
+    "계약방식_공동계약",
+    "일정_설명회",
+    "금액_메타대조",
+)
+FACT_INVENTORY_CATEGORIES_V2 = (
+    *FACT_INVENTORY_CATEGORIES,
+    "예외_허용_적용범위",
+)
+TIMELINE_FACT_ROLES = (
+    "공고일", "현장설명회일시", "제안서_접수마감", "가격입찰_마감", "긴급_재공고_표시",
+)
 
 
 def judgment_schema(
@@ -108,4 +125,96 @@ def judgment_schema(
         "additionalProperties": False,
         "required": [*items, *( ["v8병합관찰"] if v8_composite_enabled and "v8" in items else [])],
         "properties": properties,
+    }
+
+
+def triage_schema(items: tuple[str, ...] = ITEMS) -> dict[str, Any]:
+    """Strict route-state payload for the non-final first B-stage call."""
+    if not items or any(item not in ITEMS for item in items) or len(items) != len(set(items)):
+        raise ValueError("triage items must be a non-empty unique subset of v1..v24")
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": list(items),
+        "properties": {
+            item: {"type": "string", "enum": list(TRIAGE_STATES)} for item in items
+        },
+    }
+
+
+def locator_schema(items: tuple[str, ...] = ITEMS) -> dict[str, Any]:
+    """Schema for non-final source-navigation excerpts.
+
+    A null means only that the locator found no safe substring in the supplied
+    material.  It has no label semantics and is never a final negative.
+    """
+    if not items or any(item not in ITEMS or item in ABSENCE_ITEMS for item in items):
+        raise ValueError("locator items must be a non-empty non-absence subset of v1..v24")
+    if len(items) != len(set(items)):
+        raise ValueError("locator items must not contain duplicates")
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": list(items),
+        "properties": {
+            item: {"type": ["string", "null"], "maxLength": 2000}
+            for item in items
+        },
+    }
+
+
+def inventory_schema(items: tuple[str, ...] = ITEMS) -> dict[str, Any]:
+    """Non-final source-inventory schema for every active item.
+
+    ``null`` is only a pack-local observation: it never means a final negative.
+    Unlike locator_schema, absence items are deliberately included so the
+    pipeline can retain pack-level presence observations for AND review.
+    """
+    if not items or any(item not in ITEMS for item in items):
+        raise ValueError("inventory items must be a non-empty subset of v1..v24")
+    if len(items) != len(set(items)):
+        raise ValueError("inventory items must not contain duplicates")
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": list(items),
+        "properties": {
+            item: {"type": ["string", "null"], "maxLength": 500}
+            for item in items
+        },
+    }
+
+
+def fact_inventory_schema(
+    max_items: int = 3,
+    categories: tuple[str, ...] = FACT_INVENTORY_CATEGORIES,
+) -> dict[str, Any]:
+    """Schema for source-only factual excerpts, never labels or v keys."""
+    if max_items not in {3, 4}:
+        raise ValueError("fact inventory max_items must be 3 or 4")
+    if categories not in {FACT_INVENTORY_CATEGORIES, FACT_INVENTORY_CATEGORIES_V2}:
+        raise ValueError("fact inventory categories must be a supported version")
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": list(categories),
+        "properties": {
+            category: {
+                "type": "array",
+                "maxItems": max_items,
+                "items": {"type": "string", "minLength": 1, "maxLength": 360},
+            }
+            for category in categories
+        },
+    }
+
+
+def timeline_fact_schema() -> dict[str, Any]:
+    """Schema for source-only v23 timeline facts, never labels."""
+    return {
+        "type": "object", "additionalProperties": False,
+        "required": list(TIMELINE_FACT_ROLES),
+        "properties": {role: {"type": "array", "maxItems": 2,
+            "items": {"type": "string", "minLength": 1, "maxLength": 360}}
+            for role in TIMELINE_FACT_ROLES},
     }
