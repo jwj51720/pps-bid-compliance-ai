@@ -33,6 +33,10 @@
 | EXP174 source-first v2 | complete source | 범주당 4구절 | fast 0.269444 | 종료 |
 | EXP175 source-first v3 | complete source | 같은 navigation을 source 앞에 배치 | fast 0.263889 | 종료 |
 | EXP176/177 source-first v4 | complete source | 예외 범주 1개 추가 | fast 0.287500, holdout 0.166667 | 종료: holdout 반대 방향 |
+| EXP180 timeline supplement | complete source | v23 날짜 역할 추가 | fast 0.241667 | 종료: v23 TP 손실 + call 증가 |
+| EXP182/183 procedure ledger | complete source | 7개 관계형 field로 교체 | fast 0.319444, holdout 0.125000 | 종료: holdout 반대 방향 |
+| EXP186 V-only draft → V/E | complete source | V-only 초안 1회 | fast 0.206944 | 종료 |
+| EXP187 V-only ×2 → V-only resolver | complete source | 2개 V-only 초안 + 모델 resolver | fast 0.097917 | 종료: recall/call topology 모두 악화 |
 
 핵심 결론은 두 가지다.
 
@@ -41,18 +45,29 @@
 2. source-first v1의 이득은 navigation 자체에서 왔을 가능성이 높지만, 더 많이 뽑기,
    앞에 놓기, 범주를 하나 더 늘리기로는 재현되지 않았다.
 
-## 다음 후보: item-aware navigation + complete-source final
+## 다음 후보: EXP188 item-aware navigation + complete-source final
 
 ### 가설
 
 현재 v1 범주는 원문을 넓게 보여 주지만, 한 범주 안의 서로 다른 v의 사실을 같은 세
-구절 슬롯이 경쟁한다. 예를 들어 자격·지역·실적·금액 사실이 동시에 있는 문서 pack에서
-필요한 사실 하나가 navigation에서 빠질 수 있다. 이를 **항목별 source fact navigation**으로
-바꾸면 final Gemma가 자기 카드와 관련된 후보를 더 쉽게 찾을 수 있다.
+구절 슬롯이 경쟁한다. 이는 단순 추측이 아니다. label-blind EXP171 stage artifact audit에서
+`제출서류_확약서` 90.3%, `일정_설명회` 74.5%, `금액_메타대조` 88.4%,
+`참가자격_실적_지역` 56.5%가 source-pack별 3개 상한에 닿았다. 특히 v3/v19/v22/v23/v24가
+필요로 하는 category는 metadata-only eligible notice의 87.1~92.7%에서 상한 압력을 보였다
+(`outputs/exp181-source-first-relation-capacity-audit/relation_capacity.json`).
 
-이는 EXP153의 재실행이 아니다. 달라지는 점은 최종 판정이 4,000자 anchor가 아니라 모든
-tokenizer-admitted source pack을 다시 읽는다는 것이다. candidate가 null이어도 final은 원문과
-metadata/card를 독립적으로 전부 판단한다.
+EXP188은 이를 **각 v에 최대 하나의 source-only relation candidate**로 바꾼다. 각 key는
+v 이름이지만 0/1·위반·법률·예외결론은 반환하지 않고, 해당 카드가 요구하는 관계의 endpoint를
+가장 잘 보존하는 변경 없는 원문 하나 또는 빈 값만 반환한다. final Gemma는 candidate를 자동
+판정으로 신뢰하지 않으며 card v6·friendly metadata/product fact·모든 admitted 원문을 다시
+읽고 V/E를 단독 확정한다.
+
+이는 EXP153의 재실행이 아니다. EXP153은 item inventory 뒤 final을 4,000자 anchor로 축소했고
+gold-evidence coverage도 6/38에 그쳤다. EXP188은 stage도 raw-source only이며 final은 모든
+tokenizer-admitted source pack을 다시 읽는다. candidate가 null이어도 final은 원문과
+metadata/card를 독립적으로 전부 판단한다. EXP180/182의 결과 때문에 날짜·절차 field를
+추가하는 방식은 하지 않으며, EXP188은 그 field들을 **교체하지 않고** slot allocation만
+item별로 바꾸는 단일 topology다.
 
 ### 아직 유료로 실행하지 않는 이유
 
@@ -60,18 +75,31 @@ EXP153은 24개 항목별로 문서 묶음당 한 구절만 요구했을 때 gol
 navigation과 겹쳤다. 이 결과만으로 item-aware full-final이 실패한다고 결론낼 수는 없지만,
 출력 부담이 너무 큰지 먼저 label-blind하게 확인해야 한다.
 
-### 오프라인 admission/coverage 진단
+### 유료 전 단계: 효율 우선 feasibility experiment
 
 다음 검사를 먼저 수행한다. 이 검사는 dev labels/predictions을 읽지 않는다.
 
-1. 24개 item의 card에서 요구하는 사실 유형과 required document type을 추출한다.
-2. v1의 7개 범주가 각 item에 필요한 사실 유형을 실제로 표현할 수 있는지 matrix로 표시한다.
-3. item-aware schema의 최악 JSON 크기, exact tokenizer admission, stage/final pack 수,
+1. 24개 item의 card에서 요구하는 사실 유형과 required document type을 추출한다. candidate
+   prompt는 card 원문·법령·metadata를 보지 않는다.
+2. 24-key × one-excerpt schema의 actual max serialized response와 final navigation burden을
+   exact tokenizer로 profile한다. 24개의 candidate를 모두 채운 synthetic upper bound에서
+   source omission 0 및 EXP171보다 작은 admission-only call variance를 보여야 한다.
+3. 실제 stage prompt/schema의 empty, 24-key full, malformed, duplicate, source-outside excerpt,
+   absence-item null candidate를 mock으로 검증한다. 여기서 Python은 exact substring/doc-id만
+   다루며 candidate로 label을 만들지 않는다.
+4. short/attachment/overflow에서 exact stage/final input을 export/read하고 24-item semantic
+   contract을 final rendered prompt에서 audit한다.
+5. 위 검사가 모두 통과할 때만 fast20을 실행한다. 이 feasibility experiment는 provider나 dev
+   labels를 읽지 않으므로, output burden이 과도하면 유료 호출 없이 종료한다.
+
+기존 계획의 다음 항목은 implementation 이후에만 수행한다.
+
+1. item-aware schema의 worst JSON 크기, exact tokenizer admission, stage/final pack 수,
    1,853건 runtime 상한을 계산한다.
-4. short complete / attachment / overflow record 각각에서 exact Stage-1 및 final messages를
+2. short complete / attachment / overflow record 각각에서 exact Stage-1 및 final messages를
    export한다. Stage-1은 raw source만, final은 cards/meta/product facts/full source/navigation을
    모두 포함하는지 사람이 읽어 확인한다.
-5. mock에서 candidate null, malformed stage-1, duplicated candidate, absence item, final parse
+3. mock에서 candidate null, malformed stage-1, duplicated candidate, absence item, final parse
    recovery, unchanged evidence validation을 검증한다.
 
 ### 오프라인 profile 결과 (2026-09-10)
