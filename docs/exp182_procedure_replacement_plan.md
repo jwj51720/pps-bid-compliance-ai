@@ -76,3 +76,34 @@ no over-budget packs. The actual rendered inputs in the three audit directories 
 first-stage messages are source-only and the final messages preserve all four required input
 components. The next permitted action is one paid fast20 probe; no holdout or dev200 provider run
 is authorized by this preflight itself.
+
+## Results and decision — 2026-09-10
+
+### EXP182 fast20
+
+`outputs/exp-182-procedure-replacement-fast-panel-c4/` completed 20/20 with no stage or final
+parse errors and no final recovery. It made 23 source-ledger plus 24 final calls (47 total), the
+same call topology as EXP179 on this panel. Macro positive-F1 was `0.319444`, versus the exact
+EXP179 repeat's `0.287500` (`+0.031944`). The gain came chiefly from v22 one new TP and v23 three
+FP removals; losses were v4 one TP, plus v12 and v15 one FP each. CSV validation passed with two
+invalid-positive-evidence warnings (`PPS-DEV-042/e8`, `PPS-DEV-191/e12`), versus EXP179's three
+warnings. This was sufficient only to unlock the predeclared frozen holdout.
+
+### EXP183 frozen holdout20
+
+`configs/config.exp183-procedure-replacement-holdout-c4.yaml` has base EXP182 and
+`allowed_policy_changes: []`; preflight reported no controlled policy difference, and its 20/20
+mock recorded the same explicit procedure provenance. The paid result at
+`outputs/exp-183-procedure-replacement-holdout-c4/` was `0.125000`, compared with the policy-
+matched EXP168 source-first/full-final holdout result `0.229167` (`-0.104167`). Both had exactly
+22 source-stage plus 22 final calls, zero parse errors, and zero recovery. Validation passed with
+no warnings, so the drop is not a malformed-output or evidence-substring failure.
+
+The changed holdout cells remove base TPs at `PPS-DEV-046/v1`, `PPS-DEV-135/v22`, and
+`PPS-DEV-091/v23`, `PPS-DEV-027/v23`; `PPS-DEV-046/v23` becomes an FP. The procedure ledger also
+removes existing FPs at `PPS-DEV-050/v5` and `PPS-DEV-044/v24`, but this does not offset the lost
+TPs. Evidence validity for the five predicted positives was 1.0, while span F1 was 0.3333.
+
+**Decision: reject this ledger schema.** The fast improvement did not generalize under the frozen
+policy. Do not tune field wording, excerpt limits, or add item-specific follow-ups, and do not run
+EXP182/183 on dev200 or alter the EXP171 submission candidate because of these results.
