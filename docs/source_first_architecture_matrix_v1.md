@@ -106,6 +106,41 @@ may not increase the per-slot length, add a second candidate, add another stage,
 The actual source-only schema, parser, mock, rendered review, and semantic-contract audit remain
 required before any paid call.
 
+### EXP188 implementation gate — 2026-09-10
+
+`configs/config.exp188-item-inventory-full-final-fast-panel-c4.yaml` declares EXP179 as base and
+only `staged_run.mode` as an allowed change. Its stage prompt gets the public item names solely as
+source-navigation directions; it gets no cards, metadata, product facts, law text, labels, or
+final V/E task. Each v returns one unchanged 180-character-or-shorter source candidate or null.
+Python resolves only original substrings/doc ids and never maps a candidate to a label.
+
+The mock completed 20/20 and direct regression covers a normal full 24-key string/null payload,
+its source provenance, null handling, and full-source final navigation. `pytest -q` passed 151.
+Semantic contract audit passed all 24 items for short `PPS-DEV-062`, attachment `PPS-DEV-046`, and
+overflow `PPS-DEV-082`; exact messages are under
+`outputs/exp188-semantic-contract-audit-v1/rendered_inputs/`. Those messages were reviewed: stage
+is source-only and final retains card v6, friendly metadata/product fact, all original source, and
+an advisory item navigation section. The only permitted next action is the versioned fast20 run.
+
+### EXP188 fast20 result — rejected (2026-09-10)
+
+`outputs/exp-188-item-inventory-full-final-fast-panel-c4/` completed 20/20 with source-stage parse
+errors 0, final recovery 0, and CSV validation pass (one positive-evidence warning). Macro
+positive-F1 was `.215278`, below EXP179 `.287500` (`-.072222`), so no holdout or dev200 run is
+allowed. Remote elapsed `186.5s` is not evaluator runtime evidence.
+
+The failure is not malformed output or source omission. The one-slot constraint returned only
+1/3/7 candidates at min/median/max per notice, whereas source-first v1 typically supplies a much
+broader cross-category factual map. It removes 11 EXP179 positives, including TPs at v1, v4, v8,
+v9, v12, v23, and v24; its only new positives are two v22 FPs. Thus item allocation did not make
+the full-source final more selective in a useful way—it caused broad recall loss despite final
+source availability. Evidence validity for its 12 positive evidence cases is `.9167`, so the score
+loss is a decision-quality failure rather than substring validation failure.
+
+**Decision: reject EXP188.** Do not increase candidates per item, tune item names, add selected
+item slots, or combine this navigation with a verifier. Those would be density/item-group variants
+already ruled out by EXP174/155/156 and would not repair this topology's recall loss.
+
 기존 계획의 다음 항목은 implementation 이후에만 수행한다.
 
 1. item-aware schema의 worst JSON 크기, exact tokenizer admission, stage/final pack 수,
