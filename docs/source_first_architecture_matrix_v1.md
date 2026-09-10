@@ -92,6 +92,20 @@ navigation과 겹쳤다. 이 결과만으로 item-aware full-final이 실패한�
 5. 위 검사가 모두 통과할 때만 fast20을 실행한다. 이 feasibility experiment는 provider나 dev
    labels를 읽지 않으므로, output burden이 과도하면 유료 호출 없이 종료한다.
 
+### EXP188 synthetic capacity result — 2026-09-10
+
+`scripts/profile_exp188_item_aware_feasibility.py` used the exact Gemma chat-template tokenizer
+and all dev200 notices, but no labels, predictions, or provider calls. It appended the conservative
+upper bound of all 24 slots filled with a 180-character candidate before exact final packing.
+`outputs/exp188-item-aware-feasibility-v1/profile.json` reports 226 final calls (batch-64 four
+rounds), versus EXP171's 219 final calls, with 178/18/4 notices requiring one/two/three packs and
+zero source-document omissions. Maximum admitted prompt is exactly 30,268 tokens.
+
+This clears **only** the capacity gate: a one-candidate-per-item implementation may proceed, but
+may not increase the per-slot length, add a second candidate, add another stage, or claim quality.
+The actual source-only schema, parser, mock, rendered review, and semantic-contract audit remain
+required before any paid call.
+
 기존 계획의 다음 항목은 implementation 이후에만 수행한다.
 
 1. item-aware schema의 worst JSON 크기, exact tokenizer admission, stage/final pack 수,
