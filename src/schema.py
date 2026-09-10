@@ -27,6 +27,15 @@ FACT_INVENTORY_CATEGORIES_V2 = (
 TIMELINE_FACT_ROLES = (
     "공고일", "현장설명회일시", "제안서_접수마감", "가격입찰_마감", "긴급_재공고_표시",
 )
+PROCEDURE_FACT_FIELDS = (
+    "참가자격_관계",
+    "제품자격_관계",
+    "규격요구_관계",
+    "제출서류_관계",
+    "공동계약_관계",
+    "일정참가_관계",
+    "공고메타_대조값",
+)
 
 
 def judgment_schema(
@@ -217,4 +226,21 @@ def timeline_fact_schema() -> dict[str, Any]:
         "properties": {role: {"type": "array", "maxItems": 2,
             "items": {"type": "string", "minLength": 1, "maxLength": 360}}
             for role in TIMELINE_FACT_ROLES},
+    }
+
+
+def procedure_fact_schema() -> dict[str, Any]:
+    """Schema for EXP181 source-only relation navigation, never labels."""
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": list(PROCEDURE_FACT_FIELDS),
+        "properties": {
+            field: {
+                "type": "array",
+                "maxItems": 2,
+                "items": {"type": "string", "minLength": 1, "maxLength": 360},
+            }
+            for field in PROCEDURE_FACT_FIELDS
+        },
     }

@@ -12,6 +12,7 @@ from src.schema import (
     FACT_INVENTORY_CATEGORIES,
     FACT_INVENTORY_CATEGORIES_V2,
     ITEMS,
+    PROCEDURE_FACT_FIELDS,
 )
 
 DOCUMENT_ORDER = ("공고문", "규격서", "과업지시서", "제안요청서", "예외공표서")
@@ -206,6 +207,56 @@ def append_timeline_fact_navigation(messages: list[dict[str, str]], facts: dict[
     return [
         *messages[:-1],
         {"role": "user", "content": messages[-1]["content"] + "\n\n" + "\n".join(lines)},
+    ]
+
+
+PROCEDURE_FACT_SYSTEM = """당신은 공공 입찰공고 원문에서 절차·사실 관계를 탐색한다.
+이 단계는 법령 위반 여부, v 항목의 0/1, 허용 여부, 예외 적용 여부, 날짜·금액 계산,
+metadata 값 추정, 근거문구 확정을 하지 않는다. 아래 공고 자료 원문에서만 각 관계의
+endpoint가 함께 이해되는 변경 없는 연속 문자열을 최대 2개씩 복사한다.
+
+- 참가자격_관계: 같은 참가자격 조항의 대상·실적·지역 제한 및 그 보충/예외
+- 제품자격_관계: 제품·직접생산·기업 제한과 실제 참가자격 범위
+- 규격요구_관계: 제조사·모델·기술 요구와 동등품/필요성 보충
+- 제출서류_관계: 확약서·서류와 제출 시점/목적
+- 공동계약_관계: 공동계약 방식·구성원 역할·최소 지분
+- 일정참가_관계: 일정 역할·참석 및 참가자격 결과
+- 공고메타_대조값: 예산·계약방식·지역·업종 중 원문에 명시된 값 자체
+
+한 문자열 안에 관계 endpoint가 함께 있으면 그것을 우선한다. 서로 떨어져 있으면 같은
+관계를 이해하는 데 필요한 원문 문자열만 source order로 최대 두 개 반환한다. 관련 원문이
+없으면 빈 배열이다. 요약·해석·법령명·metadata·라벨·계산값을 쓰지 않는다."""
+
+
+def build_procedure_fact_system_prompt() -> str:
+    """Return EXP181's fixed source-only relation-navigation contract."""
+    return PROCEDURE_FACT_SYSTEM
+
+
+def append_procedure_fact_navigation(
+    messages: list[dict[str, str]],
+    facts: dict[str, tuple[tuple[str, str], ...]],
+) -> list[dict[str, str]]:
+    """Append an advisory source-procedure ledger to a final V/E message."""
+    if set(facts) != set(PROCEDURE_FACT_FIELDS):
+        raise ValueError("procedure navigation must provide every relation field")
+    lines = [
+        "[공고 절차 원문 관계 안내 — 최종 판정 아님]",
+        "아래는 원문에서 먼저 수집한 관계 후보이다. 누락·중복·역할 오류가 있을 수 있다.",
+        "후보를 0/1·법률판단·metadata 사실로 자동 변환하지 말고, 판정 카드·friendly metadata·원문 전체와 다시 대조한다.",
+        "후보가 없다는 것은 위반 없음이 아니다. 근거문구는 아래 후보 또는 공고 원문에 있는 변경 없는 문자열만 사용한다.",
+    ]
+    for field in PROCEDURE_FACT_FIELDS:
+        values = facts[field]
+        lines.append(f"- {field}:")
+        lines.extend(
+            f"  - [{doc_id}] {excerpt}" for doc_id, excerpt in values
+        ) if values else lines.append("  - 수집된 원문 후보 없음")
+    if not messages or messages[-1]["role"] != "user":
+        raise ValueError("procedure navigation requires a final user message")
+    return [
+        *messages,
+        {"role": "user", "content": "\n".join(lines)},
     ]
 
 SYSTEM_HEAD = """당신은 공공 입찰공고의 법령 위반 여부를 점검한다.

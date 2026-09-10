@@ -498,6 +498,26 @@ def test_timeline_navigation_is_role_grounded_and_never_a_final_label() -> None:
     assert "최종 판정 아님" in messages[-1]["content"]
 
 
+def test_procedure_navigation_is_source_only_and_advisory() -> None:
+    from src.prompt import (
+        append_procedure_fact_navigation,
+        build_procedure_fact_system_prompt,
+    )
+    from src.schema import PROCEDURE_FACT_FIELDS, procedure_fact_schema
+
+    prompt = build_procedure_fact_system_prompt()
+    assert "v 항목의 0/1" in prompt
+    schema = procedure_fact_schema()
+    assert tuple(schema["required"]) == PROCEDURE_FACT_FIELDS
+    assert schema["properties"][PROCEDURE_FACT_FIELDS[0]]["maxItems"] == 2
+    messages = append_procedure_fact_navigation(
+        [{"role": "system", "content": "final"}, {"role": "user", "content": "source"}],
+        {field: tuple() for field in PROCEDURE_FACT_FIELDS},
+    )
+    assert "최종 판정 아님" in messages[-1]["content"]
+    assert "후보가 없다는 것은 위반 없음이 아니다" in messages[-1]["content"]
+
+
 def test_official_profile_renders_product_context_and_full_context_when_requested() -> None:
     item_table = {
         item: {"항목명": item, "부재탐지": False, "국가계약법": "", "지방계약법": "", "비고": ""}

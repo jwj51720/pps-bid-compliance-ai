@@ -87,3 +87,25 @@ independent holdout20 before dev200. A fast-only improvement never changes the s
 If schema admission materially increases final packs, stage-1b cannot copy unchanged source facts,
 or fast20 declines, this branch ends without field-by-field prompt tuning. No raw-law RAG, case
 RAG, v grouping, 4k final reduction, or Python label rule is a fallback.
+
+## Feasibility result — provider call not authorized (2026-09-10)
+
+The minimal source-only procedure schema was constructed solely to measure its worst-case
+topology. It has seven documented relation fields, each with at most two unchanged source
+substrings; it has no v keys or legal/label values. Exact Gemma chat-template profiling used the
+saved EXP171 generic navigation and no labels/provider calls:
+`outputs/exp181-procedure-feasibility/profile.json`.
+
+| scenario | generic stage | procedure stage | final | total calls | final source omission |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| empty procedure ledger | 216 | 216 | 219 | **651** | 0 |
+| 7 fields × 2 synthetic 360-char excerpts | 216 | 216 | 229 | **661** | 0 |
+
+Even the empty ledger is 156 calls (31.5%) above EXP180's conservative 495-call upper profile.
+The procedure pass is applied to every source pack, so batch size cannot reduce that call count.
+Although source coverage and exact admission are sound, this fails EXP181's token/runtime gate
+before any source-only schema quality claim exists. No EXP181 config or paid fast20 run is made.
+
+The retained primitive and profile are audit-only evidence of rejection; they are not an invitation
+to shrink field limits, tune wording, or re-open a document × group design. The architecture search
+must next favor a bounded whole-notice change whose call count is materially below this topology.
