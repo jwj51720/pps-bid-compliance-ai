@@ -944,6 +944,59 @@ def test_competition_product_fact_is_visible_but_not_evidence() -> None:
     assert "matched_codes" not in content
 
 
+def test_competition_product_condition_mode_renders_condition_and_friendly_provenance() -> None:
+    context = format_competition_product_context(
+        _record(),
+        {
+            "status": "matched",
+            "matched_products": [
+                {
+                    "세부품명번호": "9015189001",
+                    "세부품명": "축제기획및대행서비스",
+                    "특이사항": "추정가격 3억원 미만에 한함",
+                    "metadata_match": True,
+                    "document_match_sources": [
+                        {"doc_id": "INTERNAL-D0", "type": "공고문"},
+                        {"doc_id": "INTERNAL-R1", "type": "제안요청서"},
+                    ],
+                }
+            ],
+        },
+        context_mode="conditions_and_provenance_v2",
+    )
+
+    assert "추정가격 3억원 미만에 한함" in context
+    assert "나라장터 세부품명 목록" in context
+    assert "공고 자료 공고문·제안요청서" in context
+    assert "행 일치는 실제 적용 확정이 아니므로" in context
+    assert "적용조건도 충족하는지 확인된 경우에만 경쟁제품 적용 근거" in context
+    assert "정확히 매칭되면 경쟁제품 근거로 사용" not in context
+    assert "9015189001" not in context
+    assert "INTERNAL-D0" not in context
+    assert "matched" not in context
+
+
+def test_competition_product_condition_mode_marks_unconditional_row() -> None:
+    context = format_competition_product_context(
+        _record(),
+        {
+            "status": "matched",
+            "matched_products": [
+                {
+                    "세부품명": "잡석",
+                    "특이사항": "",
+                    "metadata_match": False,
+                    "document_match_sources": [{"doc_id": "D0", "type": "규격서"}],
+                }
+            ],
+        },
+        context_mode="conditions_and_provenance_v2",
+    )
+
+    assert "별도 적용조건 없음" in context
+    assert "공고 자료 규격서" in context
+
+
 def test_official_prompt_hides_internal_notice_id_and_separates_source_text() -> None:
     record = _record()
     record["id"] = "INTERNAL-ONLY-ID"

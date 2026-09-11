@@ -70,3 +70,38 @@ def test_competition_product_fact_uses_exact_codes_conservatively(tmp_path) -> N
     assert competition_product_fact(record, products)["status"] == "not_matched"
     record["meta"]["세부품명번호목록"] = None
     assert competition_product_fact(record, products)["status"] == "unknown"
+
+
+def test_competition_product_fact_preserves_conditions_and_source_provenance(
+    tmp_path,
+) -> None:
+    index_path = tmp_path / "products.json"
+    index_path.write_text(
+        json.dumps(
+            {
+                "products": {
+                    "9015189001": {
+                        "세부품명": "축제기획및대행서비스",
+                        "제품명번호": "901518",
+                        "제품명": "축제",
+                        "특이사항": "추정가격 3억원 미만에 한함",
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    products = load_competition_product_index(index_path)
+    record = _record()
+    record["meta"]["세부품명번호목록"] = "축제기획및대행서비스[9015189001]"
+    record["docs"][0]["text"] = "세부품명번호 9015189001"
+
+    fact = competition_product_fact(record, products)
+
+    product = fact["matched_products"][0]
+    assert product["특이사항"] == "추정가격 3억원 미만에 한함"
+    assert product["metadata_match"] is True
+    assert product["document_match_sources"] == [
+        {"doc_id": "D0", "type": "공고문"}
+    ]

@@ -695,6 +695,7 @@ class BaselinePipeline:
         absence_detection_strategy: str = "per_pass_or",
         decision_cards: dict[str, dict[str, Any]] | None = None,
         competition_products: dict[str, dict[str, str]] | None = None,
+        competition_product_context_mode: str = "names_only_v1",
         v8_composite_merge_enabled: bool = False,
         v8_composite_merge_mode: str = "fallback_or",
         candidate_detection: bool = False,
@@ -721,6 +722,11 @@ class BaselinePipeline:
         self.strict_document_evidence = strict_document_evidence
         self.absence_detection_strategy = absence_detection_strategy
         self.competition_products = competition_products
+        if competition_product_context_mode not in {
+            "names_only_v1", "conditions_and_provenance_v2"
+        }:
+            raise ValueError("unsupported competition product context mode")
+        self.competition_product_context_mode = competition_product_context_mode
         self.law_bundle_router = law_bundle_router
         self.v8_composite_merge_enabled = v8_composite_merge_enabled
         self.v8_composite_merge_mode = v8_composite_merge_mode
@@ -907,6 +913,7 @@ class BaselinePipeline:
             absence_detection_strategy=self.absence_detection_strategy,
             decision_cards=self._decision_cards,
             competition_products=self.competition_products,
+            competition_product_context_mode=self.competition_product_context_mode,
             v8_composite_merge_enabled=False,
             v8_composite_merge_mode=self.v8_composite_merge_mode,
             candidate_detection=self._candidate_detection,
@@ -1069,6 +1076,7 @@ class BaselinePipeline:
             absence_detection_strategy=self.absence_detection_strategy,
             decision_cards=self._decision_cards,
             competition_products=self.competition_products,
+            competition_product_context_mode=self.competition_product_context_mode,
             v8_composite_merge_enabled=False,
             v8_composite_merge_mode=self.v8_composite_merge_mode,
             candidate_detection=self._candidate_detection,
@@ -1805,7 +1813,10 @@ class BaselinePipeline:
         if not product_items.intersection(self.active_items):
             return None
         return format_competition_product_context(
-            record, competition_product_fact(record, self.competition_products), self.active_items
+            record,
+            competition_product_fact(record, self.competition_products),
+            self.active_items,
+            self.competition_product_context_mode,
         )
 
     def finalize(

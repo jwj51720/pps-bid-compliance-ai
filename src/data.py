@@ -152,6 +152,11 @@ def load_competition_product_index(path: str | Path) -> dict[str, dict[str, str]
             raise ValueError("competition product index has an invalid detail product code")
         if not isinstance(value, dict) or not isinstance(value.get("세부품명"), str):
             raise ValueError("competition product index entry must contain 세부품명")
+        for field in ("제품명번호", "제품명", "특이사항"):
+            if field in value and not isinstance(value[field], str):
+                raise ValueError(
+                    f"competition product index entry {field} must be a string"
+                )
     return products
 
 
@@ -167,9 +172,13 @@ def competition_product_fact(
     metadata_value = str(record["meta"].get("세부품명번호목록") or "")
     metadata_codes = sorted(set(PRODUCT_CODE.findall(metadata_value)))
     document_matches: dict[str, list[str]] = defaultdict(list)
+    document_match_sources: dict[str, list[dict[str, str]]] = defaultdict(list)
     for document in record["docs"]:
         for code in set(DOCUMENT_CODE.findall(document["text"])) & set(products):
             document_matches[code].append(document["doc_id"])
+            document_match_sources[code].append(
+                {"doc_id": document["doc_id"], "type": document["type"]}
+            )
     matched_codes = sorted((set(metadata_codes) | set(document_matches)) & set(products))
     if matched_codes:
         status = "matched"
@@ -182,7 +191,18 @@ def competition_product_fact(
         "metadata_codes": metadata_codes,
         "matched_codes": matched_codes,
         "matched_products": [
-            {"세부품명번호": code, "세부품명": products[code]["세부품명"]}
+            {
+                "세부품명번호": code,
+                "세부품명": products[code]["세부품명"],
+                "제품명번호": products[code].get("제품명번호", ""),
+                "제품명": products[code].get("제품명", ""),
+                "특이사항": products[code].get("특이사항", ""),
+                "metadata_match": code in metadata_codes,
+                "document_match_sources": sorted(
+                    document_match_sources.get(code, []),
+                    key=lambda value: (value["type"], value["doc_id"]),
+                ),
+            }
             for code in matched_codes
         ],
         "document_match_doc_ids": {code: sorted(ids) for code, ids in document_matches.items()},

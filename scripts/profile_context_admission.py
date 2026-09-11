@@ -19,7 +19,9 @@ from src.data import (
     load_competition_product_index,
     load_decision_cards,
     load_item_table,
+    load_record_id_panel,
     load_records,
+    select_records_by_id,
 )
 from src.pipeline import BaselinePipeline
 
@@ -74,6 +76,7 @@ def main() -> int:
         absence_detection_strategy=config.absence_detection_strategy,
         decision_cards=cards,
         competition_products=products,
+        competition_product_context_mode=config.competition_product_context_mode,
         count_tokens=count_tokens,
         prompt_budget_tokens=config.max_model_len - config.output_reserve_tokens,
         active_items=config.active_items,
@@ -86,8 +89,15 @@ def main() -> int:
         visible_document_types=config.visible_document_types,
     )
     budget = config.max_model_len - config.output_reserve_tokens
+    records = load_records(config.data.input_path)
+    if config.data.fast_panel_ids_path:
+        records = select_records_by_id(
+            records, load_record_id_panel(config.data.fast_panel_ids_path)
+        )
+    elif config.local_limit is not None:
+        records = records[:config.local_limit]
     rows = []
-    for record in load_records(config.data.input_path):
+    for record in records:
         full_tokens = count_tokens(pipeline.messages_for_context(record, None))
         contexts = pipeline.contexts_for_record(record)
         pass_tokens = [

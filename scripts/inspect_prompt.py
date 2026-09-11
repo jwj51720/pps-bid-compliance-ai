@@ -74,7 +74,7 @@ def _markdown_preview(
     )
 
 
-def build_pipeline_for_preview(config: Any) -> BaselinePipeline:
+def build_pipeline_for_preview(config: Any, count_tokens=None) -> BaselinePipeline:
     """Mirror the shared runner's pipeline construction without a provider call."""
     item_table = load_item_table(config.data.item_table_path)
     decision_cards = (
@@ -103,6 +103,8 @@ def build_pipeline_for_preview(config: Any) -> BaselinePipeline:
         absence_detection_strategy=config.absence_detection_strategy,
         decision_cards=decision_cards,
         competition_products=competition_products,
+        competition_product_context_mode=config.competition_product_context_mode,
+        count_tokens=count_tokens,
         prompt_budget_tokens=config.max_model_len - config.output_reserve_tokens,
         reference_text=reference_text,
         law_bundle_router=law_bundle_router,
@@ -130,6 +132,10 @@ def main() -> int:
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--record-id", default="PPS-DEV-01")
     parser.add_argument("--output-dir", default="outputs/prompt-inspection")
+    parser.add_argument(
+        "--exact-tokenizer", action="store_true",
+        help="use the configured Gemma tokenizer so overflow packs exactly match the experiment",
+    )
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -139,7 +145,16 @@ def main() -> int:
     )
     if record is None:
         raise ValueError(f"record not found: {args.record_id}")
-    pipeline = build_pipeline_for_preview(config)
+    count_tokens = None
+    if args.exact_tokenizer:
+        from transformers import AutoTokenizer
+        from scripts.profile_context_admission import _token_counter
+
+        tokenizer = AutoTokenizer.from_pretrained(
+            config.llm.tokenizer_source or config.llm.model
+        )
+        count_tokens = _token_counter(tokenizer)
+    pipeline = build_pipeline_for_preview(config, count_tokens=count_tokens)
     effective_pipeline, inactive = pipeline.effective_pipeline_for_record(record)
     contexts = effective_pipeline.contexts_for_record(record)
     messages_by_context = [

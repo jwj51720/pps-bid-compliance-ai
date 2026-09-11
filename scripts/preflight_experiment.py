@@ -38,6 +38,7 @@ def _policy(config: ExperimentConfig) -> dict[str, Any]:
             "reference_routing": config.reference_routing,
             "decision_cards_path": str(config.decision_cards_path) if config.decision_cards_path else None,
             "competition_products_path": str(config.competition_products_path) if config.competition_products_path else None,
+            "competition_product_context_mode": config.competition_product_context_mode,
             "mode": config.prompt_mode,
             "include_normalized_facts": config.include_normalized_facts,
             "v8_composite_merge": {

@@ -1185,20 +1185,50 @@ def build_messages(
 
 
 def format_competition_product_context(
-    record: dict[str, Any], fact: dict[str, Any], active_items: tuple[str, ...] = ITEMS
+    record: dict[str, Any], fact: dict[str, Any], active_items: tuple[str, ...] = ITEMS,
+    context_mode: str = "names_only_v1",
 ) -> str:
     """Translate exact CSV lookup facts into concise, model-facing Korean.
 
     The raw fact keeps codes and source IDs for auditability. This layer does
     not expose implementation state names or identifiers to the model.
     """
+    if context_mode not in {"names_only_v1", "conditions_and_provenance_v2"}:
+        raise ValueError("unknown competition product context mode")
     status = fact["status"]
     if status == "matched":
-        names = ", ".join(product["세부품명"] for product in fact["matched_products"])
-        finding = (
-            "이 공고에서 확인된 세부품명이 대회 제공 중소기업자간 경쟁제품 고시에 "
-            f"등재되어 있습니다: {names}."
-        )
+        if context_mode == "names_only_v1":
+            names = ", ".join(product["세부품명"] for product in fact["matched_products"])
+            finding = (
+                "이 공고에서 확인된 세부품명이 대회 제공 중소기업자간 경쟁제품 고시에 "
+                f"등재되어 있습니다: {names}."
+            )
+        else:
+            rows: list[str] = []
+            for product in fact["matched_products"]:
+                sources: list[str] = []
+                if product.get("metadata_match"):
+                    sources.append("나라장터 세부품명 목록")
+                document_types = sorted({
+                    str(source.get("type", "")).strip()
+                    for source in product.get("document_match_sources", [])
+                    if str(source.get("type", "")).strip()
+                })
+                if document_types:
+                    sources.append("공고 자료 " + "·".join(document_types))
+                source_text = ", ".join(sources) if sources else "출처 미상"
+                condition = str(product.get("특이사항", "")).strip()
+                condition_text = condition if condition else "별도 적용조건 없음"
+                rows.append(
+                    f"- {product['세부품명']} / 확인 위치: {source_text} / "
+                    f"고시 행 적용조건: {condition_text}"
+                )
+            finding = (
+                "다음 세부품명은 공고에서 확인한 exact code와 대회 제공 경쟁제품 고시의 "
+                "행이 일치합니다. 행 일치는 실제 적용 확정이 아니므로, 각 행의 적용조건과 "
+                "이번 공고의 실제 구매대상·금액·규격을 함께 대조하십시오.\n"
+                + "\n".join(rows)
+            )
     elif status == "not_matched":
         raw_value = str(record["meta"].get("세부품명번호목록") or "")
         names = [name.strip() for name in PRODUCT_NAME_WITH_CODE.findall(raw_value)]
@@ -1219,15 +1249,29 @@ def format_competition_product_context(
     competition_items = [item for item in ("v10", "v11", "v13") if item in active_items]
     general_items = [item for item in ("v12", "v14", "v15", "v16", "v17", "v18") if item in active_items]
     if competition_items:
-        guidance.append(
-            f"이 조회 결과는 {'·'.join(competition_items)}의 경쟁제품 적용대상 확인에만 사용합니다. "
-            "정확히 매칭되면 경쟁제품 근거로 사용하고, 정확히 미매칭되면 그 사실을 사용합니다. "
-            "조회 불가만으로 0 또는 1을 정하지 말고, 공고의 물품·참가자격·요구 문구와 금액을 계속 대조하십시오. "
-            "매칭된 경우에도 해당 항목의 다른 조건을 모두 확인해야 합니다."
-        )
+        if context_mode == "conditions_and_provenance_v2":
+            guidance.append(
+                f"이 조회 결과는 {'·'.join(competition_items)}의 경쟁제품 적용대상 확인에만 사용합니다. "
+                "exact-code 일치는 고시의 후보 행을 찾은 사실입니다. 실제 구매대상이 그 행의 "
+                "제품이며 적용조건도 충족하는지 확인된 경우에만 경쟁제품 적용 근거로 사용하십시오. "
+                "조회 불가만으로 0 또는 1을 정하지 말고, 공고의 물품·참가자격·요구 문구와 "
+                "금액·규격을 계속 대조하십시오."
+            )
+        else:
+            guidance.append(
+                f"이 조회 결과는 {'·'.join(competition_items)}의 경쟁제품 적용대상 확인에만 사용합니다. "
+                "정확히 매칭되면 경쟁제품 근거로 사용하고, 정확히 미매칭되면 그 사실을 사용합니다. "
+                "조회 불가만으로 0 또는 1을 정하지 말고, 공고의 물품·참가자격·요구 문구와 금액을 계속 대조하십시오. "
+                "매칭된 경우에도 해당 항목의 다른 조건을 모두 확인해야 합니다."
+            )
     if general_items:
+        qualifier = (
+            "고시 행의 제품·적용조건과 실제 구매대상이 모두 확인된 경쟁제품을"
+            if context_mode == "conditions_and_provenance_v2"
+            else "경쟁제품으로 정확히 확인된 품목을"
+        )
         guidance.append(
-            f"{'·'.join(general_items)} 판단에는 경쟁제품으로 정확히 확인된 품목을 일반제품으로 사용하지 마십시오. "
+            f"{'·'.join(general_items)} 판단에는 {qualifier} 일반제품으로 사용하지 마십시오. "
             "조회 불가는 일반제품 배제 근거가 아니므로, 공고의 물품·금액·제한 또는 예외 문구를 계속 확인하십시오."
         )
     return f"{finding}\n" + " ".join(guidance)

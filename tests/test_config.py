@@ -72,6 +72,7 @@ run: {resume: true, concurrency: 1, local_limit: 20}
     assert loaded.overflow_split_enabled is True
     assert loaded.max_model_len == 32768
     assert loaded.output_reserve_tokens == 2500
+    assert loaded.competition_product_context_mode == "names_only_v1"
 
 
 def test_complete_fact_profile_rejects_a_character_prefix(tmp_path: Path) -> None:

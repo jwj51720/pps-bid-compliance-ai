@@ -109,6 +109,7 @@ def build_grouped_previews(
             absence_detection_strategy=policy["absence_detection_strategy"],
             decision_cards=cards_by_group[group.group_id],
             competition_products=products_by_group[group.group_id],
+            competition_product_context_mode=config.competition_product_context_mode,
             count_tokens=token_counter,
             prompt_budget_tokens=config.max_model_len - config.output_reserve_tokens,
             reference_text=reference_text,

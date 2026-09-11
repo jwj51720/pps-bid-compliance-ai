@@ -908,6 +908,7 @@ def main() -> int:
         absence_detection_strategy=config.absence_detection_strategy,
         decision_cards=decision_cards,
         competition_products=competition_products,
+        competition_product_context_mode=config.competition_product_context_mode,
         count_tokens=_make_token_counter(config, args.mock),
         prompt_budget_tokens=config.max_model_len - config.output_reserve_tokens,
         reference_text=reference_text,

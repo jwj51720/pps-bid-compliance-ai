@@ -25,7 +25,7 @@
 - 모델 prompt에 법령 원문, 조문 발췌, 법령 요약 reference bundle을 별도 문서로 주입하지 않는다. 원문 RAG와 reference-only probe는 audit/과거 실험으로 보존하되 canonical 후보로 승격하지 않는다.
 - 대회 제공 법령·고시·예외는 사람이 source provenance와 함께 검토한 뒤, 각 v의 `decision_cards_v*.json`에 **압축적인 판단 기준**으로만 반영한다. 카드는 적용 전제, 1 조건, 0 조건, 주요 예외·수치·기간을 사람이 읽기 쉬운 문장으로 제공하되 notice-specific 사실이나 dev label을 넣지 않는다.
 - 모델은 법령 전문가로서 카드·공고 자료 원문·나라장터 metadata를 함께 읽고 자율적으로 판단한다. 카드가 제공하는 기준을 정확히 적용하지 않으면 정부계약 컴플라이언스 리스크와 피해가 생길 수 있음을 prompt에서 명확히 알린다. 다만 이 문구는 불확실한 사실을 자동으로 1로 단정하게 해서는 안 된다.
-- 제품의 경쟁제품 여부처럼 organizer CSV의 정확 코드 사실이 필요한 경우에는 기존 friendly product context만 사용한다. 법령 reference text로 대체하거나 제품 상태를 추정하지 않는다.
+- 제품의 경쟁제품 여부처럼 organizer CSV의 정확 코드 사실이 필요한 경우에는 versioned friendly product context만 사용한다. 조건-aware 후보는 매칭 행의 `특이사항`과 코드가 확인된 human-readable 출처를 함께 전달하고, 실제 구매대상·금액·규격과의 적용 관계는 Gemma가 판단한다. Python이 조건을 계산해 제품 상태나 라벨을 확정하지 않는다. 역사적 `names_only_v1` renderer는 과거 실험 재현용으로 유지한다. 법령 reference text로 대체하거나 제품 상태를 추정하지 않는다.
 
 ## Canonical 모델 입력 형태
 

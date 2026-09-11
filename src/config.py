@@ -75,6 +75,7 @@ class ExperimentConfig:
     reference_routing: str | None
     decision_cards_path: Path | None
     competition_products_path: Path | None
+    competition_product_context_mode: str
     prompt_mode: str
     include_normalized_facts: bool
     v8_composite_merge_enabled: bool
@@ -190,6 +191,9 @@ def load_config(path: str | Path) -> ExperimentConfig:
         competition_products_path=(base / str(prompt["competition_products_path"])).resolve()
         if prompt.get("competition_products_path")
         else None,
+        competition_product_context_mode=str(
+            prompt.get("competition_product_context_mode", "names_only_v1")
+        ),
         prompt_mode=str(prompt.get("mode", "baseline")),
         include_normalized_facts=bool(prompt.get("include_normalized_facts", False)),
         v8_composite_merge_enabled=bool(v8_composite_merge.get("enabled", False)),
@@ -302,6 +306,20 @@ def load_config(path: str | Path) -> ExperimentConfig:
         raise ValueError("prompt.item_catalog_style must be minimal or official_references")
     if config.metadata_style not in {"full_json", "official_lines"}:
         raise ValueError("prompt.metadata_style must be full_json or official_lines")
+    if config.competition_product_context_mode not in {
+        "names_only_v1", "conditions_and_provenance_v2"
+    }:
+        raise ValueError(
+            "prompt.competition_product_context_mode must be names_only_v1 or "
+            "conditions_and_provenance_v2"
+        )
+    if (
+        config.competition_product_context_mode == "conditions_and_provenance_v2"
+        and config.competition_products_path is None
+    ):
+        raise ValueError(
+            "conditions_and_provenance_v2 requires competition_products_path"
+        )
     if config.output_mode not in {"labels_and_evidence", "labels_only", "labels_and_anchor", "labels_and_sparse_evidence"}:
         raise ValueError("invalid prompt.output_mode")
     if config.applicability_gate_mode not in {"off", "safe_v1"}:

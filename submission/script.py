@@ -289,6 +289,9 @@ def build_submission_pipeline(
         absence_detection_strategy=PROMPT_CONFIG["absence_detection_strategy"],
         decision_cards=decision_cards,
         competition_products=competition_products,
+        competition_product_context_mode=str(
+            PROMPT_CONFIG.get("competition_product_context_mode", "names_only_v1")
+        ),
         count_tokens=client.count_tokens,
         prompt_budget_tokens=MAX_MODEL_LEN - OUTPUT_RESERVE_TOKENS,
         active_items=active_items,
