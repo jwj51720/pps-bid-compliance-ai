@@ -1,8 +1,8 @@
-# EXP171 submission candidate: source-first navigation plus full-source final
-# V/E. Submission runtime values must match this policy exactly.
+# EXP200 corrected-input submission candidate: source-first navigation plus
+# full-source final V/E. Submission runtime values must match this policy exactly.
 experiment:
-  id: submit-exp171-source-first-full-final-v1
-  derived_data: [decision_cards_v6, competition_products_v1]
+  id: submit-exp200-corrected-input-source-first-v1
+  derived_data: [decision_cards_v10_v6_v7_scope, competition_products_v1]
 
 data:
   root: data/raw/open
@@ -12,7 +12,7 @@ data:
   fast_panel_ids_path: configs/dev_fast_panel_v1.json # default local fast gate; submission does not read this field
 
 output:
-  dir: outputs/submit-exp171-source-first-full-final-v1
+  dir: outputs/submit-exp200-corrected-input-source-first-v1
 
 prompt:
   max_document_chars: null
@@ -23,11 +23,13 @@ prompt:
   layout: plain # options: plain, markdown, markdown_v2
   role_directive: standard # options: standard, compliance_expert_v1, source_first_v1
   item_catalog_style: minimal # options: minimal, official_references
-  metadata_style: official_lines # options: official_lines, full_json
+  metadata_style: official_lines_human_v2 # options: official_lines, official_lines_human_v2, full_json
   output_mode: labels_and_evidence # options: labels_and_evidence, labels_only, labels_and_anchor, labels_and_sparse_evidence
   absence_detection_strategy: per_pass_and # options: per_pass_or, per_pass_and
-  decision_cards_path: data/derived/decision_cards_v6.json
+  decision_cards_path: data/derived/decision_cards_v10_v6_v7_scope.json
   competition_products_path: data/derived/competition_products_v1.json
+  competition_product_context_mode: conditions_and_provenance_v2
+  organizer_input_semantics_mode: anonymization_v1
   max_model_len: 32768
   output_reserve_tokens: 2500
   notice_anchor_chars: 4000

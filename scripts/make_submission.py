@@ -12,7 +12,7 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-STAGING = ROOT / "submission/build/exp171_source_first_full_final_v1"
+STAGING = ROOT / "submission/build/exp200_corrected_input_source_first_v1"
 DIST_DIR = ROOT / "dist"
 
 
@@ -49,6 +49,8 @@ def verify_runtime_policy() -> tuple[dict, dict]:
         "item_catalog_style",
         "metadata_style",
         "output_mode",
+        "competition_product_context_mode",
+        "organizer_input_semantics_mode",
         "mode",
         "include_normalized_facts",
     )
@@ -85,6 +87,33 @@ def verify_runtime_policy() -> tuple[dict, dict]:
         raise ValueError("config.yaml and submission runtime staged_run differ")
     if canonical.get("postprocess", {}) != runtime.get("postprocess", {}):
         raise ValueError("config.yaml and submission runtime postprocess differ")
+    canonical_llm = canonical.get("llm", {})
+    runtime_values = runtime.get("runtime", {})
+    if runtime_values.get("seed") != canonical_llm.get("seed"):
+        raise ValueError("config llm.seed and submission runtime seed differ")
+    if canonical_llm.get("temperature") != 0.0:
+        raise ValueError("submission script requires canonical llm.temperature=0")
+    if canonical_llm.get("max_tokens") != canonical_prompt.get("output_reserve_tokens"):
+        raise ValueError(
+            "canonical llm.max_tokens must equal prompt.output_reserve_tokens"
+        )
+    required_runtime = {
+        "seed", "batch_size", "batch_retries", "gpu_memory_utilization",
+        "quantization_env", "default_quantization",
+    }
+    if set(runtime_values) - {"grouping"} != required_runtime:
+        raise ValueError("submission runtime fields are incomplete or unexpected")
+    if not isinstance(runtime_values["batch_size"], int) or runtime_values["batch_size"] < 1:
+        raise ValueError("submission runtime batch_size must be a positive integer")
+    if not isinstance(runtime_values["batch_retries"], int) or runtime_values["batch_retries"] < 0:
+        raise ValueError("submission runtime batch_retries must be a non-negative integer")
+    gpu_memory = runtime_values["gpu_memory_utilization"]
+    if not isinstance(gpu_memory, (int, float)) or not 0 < gpu_memory <= 1:
+        raise ValueError("submission runtime gpu_memory_utilization must be in (0, 1]")
+    if runtime_values["quantization_env"] != "PPS_QUANT":
+        raise ValueError("submission quantization environment must be PPS_QUANT")
+    if runtime_values["default_quantization"] != "int8_per_channel_weight_only":
+        raise ValueError("submission default quantization differs from organizer baseline")
     return canonical, runtime
 
 
