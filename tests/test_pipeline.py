@@ -22,6 +22,7 @@ from src.pipeline import (
     parse_fact_inventory_response,
     parse_procedure_fact_response,
     parse_timeline_fact_response,
+    parse_v23_proof_judgment_response,
     parse_pass_response,
     parse_triage_response,
     postprocess_judgment,
@@ -380,6 +381,87 @@ def test_source_first_role_directive_only_adds_reading_workflow() -> None:
     assert "공고 자료 원문에서 실제 제한·요구·불일치" in prompt
     assert "한 문구를 비슷한 여러 항목의 위반으로 넓혀 해석하지 말고" in prompt
     assert "법령 참조" not in prompt
+
+
+def test_v23_specialist_role_requires_relationship_gates_without_new_threshold() -> None:
+    item_table = {"v23": {"항목명": "현장설명회", "비고": ""}}
+    cards = {"v23": {"item_name": "현장설명회", "prompt_text": "기존 10/20/40일 기준"}}
+    prompt = build_system_prompt(
+        item_table, decision_cards=cards, active_items=("v23",),
+        profile="complete_fact_subset_v1", role_directive="v23_specialist_v1",
+    )
+    assert "[v23 전담 최종 판정 순서]" in prompt
+    assert "가격입찰서·전자입찰서 제출, 개찰, 평가, 계약 날짜만으로는" in prompt
+    assert "기존 10/20/40일 기준" in prompt
+    assert "새" not in prompt[prompt.index("[v23 전담 최종 판정 순서]"):prompt.index("[v23 전담 최종 판정 순서]") + 700]
+
+
+def test_v23_specialist_is_eligible_only_and_owns_only_final_v23_field() -> None:
+    item_table = {
+        item: {"항목명": item, "부재탐지": item in {"v10", "v11", "v16", "v18", "v20"},
+               "국가계약법": "", "지방계약법": "", "비고": ""}
+        for item in ITEMS
+    }
+    cards = {item: {"item_name": item, "prompt_text": "1 조건: A. 0 조건: B."} for item in ITEMS}
+    pipeline = BaselinePipeline(
+        item_table=item_table, client=MockClient(), max_document_chars=None,
+        context_strategy="single", overflow_split_enabled=True,
+        count_tokens=lambda messages: len(messages), prompt_budget_tokens=100,
+        decision_cards=cards, prompt_profile="complete_fact_v1",
+        metadata_style="official_lines", output_mode="labels_and_evidence",
+    )
+    eligible = _record("공고일: 2026. 1. 1. 제안서 제출: 2026. 1. 2.")
+    eligible["meta"] = {"적용계약법": "지방계약법", "낙찰방법": "협상에의한계약"}
+    result = pipeline.predict_with_fact_inventory_v23_specialist_final(eligible)
+    assert result.eligible and result.specialist is not None
+    assert not result.specialist_recovery_used
+    assert set(result.final.judgment) == set(ITEMS)
+    assert "[v23 전담 최종 판정 순서]" in result.specialist_messages_by_context[0][0]["content"]
+    assert "지정 항목(v23)" in result.specialist_messages_by_context[0][0]["content"]
+
+    ineligible = _record()
+    ineligible["meta"] = {"적용계약법": "국가계약법", "낙찰방법": "협상에의한계약"}
+    skipped = pipeline.predict_with_fact_inventory_v23_specialist_final(ineligible)
+    assert not skipped.eligible and skipped.specialist is None
+    assert skipped.final.judgment == skipped.base.final.judgment
+
+
+def test_v23_proof_specialist_keeps_proof_observations_separate_from_model_label() -> None:
+    payload = {
+        "지방협상_근거": "지방 협상계약", "공고일_근거": "공고일: 2026. 1. 1.",
+        "종료일_근거": "제안서 제출: 2026. 1. 2.", "종료일_역할": "제안서마감",
+        "긴급재공고_근거": None,
+        "판정": {"위반여부": 1, "근거문구": "제안서 제출: 2026. 1. 2."},
+    }
+    proof, judgment = parse_v23_proof_judgment_response(json.dumps(payload, ensure_ascii=False))
+    assert proof["종료일_역할"] == "제안서마감"
+    assert judgment == {"v23": {"위반여부": 1, "근거문구": "제안서 제출: 2026. 1. 2."}}
+    payload["종료일_역할"] = "가격입찰"
+    with pytest.raises(PredictionError, match="종료일_역할"):
+        parse_v23_proof_judgment_response(json.dumps(payload, ensure_ascii=False))
+
+
+def test_v23_proof_specialist_mock_has_complete_proof_contract() -> None:
+    item_table = {
+        item: {"항목명": item, "부재탐지": item in {"v10", "v11", "v16", "v18", "v20"},
+               "국가계약법": "", "지방계약법": "", "비고": ""}
+        for item in ITEMS
+    }
+    cards = {item: {"item_name": item, "prompt_text": "1 조건: A. 0 조건: B."} for item in ITEMS}
+    pipeline = BaselinePipeline(
+        item_table=item_table, client=MockClient(), max_document_chars=None,
+        context_strategy="single", overflow_split_enabled=True,
+        count_tokens=lambda messages: len(messages), prompt_budget_tokens=100,
+        decision_cards=cards, prompt_profile="complete_fact_v1",
+        metadata_style="official_lines", output_mode="labels_and_evidence",
+    )
+    record = _record("공고일: 2026. 1. 1. 제안서 제출: 2026. 1. 2.")
+    record["meta"] = {"적용계약법": "지방계약법", "낙찰방법": "협상에의한계약"}
+    result = pipeline.predict_with_fact_inventory_v23_proof_specialist_final(record)
+    assert result.eligible and result.proof_mode and result.proof is not None
+    assert result.proof["per_pass"][0]["종료일_역할"] == "없음"
+    assert not result.specialist_recovery_used
+    assert "[v23 proof-carrying 출력 형식]" in result.specialist_messages_by_context[0][0]["content"]
 
 
 def test_absence_only_group_has_its_own_workflow_and_never_requests_evidence() -> None:

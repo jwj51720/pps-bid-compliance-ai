@@ -1,0 +1,12 @@
+# EXP191: EXP179 plus an eligible-only model-owned v23 proof-carrying V/E final.
+inherits: config.exp179-source-first-full-final-repeat-fast-panel-c4.yaml
+experiment:
+  id: exp-191-v23-proof-specialist-fast-panel-c4
+  base_config: configs/config.exp179-source-first-full-final-repeat-fast-panel-c4.yaml
+  allowed_policy_changes: [staged_run.mode]
+  derived_data: [decision_cards_v6, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: candidate
+output:
+  dir: outputs/exp-191-v23-proof-specialist-fast-panel-c4
+staged_run:
+  mode: fact_inventory_full_final_v23_proof_specialist_v1

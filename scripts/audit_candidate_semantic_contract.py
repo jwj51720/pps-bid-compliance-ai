@@ -44,6 +44,7 @@ from src.prompt import (  # noqa: E402
     build_source_only_fact_messages,
     build_timeline_fact_system_prompt,
     build_item_fact_system_prompt,
+    build_v23_proof_carrying_system_prompt,
     build_messages,
     build_official_baseline_context,
 )
@@ -143,6 +144,7 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
     sample_gated_items: dict[str, dict[str, str]] = {}
     source_stage_messages: dict[str, list[list[dict[str, str]]]] = {}
     timeline_stage_messages: dict[str, list[list[dict[str, str]]]] = {}
+    v23_specialist_messages: dict[str, list[list[dict[str, str]]]] = {}
     sample_previews: dict[str, list[dict[str, Any]]] = {}
     for record_id in review_ids:
         if grouped:
@@ -173,6 +175,8 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                 "fact_inventory_full_final_v3",
                 "fact_inventory_full_final_v4",
                 "fact_inventory_full_final_timeline_v23",
+                "fact_inventory_full_final_v23_specialist_v1",
+                "fact_inventory_full_final_v23_proof_specialist_v1",
                 "fact_inventory_full_final_source_only_v1",
                 "procedure_inventory_full_final_v1",
             }:
@@ -214,7 +218,7 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                     for context in pipeline.contexts_for_record(by_id[record_id])
                 ]
                 final_context = (
-                    None if staged_mode in {"fact_inventory_full_final_v1", "fact_inventory_full_final_v2", "fact_inventory_full_final_v3", "fact_inventory_full_final_v4", "fact_inventory_full_final_timeline_v23", "fact_inventory_full_final_source_only_v1", "procedure_inventory_full_final_v1"}
+                    None if staged_mode in {"fact_inventory_full_final_v1", "fact_inventory_full_final_v2", "fact_inventory_full_final_v3", "fact_inventory_full_final_v4", "fact_inventory_full_final_timeline_v23", "fact_inventory_full_final_v23_specialist_v1", "fact_inventory_full_final_v23_proof_specialist_v1", "fact_inventory_full_final_source_only_v1", "procedure_inventory_full_final_v1"}
                     else build_official_baseline_context(visible, 4000)
                 )
                 messages = (
@@ -264,6 +268,24 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                     messages = append_timeline_fact_navigation(
                         messages, {role: () for role in TIMELINE_FACT_ROLES}
                     )
+                if (
+                    staged_mode in {"fact_inventory_full_final_v23_specialist_v1", "fact_inventory_full_final_v23_proof_specialist_v1"}
+                    and str(meta.get("적용계약법", "")) == "지방계약법"
+                    and str(meta.get("낙찰방법", "")) == "협상에의한계약"
+                ):
+                    specialist = pipeline._subset_pipeline(
+                        ("v23",), prompt_profile="complete_fact_subset_v1",
+                        role_directive="v23_specialist_v1",
+                    )
+                    v23_specialist_messages[record_id] = []
+                    for context in specialist.contexts_for_record(by_id[record_id]):
+                        specialist_messages = specialist.messages_for_context(by_id[record_id], context)
+                        if staged_mode == "fact_inventory_full_final_v23_proof_specialist_v1":
+                            specialist_messages = [dict(value) for value in specialist_messages]
+                            specialist_messages[0]["content"] = build_v23_proof_carrying_system_prompt(
+                                specialist_messages[0]["content"]
+                            )
+                        v23_specialist_messages[record_id].append(specialist_messages)
             elif staged_mode == "vonly_draft_full_final_v1":
                 draft_pipeline = pipeline._labels_only_draft_pipeline()
                 source_stage_messages[record_id] = [
@@ -322,6 +344,8 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                 "fact_inventory_full_final_v3",
                 "fact_inventory_full_final_v4",
                 "fact_inventory_full_final_timeline_v23",
+                "fact_inventory_full_final_v23_specialist_v1",
+                "fact_inventory_full_final_v23_proof_specialist_v1",
                 "fact_inventory_full_final_source_only_v1",
                 "procedure_inventory_full_final_v1",
                 "vonly_draft_full_final_v1",
@@ -340,6 +364,13 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                         rendered += (
                             f"\n### Source pack {index}\n\n```text\n{source_messages[0]['content']}\n```\n\n"
                             f"```text\n{source_messages[1]['content']}\n```\n"
+                        )
+                if record_id in v23_specialist_messages:
+                    rendered += "\n## v23 specialist final messages\n"
+                    for index, specialist_messages in enumerate(v23_specialist_messages[record_id], 1):
+                        rendered += (
+                            f"\n### Source pack {index}\n\n```text\n{specialist_messages[0]['content']}\n```\n\n"
+                            f"```text\n{specialist_messages[1]['content']}\n```\n"
                         )
             rendered_dir.joinpath(f"{record_id.lower()}.final.messages.md").write_text(rendered, encoding="utf-8")
 
@@ -429,6 +460,8 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                     "fact_inventory_full_final_v3",
                     "fact_inventory_full_final_v4",
                     "fact_inventory_full_final_timeline_v23",
+                    "fact_inventory_full_final_v23_specialist_v1",
+                    "fact_inventory_full_final_v23_proof_specialist_v1",
                     "fact_inventory_full_final_source_only_v1",
                     "procedure_inventory_full_final_v1",
                     "vonly_draft_full_final_v1",

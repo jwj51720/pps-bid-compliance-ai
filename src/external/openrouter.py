@@ -183,6 +183,15 @@ class MockClient:
         if locator:
             content = json.dumps({item: None for item in properties}, ensure_ascii=False)
             return Completion(content=content, model=self.model, latency_seconds=0.0, usage={})
+        if "판정" in properties and "종료일_역할" in properties:
+            payload = {
+                "지방협상_근거": None, "공고일_근거": None,
+                "종료일_근거": None, "종료일_역할": "없음",
+                "긴급재공고_근거": None,
+                "판정": {"위반여부": 0, "근거문구": None},
+            }
+            content = json.dumps(payload, ensure_ascii=False)
+            return Completion(content=content, model=self.model, latency_seconds=0.0, usage={})
         sparse = "판정" in properties and "발췌" in properties
         label_properties = properties["판정"]["properties"] if sparse else properties
         first_item = next(iter(label_properties))

@@ -49,6 +49,7 @@ from src.pipeline import (
     TwoPassAdjudicationPrediction,
     VOnlyDraftFullFinalPrediction,
     VOnlyConsensusPrediction,
+    V23SpecialistFinalPrediction,
     judgment_to_row,
 )
 from src.submission import validate_submission, write_submission
@@ -134,7 +135,7 @@ def _usage_number(value: Any) -> float:
 
 
 def _prediction_to_json(
-    prediction: Prediction | TwoPassAdjudicationPrediction | VOnlyDraftFullFinalPrediction | VOnlyConsensusPrediction | TriageThenStrictPrediction | LocatorThenFinalPrediction | InventoryThenFinalPrediction | FactInventoryThenFinalPrediction | FactInventoryFullFinalPrediction,
+    prediction: Prediction | TwoPassAdjudicationPrediction | VOnlyDraftFullFinalPrediction | VOnlyConsensusPrediction | TriageThenStrictPrediction | LocatorThenFinalPrediction | InventoryThenFinalPrediction | FactInventoryThenFinalPrediction | FactInventoryFullFinalPrediction | V23SpecialistFinalPrediction,
 ) -> dict[str, Any]:
     if isinstance(prediction, VOnlyConsensusPrediction):
         final = prediction.final
@@ -194,6 +195,59 @@ def _prediction_to_json(
                     "judgment": final.judgment,
                 },
                 "final_recovery_used": prediction.final_recovery_used,
+            },
+        }
+    if isinstance(prediction, V23SpecialistFinalPrediction):
+        base = prediction.base
+        final = prediction.final
+        stages = [*base.inventory_usage, *base.timeline_usage, base.final.usage]
+        if prediction.specialist is not None:
+            stages.append(prediction.specialist.usage)
+        return {
+            "id": final.record_id, "judgment": final.judgment,
+            "row": judgment_to_row(final.record_id, final.judgment),
+            "raw_response": final.raw_response, "model": final.model,
+            "latency_seconds": (
+                sum(base.inventory_latency_seconds) + sum(base.timeline_latency_seconds)
+                + base.final.latency_seconds
+                + (prediction.specialist.latency_seconds if prediction.specialist else 0.0)
+            ),
+            "usage": {key: sum(_usage_number(stage.get(key, 0)) for stage in stages)
+                      for key in set().union(*(set(stage) for stage in stages))},
+            "finish_reason": final.finish_reason,
+            "pass_judgments": list(final.pass_judgments),
+            "v8_observations": list(final.v8_observations),
+            "parse_errors": list(final.parse_errors),
+            "staged_run": {
+                "mode": (
+                    "fact_inventory_full_final_v23_proof_specialist_v1"
+                    if prediction.proof_mode else "fact_inventory_full_final_v23_specialist_v1"
+                ),
+                "inventory": {
+                    "raw_responses": list(base.inventory_raw_responses),
+                    "by_category": {key: list(value) for key, value in base.inventory_by_category.items()},
+                    "parse_errors": list(base.inventory_parse_errors),
+                    "messages": [list(value) for value in base.inventory_messages],
+                },
+                "normal_final": {
+                    "messages_by_context": [list(value) for value in base.final_messages_by_context],
+                    "judgment": base.final.judgment,
+                },
+                "v23_specialist": (
+                    {"judgment": prediction.specialist.judgment,
+                     "raw_response": prediction.specialist.raw_response,
+                     "usage": prediction.specialist.usage,
+                     "latency_seconds": prediction.specialist.latency_seconds,
+                     "parse_errors": list(prediction.specialist.parse_errors),
+                     "proof": prediction.proof,
+                     "messages_by_context": [list(value) for value in prediction.specialist_messages_by_context]}
+                    if prediction.specialist is not None else None
+                ),
+                "eligible": prediction.eligible,
+                "proof_mode": prediction.proof_mode,
+                "specialist_recovery_used": prediction.specialist_recovery_used,
+                "final": {"judgment": final.judgment},
+                "final_recovery_used": base.final_recovery_used,
             },
         }
     if isinstance(prediction, FactInventoryFullFinalPrediction):
@@ -498,6 +552,8 @@ def _write_staged_input_examples_markdown(
             "fact_inventory_full_final_v2",
             "fact_inventory_full_final_v3",
             "fact_inventory_full_final_v4",
+            "fact_inventory_full_final_v23_specialist_v1",
+            "fact_inventory_full_final_v23_proof_specialist_v1",
             "fact_inventory_full_final_source_only_v1",
             "item_inventory_full_final_v1",
         }
@@ -588,6 +644,14 @@ def _write_staged_input_examples_markdown(
                     "```",
                     "",
                 ])
+        if mode in {"fact_inventory_full_final_v23_specialist_v1", "fact_inventory_full_final_v23_proof_specialist_v1"}:
+            specialist = staged.get("v23_specialist") or {}
+            lines.extend(["### v23 specialist final owner", ""])
+            for message in flatten_message_packs(specialist.get("messages_by_context", [])):
+                lines.extend([
+                    f"#### {message.get('role', 'unknown')}", "", "```text",
+                    str(message.get("content", "")), "```", "",
+                ])
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -671,7 +735,9 @@ def _predict_with_retries(
     item_inventory_full_final: bool = False,
     vonly_draft_full_final: bool = False,
     vonly_consensus: bool = False,
-) -> tuple[Prediction | TwoPassAdjudicationPrediction | VOnlyDraftFullFinalPrediction | VOnlyConsensusPrediction | TriageThenStrictPrediction | LocatorThenFinalPrediction | InventoryThenFinalPrediction | FactInventoryThenFinalPrediction | None, list[dict[str, Any]]]:
+    v23_specialist_final: bool = False,
+    v23_proof_specialist_final: bool = False,
+) -> tuple[Prediction | TwoPassAdjudicationPrediction | VOnlyDraftFullFinalPrediction | VOnlyConsensusPrediction | TriageThenStrictPrediction | LocatorThenFinalPrediction | InventoryThenFinalPrediction | FactInventoryThenFinalPrediction | V23SpecialistFinalPrediction | None, list[dict[str, Any]]]:
     failed_attempts: list[dict[str, Any]] = []
     for attempt in range(1, attempts + 1):
         try:
@@ -701,6 +767,20 @@ def _predict_with_retries(
                 if vonly_draft_full_final
                 else pipeline.predict_with_vonly_consensus(record)
                 if vonly_consensus
+                else pipeline.predict_with_fact_inventory_v23_specialist_final(
+                    record,
+                    inventory_max_items=fact_inventory_max_items,
+                    inventory_position=fact_inventory_position,
+                    inventory_categories=fact_inventory_categories,
+                )
+                if v23_specialist_final
+                else pipeline.predict_with_fact_inventory_v23_proof_specialist_final(
+                    record,
+                    inventory_max_items=fact_inventory_max_items,
+                    inventory_position=fact_inventory_position,
+                    inventory_categories=fact_inventory_categories,
+                )
+                if v23_proof_specialist_final
                 else pipeline.predict(record)
             )
             return prediction, failed_attempts
@@ -955,6 +1035,8 @@ def main() -> int:
                     config.staged_run is not None and config.staged_run.mode == "item_inventory_full_final_v1",
                     config.staged_run is not None and config.staged_run.mode == "vonly_draft_full_final_v1",
                     config.staged_run is not None and config.staged_run.mode == "vonly_consensus_full_source_v1",
+                    config.staged_run is not None and config.staged_run.mode == "fact_inventory_full_final_v23_specialist_v1",
+                    config.staged_run is not None and config.staged_run.mode == "fact_inventory_full_final_v23_proof_specialist_v1",
                 ): (position, record)
                 for position, record in pending
             }

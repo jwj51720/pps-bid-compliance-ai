@@ -36,6 +36,7 @@ from src.prompt import (
     build_item_fact_system_prompt,
     build_source_only_fact_messages,
     build_timeline_fact_system_prompt,
+    build_v23_proof_carrying_system_prompt,
     build_split_document_contexts,
     build_system_prompt,
     build_triage_system_prompt,
@@ -59,6 +60,7 @@ from src.schema import (
     item_fact_schema,
     procedure_fact_schema,
     timeline_fact_schema,
+    v23_proof_judgment_schema,
     triage_schema,
 )
 
@@ -236,6 +238,25 @@ class FactInventoryFullFinalPrediction:
     procedure_navigation: bool = False
     source_only_inventory: bool = False
     item_navigation: bool = False
+
+
+@dataclass(frozen=True)
+class V23SpecialistFinalPrediction:
+    """EXP190: one eligible-only model owner replaces v23 after full final.
+
+    The specialist is an independent V/E model call, not a deterministic
+    correction.  It sees complete original source and can fail safely back to
+    the normal final's v23 field.
+    """
+
+    base: FactInventoryFullFinalPrediction
+    specialist: Prediction | None
+    final: Prediction
+    eligible: bool
+    specialist_messages_by_context: tuple[tuple[dict[str, str], ...], ...] = ()
+    specialist_recovery_used: bool = False
+    proof: dict[str, Any] | None = None
+    proof_mode: bool = False
 
 
 def extract_json(text: str) -> Any:
@@ -505,6 +526,27 @@ def parse_timeline_fact_response(text: str) -> dict[str, list[str]]:
             raise PredictionError(f"{role} timeline value must be up to 2 strings")
         result[role] = values
     return result
+
+
+def parse_v23_proof_judgment_response(
+    text: str,
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    """Parse EXP191's source proof fields and model-owned v23 V/E."""
+    payload = extract_json(text)
+    fields = {
+        "지방협상_근거", "공고일_근거", "종료일_근거", "종료일_역할",
+        "긴급재공고_근거", "판정",
+    }
+    if not isinstance(payload, dict) or set(payload) != fields:
+        raise PredictionError("v23 proof response keys do not match contract")
+    for field in fields - {"종료일_역할", "판정"}:
+        if payload[field] is not None and not isinstance(payload[field], str):
+            raise PredictionError(f"{field} must be a string or null")
+    if payload["종료일_역할"] not in {"현장설명회", "제안서마감", "없음"}:
+        raise PredictionError("v23 종료일_역할 is invalid")
+    proof = {field: payload[field] for field in fields - {"판정"}}
+    judgment = _parse_judgment_payload({"v23": payload["판정"]}, ("v23",))
+    return proof, judgment
 
 
 def parse_procedure_fact_response(text: str) -> dict[str, list[str]]:
@@ -1001,6 +1043,7 @@ class BaselinePipeline:
 
     def _subset_pipeline(
         self, active_items: tuple[str, ...], *, prompt_profile: str,
+        role_directive: str | None = None,
     ) -> "BaselinePipeline":
         """Create the B-stage final owner without carrying a frozen override.
 
@@ -1032,7 +1075,7 @@ class BaselinePipeline:
             active_items=active_items,
             prompt_layout=self.prompt_layout,
             prompt_profile=prompt_profile,
-            role_directive=self.role_directive,
+            role_directive=role_directive or self.role_directive,
             item_catalog_style=self.item_catalog_style,
             metadata_style=self.metadata_style,
             output_mode=self.output_mode,
@@ -1046,6 +1089,158 @@ class BaselinePipeline:
         """Create the triage final owner with the official subset rendering."""
         return self._subset_pipeline(
             active_items, prompt_profile="official_baseline_subset_v1",
+        )
+
+    def predict_with_fact_inventory_v23_specialist_final(
+        self, record: dict[str, Any], inventory_max_items: int = 3,
+        inventory_position: str = "after_source",
+        inventory_categories: tuple[str, ...] = FACT_INVENTORY_CATEGORIES,
+    ) -> V23SpecialistFinalPrediction:
+        """Keep EXP179 final, then let a v23-only model own eligible v23.
+
+        Eligibility uses only the existing organizer metadata applicability
+        facts.  No specialist output is interpreted by Python: a well-formed
+        specialist V/E result replaces precisely its own v23/e23 field.
+        """
+        base = self.predict_with_fact_inventory_then_full_final(
+            record,
+            inventory_max_items=inventory_max_items,
+            inventory_position=inventory_position,
+            inventory_categories=inventory_categories,
+        )
+        meta = record.get("meta", {})
+        eligible = (
+            str(meta.get("적용계약법", "")) == "지방계약법"
+            and str(meta.get("낙찰방법", "")) == "협상에의한계약"
+        )
+        if not eligible:
+            return V23SpecialistFinalPrediction(
+                base=base, specialist=None, final=base.final, eligible=False,
+            )
+
+        specialist_pipeline = self._subset_pipeline(
+            ("v23",), prompt_profile="complete_fact_subset_v1",
+            role_directive="v23_specialist_v1",
+        )
+        contexts = specialist_pipeline.contexts_for_record(record)
+        messages = tuple(
+            tuple(specialist_pipeline.messages_for_context(record, context))
+            for context in contexts
+        )
+        specialist = specialist_pipeline.predict(record)
+        if specialist.parse_errors:
+            return V23SpecialistFinalPrediction(
+                base=base, specialist=specialist, final=base.final, eligible=True,
+                specialist_messages_by_context=messages, specialist_recovery_used=True,
+            )
+
+        judgment = {item: dict(value) for item, value in base.final.judgment.items()}
+        judgment["v23"] = dict(specialist.judgment["v23"])
+        final = replace(base.final, judgment=judgment)
+        return V23SpecialistFinalPrediction(
+            base=base, specialist=specialist, final=final, eligible=True,
+            specialist_messages_by_context=messages,
+        )
+
+    def predict_with_fact_inventory_v23_proof_specialist_final(
+        self, record: dict[str, Any], inventory_max_items: int = 3,
+        inventory_position: str = "after_source",
+        inventory_categories: tuple[str, ...] = FACT_INVENTORY_CATEGORIES,
+    ) -> V23SpecialistFinalPrediction:
+        """EXP191: model emits source proof fields and owns v23 V/E.
+
+        Proof fields are retained only for audit. Their presence, absence, and
+        consistency never cause Python to alter the model's final label.
+        """
+        base = self.predict_with_fact_inventory_then_full_final(
+            record,
+            inventory_max_items=inventory_max_items,
+            inventory_position=inventory_position,
+            inventory_categories=inventory_categories,
+        )
+        meta = record.get("meta", {})
+        eligible = (
+            str(meta.get("적용계약법", "")) == "지방계약법"
+            and str(meta.get("낙찰방법", "")) == "협상에의한계약"
+        )
+        if not eligible:
+            return V23SpecialistFinalPrediction(
+                base=base, specialist=None, final=base.final, eligible=False,
+                proof_mode=True,
+            )
+
+        specialist_pipeline = self._subset_pipeline(
+            ("v23",), prompt_profile="complete_fact_subset_v1",
+            role_directive="v23_specialist_v1",
+        )
+        contexts = specialist_pipeline.contexts_for_record(record)
+        messages: list[tuple[dict[str, str], ...]] = []
+        completions: list[Any] = []
+        parsed: list[tuple[dict[str, Any], dict[str, dict[str, Any]]]] = []
+        try:
+            for context in contexts:
+                raw_messages = specialist_pipeline.messages_for_context(record, context)
+                proof_messages = [dict(message) for message in raw_messages]
+                proof_messages[0]["content"] = build_v23_proof_carrying_system_prompt(
+                    proof_messages[0]["content"]
+                )
+                messages.append(tuple(proof_messages))
+                completion = self.client.complete(proof_messages, v23_proof_judgment_schema())
+                completions.append(completion)
+                parsed.append(parse_v23_proof_judgment_response(completion.content))
+        except PredictionError:
+            # The proof schema is one atomic transport contract. Do not let a
+            # partial proof turn into a synthetic label; retain normal v23.
+            specialist = Prediction(
+                record_id=record["id"], judgment={"v23": dict(base.final.judgment["v23"])},
+                raw_response=completions[-1].content if completions else "", model=(
+                    completions[-1].model if completions else ""
+                ), latency_seconds=sum(value.latency_seconds for value in completions),
+                usage=_combined_usage(completions),
+                finish_reason=completions[-1].finish_reason if completions else None,
+                parse_errors=({"error": "v23 proof payload parse failure"},),
+            )
+            return V23SpecialistFinalPrediction(
+                base=base, specialist=specialist, final=base.final, eligible=True,
+                specialist_messages_by_context=tuple(messages),
+                specialist_recovery_used=True, proof_mode=True,
+            )
+
+        source = full_document_text(self._visible_record(record))
+        proofs = []
+        judgments = []
+        for proof, parsed_judgment in parsed:
+            resolved = {
+                field: (_clean_evidence(value, source) if isinstance(value, str) else None)
+                for field, value in proof.items() if field != "종료일_역할"
+            }
+            resolved["종료일_역할"] = proof["종료일_역할"]
+            proofs.append(resolved)
+            judgments.append(parsed_judgment)
+        merged = _combine_pass_judgments(
+            judgments, self.absence_detection_strategy, ("v23",)
+        )
+        cleaned = postprocess_judgment(
+            merged, record, source_text=source,
+            require_evidence_for_positive=self.strict_document_evidence,
+            items=("v23",), output_mode="labels_and_evidence",
+        )
+        specialist = Prediction(
+            record_id=record["id"], judgment=cleaned,
+            raw_response="\n".join(value.content for value in completions),
+            model=completions[0].model,
+            latency_seconds=sum(value.latency_seconds for value in completions),
+            usage=_combined_usage(completions), finish_reason=completions[-1].finish_reason,
+            pass_judgments=tuple(judgments),
+        )
+        judgment = {item: dict(value) for item, value in base.final.judgment.items()}
+        judgment["v23"] = dict(specialist.judgment["v23"])
+        final = replace(base.final, judgment=judgment)
+        return V23SpecialistFinalPrediction(
+            base=base, specialist=specialist, final=final, eligible=True,
+            specialist_messages_by_context=tuple(messages), proof={
+                "per_pass": proofs,
+            }, proof_mode=True,
         )
 
     def predict_with_triage_then_strict(

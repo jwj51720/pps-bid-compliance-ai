@@ -1,0 +1,13 @@
+# EXP190: retain EXP179 source-first/full-source final and add one model-owned
+# v23 V/E specialist only for local negotiated notices. See plan for gates.
+inherits: config.exp179-source-first-full-final-repeat-fast-panel-c4.yaml
+experiment:
+  id: exp-190-v23-specialist-final-fast-panel-c4
+  base_config: configs/config.exp179-source-first-full-final-repeat-fast-panel-c4.yaml
+  allowed_policy_changes: [staged_run.mode]
+  derived_data: [decision_cards_v6, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: candidate
+output:
+  dir: outputs/exp-190-v23-specialist-final-fast-panel-c4
+staged_run:
+  mode: fact_inventory_full_final_v23_specialist_v1

@@ -359,6 +359,44 @@ SOURCE_FIRST_WORKFLOW_V1 = """
 4. 확인되지 않은 사실·문서 밖 사유는 보충하지 않는다. 판단이 불명확하면 0으로 둔다.
 """
 
+V23_SPECIALIST_WORKFLOW_V1 = """
+
+[v23 전담 최종 판정 순서]
+이 호출은 v23만 최종 판정한다. 날짜가 있다는 사실만으로 1을 내지 않는다.
+1. 제공된 메타와 공고 원문으로 지방계약의 협상계약인지 먼저 확인한다. 아니거나 불명확하면 0이다.
+2. 공고 원문에서 공고일과, 현장/사업설명회 일시 또는 제안서 제출·접수 마감일을 각각 찾는다.
+   가격입찰서·전자입찰서 제출, 개찰, 평가, 계약 날짜만으로는 이 항목의 종료일이 아니며 0이다.
+3. 제공된 금액 사실과 카드의 기존 10/20/40일 기준을 대조한다. 긴급공고·재공고의 실제 문구도 확인한다.
+4. 공고일에서 적격 설명회일 또는 제안서 마감일까지의 실제 기간이 해당 기준보다 짧은 것이 모두 확인될 때만 1이다.
+   어느 날짜 역할·계약유형·금액구간·예외가 불명확하면 0이다.
+5. 1이면 위 관계의 실제 공고 원문 연속 문구를 근거문구로 복사한다. 복사할 수 없으면 0이다.
+"""
+
+V23_PROOF_OUTPUT_CONTRACT = """
+
+[v23 proof-carrying 출력 형식]
+설명·Markdown 없이 JSON 객체 하나를 낸다. 다음 여섯 키를 모두 낸다.
+- `지방협상_근거`: 지방 협상계약임을 보여 주는 공고 원문 연속 문구 또는 null
+- `공고일_근거`: 공고 게시·공고일의 공고 원문 연속 문구 또는 null
+- `종료일_근거`: 적격 현장/사업설명회 또는 제안서 제출·접수 마감의 공고 원문 연속 문구 또는 null
+- `종료일_역할`: `현장설명회`, `제안서마감`, `없음` 중 하나. 가격입찰·전자입찰·개찰·평가·계약 날짜뿐이면 반드시 `없음`이다.
+- `긴급재공고_근거`: 긴급공고·재공고의 공고 원문 연속 문구 또는 null
+- `판정`: `{\"위반여부\": 0 또는 1, \"근거문구\": 원문 문자열 또는 null}`
+
+위 proof 필드는 사실 관찰이고 `판정`이 모델의 최종 v23 V/E다. proof가 비어 있거나 불명확하면
+카드의 0 조건에 따라 `판정.위반여부`를 0으로 둔다. 1이면 `판정.근거문구`도 공고 원문의 변경 없는
+연속 문자열이어야 한다.
+"""
+
+
+def build_v23_proof_carrying_system_prompt(base_system_prompt: str) -> str:
+    """Replace ordinary V/E serialization with EXP191's proof JSON contract."""
+    marker = "\n출력은 JSON"
+    index = base_system_prompt.rfind(marker)
+    if index < 0:
+        raise ValueError("v23 proof contract requires an ordinary JSON output tail")
+    return base_system_prompt[:index] + V23_PROOF_OUTPUT_CONTRACT
+
 SYSTEM_TAIL = """출력은 JSON 객체 하나로만 작성한다. 키는 v1~v24이고 값은
 {\"위반여부\": 0 또는 1, \"근거문구\": 문자열 또는 null} 형식이다. 설명이나 머리말을 추가하지 않는다."""
 
@@ -524,15 +562,17 @@ def build_system_prompt(
     item_catalog_style: str = "minimal",
     output_mode: str = "labels_and_evidence",
 ) -> str:
-    if role_directive not in {"standard", "compliance_expert_v1", "source_first_v1"}:
+    if role_directive not in {"standard", "compliance_expert_v1", "source_first_v1", "v23_specialist_v1"}:
         raise ValueError(
-            "role_directive must be standard, compliance_expert_v1, or source_first_v1"
+            "role_directive must be standard, compliance_expert_v1, source_first_v1, or v23_specialist_v1"
         )
     duty_text = (
         COMPLIANCE_EXPERT_DUTY_V1
         if role_directive == "compliance_expert_v1"
         else SOURCE_FIRST_WORKFLOW_V1
         if role_directive == "source_first_v1"
+        else V23_SPECIALIST_WORKFLOW_V1
+        if role_directive == "v23_specialist_v1"
         else ""
     )
     if profile in {

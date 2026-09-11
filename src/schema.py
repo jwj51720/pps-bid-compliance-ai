@@ -229,6 +229,34 @@ def timeline_fact_schema() -> dict[str, Any]:
     }
 
 
+def v23_proof_judgment_schema() -> dict[str, Any]:
+    """EXP191's model-owned v23 V/E plus observable source proof fields."""
+    source_or_null = {"type": ["string", "null"], "maxLength": 500}
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": [
+            "지방협상_근거", "공고일_근거", "종료일_근거", "종료일_역할",
+            "긴급재공고_근거", "판정",
+        ],
+        "properties": {
+            "지방협상_근거": source_or_null,
+            "공고일_근거": source_or_null,
+            "종료일_근거": source_or_null,
+            "종료일_역할": {"type": "string", "enum": ["현장설명회", "제안서마감", "없음"]},
+            "긴급재공고_근거": source_or_null,
+            "판정": {
+                "type": "object", "additionalProperties": False,
+                "required": ["위반여부", "근거문구"],
+                "properties": {
+                    "위반여부": {"type": "integer", "enum": [0, 1]},
+                    "근거문구": {"type": ["string", "null"], "maxLength": 2000},
+                },
+            },
+        },
+    }
+
+
 def procedure_fact_schema() -> dict[str, Any]:
     """Schema for EXP181 source-only relation navigation, never labels."""
     return {
