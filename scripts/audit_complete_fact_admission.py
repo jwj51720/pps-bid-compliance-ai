@@ -47,7 +47,7 @@ def make_token_counter(tokenizer_source: str):
 
 
 def _metadata_marker(field: str, style: str) -> str:
-    if style == "official_lines":
+    if style in {"official_lines", "official_lines_human_v2"}:
         return f"- {field}:"
     return f'"{field}"'
 
@@ -133,17 +133,30 @@ def audit(config_path: Path) -> dict[str, Any]:
     missing_metadata: Counter[str] = Counter()
     over_budget_packs: list[dict[str, Any]] = []
     missing_cards: list[dict[str, Any]] = []
+    organizer_semantics_omissions: list[dict[str, Any]] = []
 
     for record in records:
         effective_pipeline, inactive = pipeline.effective_pipeline_for_record(record)
         contexts = effective_pipeline.contexts_for_record(record)
-        rendered = "\n".join(
-            "\n".join(
-                message["content"]
-                for message in effective_pipeline.messages_for_context(record, context)
-            )
+        message_packs = [
+            effective_pipeline.messages_for_context(record, context)
             for context in contexts
+        ]
+        rendered = "\n".join(
+            "\n".join(message["content"] for message in messages)
+            for messages in message_packs
         )
+        semantics = effective_pipeline.organizer_input_semantics_for_record(record)
+        missing_semantics_packs = [
+            index
+            for index, messages in enumerate(message_packs, 1)
+            if semantics is not None
+            and messages[1]["content"].count(semantics) != 1
+        ]
+        if missing_semantics_packs:
+            organizer_semantics_omissions.append({
+                "id": record["id"], "pass_indices": missing_semantics_packs,
+            })
         missing_docs = source_coverage_gaps(record, contexts)
         for document in missing_docs:
             omitted_documents[document["type"]] += 1
@@ -178,6 +191,7 @@ def audit(config_path: Path) -> dict[str, Any]:
             "gated_items": inactive,
             "missing_documents": missing_docs,
             "missing_metadata_fields": missing_fields,
+            "missing_organizer_semantics_packs": missing_semantics_packs,
         })
 
     product_items = {f"v{number}" for number in range(10, 19)}
@@ -197,6 +211,7 @@ def audit(config_path: Path) -> dict[str, Any]:
         "metadata_field_omission_count": sum(len(row["missing_metadata_fields"]) for row in rows),
         "metadata_field_omissions": dict(sorted(missing_metadata.items())),
         "missing_active_cards": missing_cards,
+        "organizer_input_semantics_omissions": organizer_semantics_omissions,
         "competition_product_fact_configured": not product_fact_missing,
         "over_budget_packs": over_budget_packs,
         "pass_count_distribution": dict(sorted(Counter(row["pass_count"] for row in rows).items())),
@@ -206,6 +221,7 @@ def audit(config_path: Path) -> dict[str, Any]:
         result["source_document_omission_count"],
         result["metadata_field_omission_count"],
         result["missing_active_cards"],
+        result["organizer_input_semantics_omissions"],
         not result["competition_product_fact_configured"],
         result["over_budget_packs"],
     ))

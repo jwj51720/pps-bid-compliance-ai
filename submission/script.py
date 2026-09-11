@@ -25,14 +25,14 @@ from src.data import (
 from src.pipeline import BaselinePipeline, parse_judgment
 from src.pipeline import (
     PredictionError,
-    _clean_evidence,
+    collect_validated_fact_inventory,
     judgment_to_row,
     parse_fact_inventory_response,
     zero_judgment,
 )
-from src.context_budget import DocumentContext, pack_contexts_to_token_budget
+from src.context_budget import DocumentContext
 from src.legal_groups import groups_for_scheme
-from src.prompt import append_fact_inventory, build_fact_inventory_system_prompt, build_messages
+from src.prompt import build_fact_inventory_system_prompt
 from src.schema import FACT_INVENTORY_CATEGORIES, fact_inventory_schema, judgment_schema
 from src.submission import prediction_rows, validate_submission, write_submission
 
@@ -42,6 +42,33 @@ RUNTIME = RUNTIME_CONFIG["runtime"]
 MAX_MODEL_LEN = int(PROMPT_CONFIG["max_model_len"])
 OUTPUT_RESERVE_TOKENS = int(PROMPT_CONFIG["output_reserve_tokens"])
 SEED = int(RUNTIME["seed"])
+
+
+def _log(message: str) -> None:
+    print(f"[submission] {message}", file=sys.stderr, flush=True)
+
+
+def _normalized_quantization(value: Any) -> str | None:
+    """Match the organizer baseline's `PPS_QUANT=none` behavior."""
+    if value is None or str(value).strip().lower() in {"", "none"}:
+        return None
+    return str(value).strip()
+
+
+def _vllm_init_options(model_dir: str, quantization: Any) -> dict[str, Any]:
+    options: dict[str, Any] = {
+        "model": model_dir,
+        "tokenizer": model_dir,
+        "max_model_len": MAX_MODEL_LEN,
+        "gpu_memory_utilization": float(RUNTIME["gpu_memory_utilization"]),
+        "seed": SEED,
+        "tensor_parallel_size": 1,
+        "dtype": "auto",
+    }
+    normalized = _normalized_quantization(quantization)
+    if normalized is not None:
+        options["quantization"] = normalized
+    return options
 
 
 @dataclass(frozen=True)
@@ -114,26 +141,26 @@ class VLLMClient:
     """Offline fixed-Gemma client; its tokenizer is the admission authority."""
 
     def __init__(self, model_dir: str) -> None:
+        started = time.perf_counter()
         from vllm import LLM, SamplingParams
         from vllm.sampling_params import StructuredOutputsParams
 
-        self.llm = LLM(
-            model=model_dir,
-            tokenizer=model_dir,
-            max_model_len=MAX_MODEL_LEN,
-            quantization=os.environ.get(
-                RUNTIME["quantization_env"], RUNTIME["default_quantization"]
-            ),
-            gpu_memory_utilization=float(RUNTIME["gpu_memory_utilization"]),
-            seed=SEED,
-            tensor_parallel_size=1,
-            dtype="auto",
+        quantization = os.environ.get(
+            RUNTIME["quantization_env"], RUNTIME["default_quantization"]
         )
+        options = _vllm_init_options(model_dir, quantization)
+        _log(
+            "model_load start "
+            f"max_model_len={MAX_MODEL_LEN} quantization="
+            f"{options.get('quantization', 'none')}"
+        )
+        self.llm = LLM(**options)
         self.tokenizer = self.llm.get_tokenizer()
         self._sampling_params_type = SamplingParams
         self._structured_outputs_type = StructuredOutputsParams
         self._sampling_cache: dict[str, Any] = {}
         self.model = model_dir
+        _log(f"model_load complete seconds={time.perf_counter() - started:.3f}")
 
     def _sampling_params_for(self, response_schema: dict[str, Any]):
         schema_key = json.dumps(response_schema, ensure_ascii=False, sort_keys=True)
@@ -292,6 +319,9 @@ def build_submission_pipeline(
         competition_product_context_mode=str(
             PROMPT_CONFIG.get("competition_product_context_mode", "names_only_v1")
         ),
+        organizer_input_semantics_mode=str(
+            PROMPT_CONFIG.get("organizer_input_semantics_mode", "off")
+        ),
         count_tokens=client.count_tokens,
         prompt_budget_tokens=MAX_MODEL_LEN - OUTPUT_RESERVE_TOKENS,
         active_items=active_items,
@@ -312,14 +342,6 @@ def build_submission_pipeline(
     )
 
 
-def _source_text(context: str | DocumentContext | None, record: dict[str, Any]) -> str:
-    if isinstance(context, DocumentContext):
-        return context.text
-    if context is not None:
-        return context
-    return "\n\n".join(doc["text"] for doc in record["docs"])
-
-
 def _source_first_full_final_rows(
     records: list[dict[str, Any]], pipeline: BaselinePipeline, client: Any,
     batch_size: int, batch_retries: int,
@@ -331,29 +353,27 @@ def _source_first_full_final_rows(
     admitted source again.  This mirrors the shared pipeline method while
     batching each stage across notices for submission throughput.
     """
+    phase_started = time.perf_counter()
     inventory_system = build_fact_inventory_system_prompt()
     inventory_schema = fact_inventory_schema()
-    stage_contexts: list[list[str | DocumentContext | None]] = []
-    inventories: list[dict[str, list[tuple[str, str]]]] = []
+    inventory_responses: list[list[tuple[str, str]]] = [[] for _ in records]
     pending: list[tuple[int, str, list[dict[str, str]]]] = []
     for index, record in enumerate(records):
         contexts = pipeline.contexts_for_record(record)
-        stage_contexts.append(contexts)
-        inventories.append({category: [] for category in FACT_INVENTORY_CATEGORIES})
-        visible = pipeline._visible_record(record)
         for context in contexts:
-            source = _source_text(context, visible)
-            messages = build_messages(
-                visible,
+            source, messages = pipeline.navigation_messages_for_context(
+                record,
+                context,
                 inventory_system,
-                pipeline.max_document_chars,
-                document_context=source,
-                prompt_profile=pipeline.prompt_profile,
-                metadata_style=pipeline.metadata_style,
-                output_mode="labels_only",
             )
             pending.append((index, source, messages))
 
+    _log(
+        f"stage1_prepare records={len(records)} requests={len(pending)} "
+        f"seconds={time.perf_counter() - phase_started:.3f}"
+    )
+
+    phase_started = time.perf_counter()
     retried_malformed = 0
     for start in range(0, len(pending), batch_size):
         batch = pending[start : start + batch_size]
@@ -363,50 +383,35 @@ def _source_first_full_final_rows(
         )
         retried_malformed += retries
         for (index, source, _), completion in zip(batch, outputs):
-            try:
-                parsed = parse_fact_inventory_response(completion.content)
-            except PredictionError:
-                parsed = {category: [] for category in FACT_INVENTORY_CATEGORIES}
-            visible = pipeline._visible_record(records[index])
-            for category, values in parsed.items():
-                for value in values:
-                    excerpt = _clean_evidence(value, source)
-                    if not excerpt:
-                        continue
-                    doc_id = next(
-                        (doc["doc_id"] for doc in visible["docs"] if excerpt in doc["text"]),
-                        "source",
-                    )
-                    if (doc_id, excerpt) not in inventories[index][category]:
-                        inventories[index][category].append((doc_id, excerpt))
+            inventory_responses[index].append((source, completion.content))
+    _log(
+        f"stage1_generate requests={len(pending)} retries={retried_malformed} "
+        f"seconds={time.perf_counter() - phase_started:.3f}"
+    )
 
+    phase_started = time.perf_counter()
     final_contexts: list[list[str | DocumentContext | None]] = []
     final_completions: list[list[Completion]] = [[] for _ in records]
     final_pending: list[tuple[int, list[dict[str, str]]]] = []
     for index, record in enumerate(records):
-        visible = pipeline._visible_record(record)
-        inventory = {
-            category: tuple(inventories[index][category])
-            for category in FACT_INVENTORY_CATEGORIES
-        }
-
-        def final_messages_for(context: str | DocumentContext | None) -> list[dict[str, str]]:
-            return append_fact_inventory(
-                pipeline.messages_for_context(record, context), inventory,
-            )
-
-        contexts = pack_contexts_to_token_budget(
-            visible,
-            pipeline.system_prompt_for_record(record),
-            client.count_tokens,
-            pipeline.prompt_budget_tokens,
-            pipeline.notice_anchor_chars,
-            message_builder=final_messages_for,
+        inventory, _ = collect_validated_fact_inventory(
+            pipeline._visible_record(record),
+            inventory_responses[index],
+        )
+        contexts, messages_by_context = pipeline.fact_inventory_final_plan(
+            record, inventory,
         )
         final_contexts.append(contexts)
-        for context in contexts:
-            final_pending.append((index, final_messages_for(context)))
+        for messages in messages_by_context:
+            final_pending.append((index, messages))
 
+    _log(
+        f"final_prepare records={len(records)} requests={len(final_pending)} "
+        f"seconds={time.perf_counter() - phase_started:.3f}"
+    )
+
+    phase_started = time.perf_counter()
+    final_retry_start = retried_malformed
     for start in range(0, len(final_pending), batch_size):
         batch = final_pending[start : start + batch_size]
         outputs, retries = _complete_group_with_json_retries(
@@ -417,16 +422,37 @@ def _source_first_full_final_rows(
         for (index, _), completion in zip(batch, outputs):
             final_completions[index].append(completion)
 
+    _log(
+        f"final_generate requests={len(final_pending)} "
+        f"retries={retried_malformed - final_retry_start} "
+        f"seconds={time.perf_counter() - phase_started:.3f}"
+    )
+
+    phase_started = time.perf_counter()
     rows = [
         pipeline.finalize(record, final_completions[index], final_contexts[index])
         for index, record in enumerate(records)
     ]
+    changed_records = sum(bool(row.postprocess_changes) for row in rows)
+    changed_cells = sum(len(row.postprocess_changes) for row in rows)
+    changed_label_cells = sum(
+        int(change["label_changed"])
+        for row in rows
+        for change in row.postprocess_changes
+    )
+    _log(
+        f"postprocess policy={pipeline.frozen_rule_set or 'none'} "
+        f"changed_records={changed_records} changed_items={changed_cells} "
+        f"changed_label_cells={changed_label_cells}"
+    )
+    _log(f"finalize records={len(rows)} seconds={time.perf_counter() - phase_started:.3f}")
     return prediction_rows(rows), retried_malformed, sum(
         len(row.parse_errors) for row in rows
     )
 
 
 def main() -> int:
+    total_started = time.perf_counter()
     parser = argparse.ArgumentParser()
     parser.add_argument("--mock", action="store_true")
     parser.add_argument("--limit", type=int)
@@ -435,6 +461,7 @@ def main() -> int:
     data_dir = Path(os.environ["PPS_DATA_DIR"])
     output_dir = Path(os.environ["PPS_OUTPUT_DIR"])
     model_dir = os.environ["PPS_MODEL_DIR"]
+    phase_started = time.perf_counter()
     records = load_records(data_dir / "test.jsonl.gz", limit=args.limit)
     item_table = load_item_table(data_dir / "항목표.json")
     cards_file = PROMPT_CONFIG.get("decision_cards_file")
@@ -444,6 +471,11 @@ def main() -> int:
     products_file = PROMPT_CONFIG.get("competition_products_file")
     competition_products = (
         load_competition_product_index(ROOT / str(products_file)) if products_file else None
+    )
+    _log(
+        f"input_load records={len(records)} documents="
+        f"{sum(len(record['docs']) for record in records)} "
+        f"seconds={time.perf_counter() - phase_started:.3f}"
     )
     client = MockClient() if args.mock else VLLMClient(model_dir)
     grouping = str(RUNTIME.get("grouping", "all"))
@@ -541,17 +573,21 @@ def main() -> int:
                 for item in group.items:
                     judgment[item] = result.judgment[item]
             output_rows.append(judgment_to_row(record["id"], judgment))
-    print(
-        f"[submission] malformed structured candidates retried={retried_malformed}; "
+    _log(
+        f"malformed structured candidates retried={retried_malformed}; "
         f"unrecovered passes defaulted_to_zero={unrecovered}",
-        file=sys.stderr,
-        flush=True,
     )
+    phase_started = time.perf_counter()
     destination = output_dir / "submission.csv"
     write_submission(output_rows, destination)
     validation = validate_submission(destination, records)
     if not validation.passed:
         raise RuntimeError("submission validation failed: " + "; ".join(validation.errors[:5]))
+    _log(
+        f"csv_write_validate rows={len(output_rows)} warnings={len(validation.warnings)} "
+        f"seconds={time.perf_counter() - phase_started:.3f}"
+    )
+    _log(f"complete total_seconds={time.perf_counter() - total_started:.3f}")
     return 0
 
 

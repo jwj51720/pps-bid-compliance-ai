@@ -15,16 +15,14 @@ from typing import Any, Iterable, Iterator
 PRODUCT_CODE = re.compile(r"\[(\d{10})\]")
 DOCUMENT_CODE = re.compile(r"(?<!\d)(\d{10})(?!\d)")
 
-REQUIRED_RECORD_KEYS = {
-    "id",
-    "docs",
-    "meta",
-    "dropped_doc_counts",
-    "input_completeness",
-    "anon_applied",
-    "assembly_policy_version",
-}
+REQUIRED_RECORD_KEYS = {"id", "docs", "meta"}
 REQUIRED_DOC_KEYS = {"doc_id", "type", "text"}
+OPTIONAL_RECORD_TYPES = {
+    "dropped_doc_counts": dict,
+    "input_completeness": dict,
+    "anon_applied": bool,
+    "assembly_policy_version": str,
+}
 
 
 def _open_text(path: Path):
@@ -52,6 +50,12 @@ def validate_record(record: Any) -> None:
         raise ValueError(f"notice document missing: {record['id']}")
     if not isinstance(record["meta"], dict):
         raise ValueError(f"meta must be an object: {record['id']}")
+    for key, expected_type in OPTIONAL_RECORD_TYPES.items():
+        if key in record and not isinstance(record[key], expected_type):
+            raise ValueError(
+                f"optional record field {key} must be {expected_type.__name__}: "
+                f"{record['id']}"
+            )
 
 
 def normalize_record(record: dict[str, Any]) -> dict[str, Any]:

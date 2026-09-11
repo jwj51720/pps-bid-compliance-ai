@@ -44,8 +44,11 @@ not be promoted or packaged unless a separate source-grounded evidence owner is 
 
 ## Pre-provider gates — 2026-09-10
 
-- `scripts/preflight_experiment.py` passed: the base is EXP169 and the declared effective changes
-  are output mode, staged topology, and removal of frozen postprocess.
+- `scripts/preflight_experiment.py` 당시 실행은 통과했으나, 2026-09-11 감사에서 당시
+  preflight가 `postprocess`를 effective-policy 비교에서 누락했다는 결함을 발견했다.
+  config에는 removal이 선언돼 있었고 실제 실행도 rule-free였지만, 검사기가 이를 확인했다는
+  과거 표현은 무효다. 수정된 preflight는 output mode, staged topology, frozen postprocess
+  제거를 모두 검출한다.
 - Mock run at `outputs/exp-187-vonly-consensus-full-source-fast-panel-c4-mock/` completed 20/20:
   every record stores exactly two drafts, the final has model-owned labels, and all non-absence
   evidence fields are blank. The mock's all-zero labels naturally create no blank-positive warning;

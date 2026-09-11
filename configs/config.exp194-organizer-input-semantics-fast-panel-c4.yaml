@@ -1,0 +1,12 @@
+# EXP194: add only organizer-documented anonymization notation semantics.
+inherits: config.exp169-complete-source-2500-fast-panel-c4.yaml
+experiment:
+  id: exp-194-organizer-input-semantics-fast-panel-c4
+  base_config: configs/config.exp169-complete-source-2500-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.organizer_input_semantics_mode]
+  derived_data: [decision_cards_v6, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: candidate
+output:
+  dir: outputs/exp-194-organizer-input-semantics-fast-panel-c4
+prompt:
+  organizer_input_semantics_mode: anonymization_v1

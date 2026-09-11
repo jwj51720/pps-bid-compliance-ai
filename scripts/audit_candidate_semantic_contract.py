@@ -106,7 +106,7 @@ def _span(text: str, needle: str) -> dict[str, int] | None:
 
 def metadata_field_span(text: str, field: str, metadata_style: str) -> dict[str, int] | None:
     """Locate a fact in the configured human-readable or JSON rendering."""
-    if metadata_style == "official_lines":
+    if metadata_style in {"official_lines", "official_lines_human_v2"}:
         return _span(text, f"- {field}:")
     return _span(text, f'"{field}"')
 
@@ -193,6 +193,7 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                                 context if context is not None
                                 else build_official_baseline_context(visible, None)
                             ),
+                            pipeline.organizer_input_semantics_for_record(visible),
                         )
                         if staged_mode in {
                             "procedure_inventory_full_final_v1",
@@ -210,6 +211,9 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                             ),
                             pipeline.max_document_chars,
                             document_context=(context.text if hasattr(context, "text") else context),
+                            organizer_input_semantics_context=(
+                                pipeline.organizer_input_semantics_for_record(visible)
+                            ),
                             prompt_profile=pipeline.prompt_profile,
                             metadata_style=pipeline.metadata_style,
                             output_mode="labels_only",

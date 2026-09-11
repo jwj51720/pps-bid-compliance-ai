@@ -104,6 +104,7 @@ def build_pipeline_for_preview(config: Any, count_tokens=None) -> BaselinePipeli
         decision_cards=decision_cards,
         competition_products=competition_products,
         competition_product_context_mode=config.competition_product_context_mode,
+        organizer_input_semantics_mode=config.organizer_input_semantics_mode,
         count_tokens=count_tokens,
         prompt_budget_tokens=config.max_model_len - config.output_reserve_tokens,
         reference_text=reference_text,

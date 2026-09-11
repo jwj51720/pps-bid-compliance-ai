@@ -41,6 +41,19 @@ def test_preflight_distinguishes_unset_from_explicit_null_group_override() -> No
     assert differences[key] == {"base": "<unset>", "candidate": None}
 
 
+def test_preflight_detects_postprocess_policy_change() -> None:
+    base = load_config(ROOT / "configs/config.exp169-complete-source-2500-fast-panel-c4.yaml")
+    candidate = load_config(
+        ROOT / "configs/config.exp187-vonly-consensus-full-source-fast-panel-c4.yaml"
+    )
+    differences = controlled_differences(base, candidate)
+
+    assert differences["postprocess.frozen_rule_set"] == {
+        "base": "exp123_v1",
+        "candidate": None,
+    }
+
+
 def test_exp192_declares_only_product_context_delivery_change() -> None:
     base = load_config(ROOT / "configs/config.exp169-complete-source-2500-fast-panel-c4.yaml")
     candidate = load_config(
@@ -59,3 +72,28 @@ def test_exp193_declares_only_v6_card_artifact_change() -> None:
     assert set(controlled_differences(base, candidate)) == {
         "prompt.decision_cards_path"
     }
+
+
+def test_exp194_declares_only_organizer_input_semantics_change() -> None:
+    base = load_config(ROOT / "configs/config.exp169-complete-source-2500-fast-panel-c4.yaml")
+    candidate = load_config(
+        ROOT / "configs/config.exp194-organizer-input-semantics-fast-panel-c4.yaml"
+    )
+
+    assert set(controlled_differences(base, candidate)) == {
+        "prompt.organizer_input_semantics_mode"
+    }
+
+
+def test_exp198_declares_only_final_label_ownership_change() -> None:
+    base = load_config(
+        ROOT / "configs/config.exp197-human-readable-metadata-fast-panel-c4.yaml"
+    )
+    candidate = load_config(
+        ROOT / "configs/config.exp198-model-owned-labels-fast-panel-c4.yaml"
+    )
+
+    assert set(controlled_differences(base, candidate)) == {
+        "postprocess.frozen_rule_set"
+    }
+    assert candidate.frozen_rule_set is None

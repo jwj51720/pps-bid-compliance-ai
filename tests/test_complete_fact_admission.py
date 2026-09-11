@@ -1,4 +1,8 @@
-from scripts.audit_complete_fact_admission import source_coverage_gaps
+from scripts.audit_complete_fact_admission import _metadata_marker, source_coverage_gaps
+
+
+def test_human_readable_metadata_style_uses_line_marker() -> None:
+    assert _metadata_marker("적용계약법", "official_lines_human_v2") == "- 적용계약법:"
 
 
 def test_source_coverage_accepts_continuation_headers_without_losing_bytes():

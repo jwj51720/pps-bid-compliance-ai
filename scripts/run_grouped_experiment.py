@@ -360,6 +360,7 @@ def main() -> int:
                 absence_detection_strategy=context_policy["absence_detection_strategy"], decision_cards=cards_by_group[group.group_id],
                 competition_products=products_by_group[group.group_id], count_tokens=token_counter,
                 competition_product_context_mode=config.competition_product_context_mode,
+                organizer_input_semantics_mode=config.organizer_input_semantics_mode,
                 prompt_budget_tokens=config.max_model_len - config.output_reserve_tokens,
                 reference_text=reference_text, reference_navigation=navigation,
                 active_items=group.items, prompt_layout=prompt_layout,

@@ -114,6 +114,31 @@ def test_submission_mock_client_has_a_full_split_admission_counter() -> None:
     assert module.MockClient().count_tokens([{"content": "가나다"}]) == 3
 
 
+def test_submission_normalizes_disabled_quantization_without_importing_vllm() -> None:
+    script_path = Path(__file__).resolve().parents[1] / "submission" / "script.py"
+    spec = importlib.util.spec_from_file_location("submission_script_quantization", script_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    assert module._normalized_quantization("none") is None
+    assert module._normalized_quantization(" NONE ") is None
+    assert module._normalized_quantization("") is None
+    assert module._normalized_quantization(None) is None
+    assert module._normalized_quantization("int8_per_channel_weight_only") == (
+        "int8_per_channel_weight_only"
+    )
+    assert "quantization" not in module._vllm_init_options("/model", "none")
+    assert module._vllm_init_options("/model", "int8")["quantization"] == "int8"
+
+
+def test_submission_runtime_uses_documented_batch_128_default() -> None:
+    runtime_path = Path(__file__).resolve().parents[1] / "submission" / "runtime_config.json"
+    runtime = json.loads(runtime_path.read_text(encoding="utf-8"))
+    assert runtime["runtime"]["batch_size"] == 128
+
+
 def test_submission_group_json_retry_uses_the_group_item_subset() -> None:
     script_path = Path(__file__).resolve().parents[1] / "submission" / "script.py"
     spec = importlib.util.spec_from_file_location("submission_script_group_subset", script_path)
@@ -164,3 +189,61 @@ def test_submission_runtime_forwards_official_baseline_metadata_style() -> None:
     assert "- 적용계약법: 국가계약법" in message
     assert "- 배정예산금액: 미기재" in message
     assert '"적용계약법"' not in message
+
+
+def test_submission_runtime_forwards_corrected_semantic_input_modes(
+    monkeypatch,
+) -> None:
+    script_path = Path(__file__).resolve().parents[1] / "submission" / "script.py"
+    spec = importlib.util.spec_from_file_location(
+        "submission_script_semantic_input_contract", script_path
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    monkeypatch.setitem(
+        module.PROMPT_CONFIG,
+        "competition_product_context_mode",
+        "conditions_and_provenance_v2",
+    )
+    monkeypatch.setitem(
+        module.PROMPT_CONFIG,
+        "organizer_input_semantics_mode",
+        "anonymization_v1",
+    )
+    monkeypatch.setitem(
+        module.PROMPT_CONFIG,
+        "metadata_style",
+        "official_lines_human_v2",
+    )
+    item_table = {
+        item: {"항목명": item, "부재탐지": False, "비고": ""}
+        for item in ITEMS
+    }
+    products = {
+        "9015189001": {
+            "세부품명": "축제기획및대행서비스",
+            "제품명번호": "901518",
+            "제품명": "축제",
+            "특이사항": "추정가격 3억원 미만에 한함",
+        }
+    }
+    pipeline = module.build_submission_pipeline(
+        item_table=item_table,
+        client=module.MockClient(),
+        decision_cards=None,
+        competition_products=products,
+    )
+    record = _record()
+    record["meta"] = {
+        "세부품명번호목록": "축제기획및대행서비스[9015189001]"
+    }
+    message = pipeline.messages_for_context(record, None)[1]["content"]
+
+    assert pipeline.competition_product_context_mode == "conditions_and_provenance_v2"
+    assert pipeline.organizer_input_semantics_mode == "anonymization_v1"
+    assert pipeline.metadata_style == "official_lines_human_v2"
+    assert "추정가격 3억원 미만에 한함" in message
+    assert "[주최 측 입력 표기 규약]" in message
+    assert "9015189001" not in message

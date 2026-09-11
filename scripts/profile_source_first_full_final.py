@@ -30,8 +30,6 @@ from src.data import load_records
 from src.prompt import (
     append_fact_inventory,
     build_fact_inventory_system_prompt,
-    build_messages,
-    build_official_baseline_context,
 )
 from src.schema import FACT_INVENTORY_CATEGORIES
 
@@ -137,18 +135,10 @@ def profile(
             system = pipeline.system_prompt_for_record(record)
 
             for stage_context in pipeline.contexts_for_record(record):
-                stage_source = (
-                    stage_context.text if hasattr(stage_context, "text") else (
-                        stage_context if stage_context is not None
-                        else build_official_baseline_context(pipeline._visible_record(record), None)
-                    )
-                )
-                stage_messages = build_messages(
-                    pipeline._visible_record(record), build_fact_inventory_system_prompt(),
-                    pipeline.max_document_chars, document_context=stage_source,
-                    prompt_profile=pipeline.prompt_profile,
-                    metadata_style=pipeline.metadata_style,
-                    output_mode="labels_only",
+                _, stage_messages = pipeline.navigation_messages_for_context(
+                    record,
+                    stage_context,
+                    build_fact_inventory_system_prompt(),
                 )
                 stage_one_tokens.append(count_tokens(stage_messages))
 

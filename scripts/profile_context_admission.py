@@ -77,6 +77,7 @@ def main() -> int:
         decision_cards=cards,
         competition_products=products,
         competition_product_context_mode=config.competition_product_context_mode,
+        organizer_input_semantics_mode=config.organizer_input_semantics_mode,
         count_tokens=count_tokens,
         prompt_budget_tokens=config.max_model_len - config.output_reserve_tokens,
         active_items=config.active_items,

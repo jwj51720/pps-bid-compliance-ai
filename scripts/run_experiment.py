@@ -261,6 +261,7 @@ def _prediction_to_json(
                 for key, value in prediction.inventory_by_category.items()
             },
             "parse_errors": list(prediction.inventory_parse_errors),
+            "retry_count": prediction.inventory_retry_count,
             "messages": [list(value) for value in prediction.inventory_messages],
         }
         return {
@@ -301,7 +302,8 @@ def _prediction_to_json(
                     if prediction.timeline_by_role is not None else None),
                 "final": {"messages_by_context": [list(value) for value in prediction.final_messages_by_context],
                           "judgment": final.judgment},
-                "final_recovery_used": prediction.final_recovery_used},
+                "final_recovery_used": prediction.final_recovery_used,
+                "final_retry_count": prediction.final_retry_count},
         }
     if isinstance(prediction, FactInventoryThenFinalPrediction):
         final = prediction.final
@@ -485,6 +487,24 @@ def _prediction_to_json(
         "v8_observations": list(prediction.v8_observations),
         "parse_errors": list(prediction.parse_errors),
         "applicability_inactive_items": dict(prediction.applicability_inactive_items),
+    }
+
+
+def _final_prediction(
+    prediction: Prediction | TwoPassAdjudicationPrediction | VOnlyDraftFullFinalPrediction | VOnlyConsensusPrediction | TriageThenStrictPrediction | LocatorThenFinalPrediction | InventoryThenFinalPrediction | FactInventoryThenFinalPrediction | FactInventoryFullFinalPrediction | V23SpecialistFinalPrediction,
+) -> Prediction:
+    return prediction if isinstance(prediction, Prediction) else prediction.final
+
+
+def _attach_decision_provenance(
+    payload: dict[str, Any],
+    prediction: Prediction | TwoPassAdjudicationPrediction | VOnlyDraftFullFinalPrediction | VOnlyConsensusPrediction | TriageThenStrictPrediction | LocatorThenFinalPrediction | InventoryThenFinalPrediction | FactInventoryThenFinalPrediction | FactInventoryFullFinalPrediction | V23SpecialistFinalPrediction,
+) -> None:
+    final = _final_prediction(prediction)
+    payload["decision_provenance"] = {
+        "model_judgment": final.model_judgment or final.judgment,
+        "postprocess_policy": final.postprocess_policy,
+        "postprocess_changes": list(final.postprocess_changes),
     }
 
 
@@ -909,6 +929,7 @@ def main() -> int:
         decision_cards=decision_cards,
         competition_products=competition_products,
         competition_product_context_mode=config.competition_product_context_mode,
+        organizer_input_semantics_mode=config.organizer_input_semantics_mode,
         count_tokens=_make_token_counter(config, args.mock),
         prompt_budget_tokens=config.max_model_len - config.output_reserve_tokens,
         reference_text=reference_text,
@@ -1061,6 +1082,7 @@ def main() -> int:
                     failures.append({"id": record["id"], "error": failed_attempts[-1]["error"]})
                     continue
                 value = _prediction_to_json(prediction)
+                _attach_decision_provenance(value, prediction)
                 checkpoint[record["id"]] = value
                 checkpoint_handle.write(json.dumps(value, ensure_ascii=False) + "\n")
                 checkpoint_handle.flush()

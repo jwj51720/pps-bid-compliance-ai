@@ -39,6 +39,7 @@ def _policy(config: ExperimentConfig) -> dict[str, Any]:
             "decision_cards_path": str(config.decision_cards_path) if config.decision_cards_path else None,
             "competition_products_path": str(config.competition_products_path) if config.competition_products_path else None,
             "competition_product_context_mode": config.competition_product_context_mode,
+            "organizer_input_semantics_mode": config.organizer_input_semantics_mode,
             "mode": config.prompt_mode,
             "include_normalized_facts": config.include_normalized_facts,
             "v8_composite_merge": {
@@ -71,6 +72,7 @@ def _policy(config: ExperimentConfig) -> dict[str, Any]:
         },
         "grouped_run": config.raw.get("grouped_run", {}),
         "applicability_gate": {"mode": config.applicability_gate_mode},
+        "postprocess": {"frozen_rule_set": config.frozen_rule_set},
         # A review loop is an execution/prompt policy, not a remembered CLI
         # option. Preview and paid configs must declare it explicitly.
         "review_run": config.raw.get("review_run", {}),

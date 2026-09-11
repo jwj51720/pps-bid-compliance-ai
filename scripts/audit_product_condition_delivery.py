@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -22,7 +23,22 @@ from src.data import (
     load_records,
     select_records_by_id,
 )
-from src.prompt import format_competition_product_context
+from src.prompt import build_fact_inventory_system_prompt
+
+
+def _non_source_prefix(user_message: str) -> str:
+    """Return prompt-owned context while excluding unchanged notice source text."""
+    boundaries = ("[공고 자료 원문]", "# 공고 자료")
+    positions = [user_message.find(value) for value in boundaries]
+    positions = [value for value in positions if value >= 0]
+    return user_message[: min(positions)] if positions else user_message
+
+
+def _coded_metadata_identifiers(record: dict) -> set[str]:
+    meta = record.get("meta", {})
+    product_codes = re.findall(r"\[\s*(\d{10})\s*\]", str(meta.get("세부품명번호목록") or ""))
+    license_codes = re.findall(r"\(\s*(\d{4})\s*\)", str(meta.get("면허업종제한목록") or ""))
+    return set(product_codes + license_codes)
 
 
 def main() -> int:
@@ -54,22 +70,52 @@ def main() -> int:
 
     rows = []
     failures: list[str] = []
+    rendered_pass_count = 0
+    stage_one_rendered_pass_count = 0
+    metadata_identifier_record_count = 0
+    metadata_identifier_leak_count = 0
     for record in records:
         fact = competition_product_fact(record, products)
         conditional = [
             product for product in fact["matched_products"]
             if str(product.get("특이사항", "")).strip()
         ]
-        if not conditional:
-            continue
-        product_context = format_competition_product_context(
-            record,
-            fact,
-            pipeline.active_items,
-            pipeline.competition_product_context_mode,
-        )
         contexts = pipeline.contexts_for_record(record)
         messages = [pipeline.messages_for_context(record, context) for context in contexts]
+        rendered_pass_count += len(messages)
+        rendered_prefixes = [
+            _non_source_prefix(pack[1]["content"])
+            for pack in messages
+        ]
+        if config.staged_run and config.staged_run.mode == "fact_inventory_full_final_v1":
+            inventory_system = build_fact_inventory_system_prompt()
+            navigation_messages = [
+                pipeline.navigation_messages_for_context(
+                    record, context, inventory_system, source_only=False,
+                )[1]
+                for context in contexts
+            ]
+            stage_one_rendered_pass_count += len(navigation_messages)
+            rendered_prefixes.extend(
+                _non_source_prefix(pack[1]["content"])
+                for pack in navigation_messages
+            )
+        metadata_identifiers = _coded_metadata_identifiers(record)
+        if metadata_identifiers:
+            metadata_identifier_record_count += 1
+        leaked_metadata_identifiers = sorted({
+            identifier
+            for identifier in metadata_identifiers
+            if any(identifier in prefix for prefix in rendered_prefixes)
+        })
+        if leaked_metadata_identifiers:
+            metadata_identifier_leak_count += 1
+            failures.append(
+                f"{record['id']}: coded metadata identifiers leaked "
+                f"{leaked_metadata_identifiers}"
+            )
+        if not conditional:
+            continue
         missing_conditions = sorted({
             str(product["특이사항"])
             for product in conditional
@@ -78,13 +124,16 @@ def main() -> int:
         leaked_codes = sorted({
             str(product["세부품명번호"])
             for product in conditional
-            if str(product["세부품명번호"]) in product_context
+            if any(
+                str(product["세부품명번호"]) in prefix
+                for prefix in rendered_prefixes
+            )
         })
         leaked_doc_ids = sorted({
             str(source["doc_id"])
             for product in conditional
             for source in product.get("document_match_sources", [])
-            if str(source["doc_id"]) in product_context
+            if any(str(source["doc_id"]) in prefix for prefix in rendered_prefixes)
         })
         if missing_conditions:
             failures.append(f"{record['id']}: missing conditions {missing_conditions}")
@@ -115,6 +164,11 @@ def main() -> int:
         "record_count": len(records),
         "conditional_match_record_count": len(rows),
         "conditional_match_pass_count": sum(row["pass_count"] for row in rows),
+        "rendered_record_count": len(records),
+        "rendered_pass_count": rendered_pass_count,
+        "stage_one_rendered_pass_count": stage_one_rendered_pass_count,
+        "coded_metadata_record_count": metadata_identifier_record_count,
+        "coded_metadata_leak_record_count": metadata_identifier_leak_count,
         "status": "pass" if not failures else "fail",
         "failures": failures,
         "records": rows,
@@ -128,6 +182,10 @@ def main() -> int:
         f"- Records: {result['record_count']}",
         f"- Conditional matches: {result['conditional_match_record_count']}",
         f"- Final rendered passes checked: {result['conditional_match_pass_count']}",
+        f"- All rendered records/passes checked: {result['rendered_record_count']} / {result['rendered_pass_count']}",
+        f"- Source-first stage-one passes checked: {result['stage_one_rendered_pass_count']}",
+        f"- Records with coded metadata: {result['coded_metadata_record_count']}",
+        f"- Coded-metadata leak records: {result['coded_metadata_leak_record_count']}",
         f"- Status: **{result['status']}**", "",
     ]
     if failures:

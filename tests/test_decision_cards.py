@@ -4,7 +4,11 @@ import pytest
 
 from src.data import load_decision_cards, load_item_table
 from src.prompt import build_system_prompt
-from scripts.build_decision_cards import CARD_TEXT_V6, CARD_TEXT_V9_V6_SCOPE
+from scripts.build_decision_cards import (
+    CARD_TEXT_V6,
+    CARD_TEXT_V9_V6_SCOPE,
+    CARD_TEXT_V10_V6_V7_SCOPE,
+)
 
 
 def test_decision_cards_match_official_item_table(tmp_path: Path) -> None:
@@ -60,4 +64,20 @@ def test_v9_scope_revision_changes_only_v6_and_restores_limited_tender_scope() -
     assert "2인 이상 견적 수의계약 등 적용 규정" in CARD_TEXT_V9_V6_SCOPE["v6"]
     assert "지방계약의 고시금액 미만 2인 이상 견적 수의계약 등 적용 유형인지" not in (
         CARD_TEXT_V9_V6_SCOPE["v6"]
+    )
+
+
+def test_v10_scope_revision_changes_only_v7_and_separates_small_contract_allowance() -> None:
+    changed = {
+        item for item in CARD_TEXT_V9_V6_SCOPE
+        if CARD_TEXT_V9_V6_SCOPE[item] != CARD_TEXT_V10_V6_V7_SCOPE[item]
+    }
+
+    assert changed == {"v7"}
+    assert "국가·지방 제한입찰" in CARD_TEXT_V10_V6_V7_SCOPE["v7"]
+    assert "2인 이상 견적 수의계약 등 적용 규정" in (
+        CARD_TEXT_V10_V6_V7_SCOPE["v7"]
+    )
+    assert "v6의 지방 소액수의 적용 유형인지" not in (
+        CARD_TEXT_V10_V6_V7_SCOPE["v7"]
     )

@@ -73,6 +73,70 @@ run: {resume: true, concurrency: 1, local_limit: 20}
     assert loaded.max_model_len == 32768
     assert loaded.output_reserve_tokens == 2500
     assert loaded.competition_product_context_mode == "names_only_v1"
+    assert loaded.organizer_input_semantics_mode == "off"
+
+
+def test_config_inheritance_resolves_complete_parent_chain(tmp_path: Path) -> None:
+    base = tmp_path / "base.yaml"
+    base.write_text(
+        """
+experiment: {id: base}
+data: {root: data, input: input.jsonl, item_table: items.json}
+output: {dir: outputs/base}
+prompt: {max_document_chars: null, output_mode: labels_and_evidence}
+llm:
+  provider: openrouter
+  model: google/gemma-4-26b-a4b-it
+  api_key_env: OPENROUTER_API_KEY
+  api_url: https://openrouter.ai/api/v1/chat/completions
+  temperature: 0
+  max_tokens: 100
+  seed: 1
+  timeout_seconds: 10
+  request_retries: 1
+  prediction_attempts: 1
+  provider_sort: throughput
+  require_parameters: true
+run: {resume: true, concurrency: 1}
+""",
+        encoding="utf-8",
+    )
+    middle = tmp_path / "middle.yaml"
+    middle.write_text(
+        """
+inherits: base.yaml
+experiment: {id: middle}
+prompt: {output_mode: labels_only}
+""",
+        encoding="utf-8",
+    )
+    leaf = tmp_path / "leaf.yaml"
+    leaf.write_text(
+        """
+inherits: middle.yaml
+experiment: {id: leaf}
+output: {dir: outputs/leaf}
+""",
+        encoding="utf-8",
+    )
+
+    loaded = load_config(leaf)
+
+    assert loaded.experiment_id == "leaf"
+    assert loaded.data.input_path == tmp_path / "data/input.jsonl"
+    assert loaded.output_dir == tmp_path / "outputs/leaf"
+    assert loaded.output_mode == "labels_only"
+    assert loaded.llm.model == "google/gemma-4-26b-a4b-it"
+
+
+def test_config_inheritance_cycle_is_rejected(tmp_path: Path) -> None:
+    first = tmp_path / "first.yaml"
+    second = tmp_path / "second.yaml"
+    first.write_text("inherits: second.yaml\n", encoding="utf-8")
+    second.write_text("inherits: first.yaml\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="inheritance cycle"):
+        load_config(first)
 
 
 def test_complete_fact_profile_rejects_a_character_prefix(tmp_path: Path) -> None:

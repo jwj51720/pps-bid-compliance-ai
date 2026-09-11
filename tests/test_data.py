@@ -3,6 +3,8 @@ from __future__ import annotations
 import gzip
 import json
 
+import pytest
+
 from src.data import (
     competition_product_fact,
     load_competition_product_index,
@@ -35,6 +37,28 @@ def test_load_and_profile_jsonl_gzip(tmp_path) -> None:
     assert profile["record_count"] == 1
     assert profile["document_types"]["공고문"]["count"] == 1
     assert profile["meta"]["지역제한여부"]["null_rate"] == 1.0
+
+
+def test_loader_accepts_official_minimum_record_schema(tmp_path) -> None:
+    record = {
+        "id": "PPS-MIN",
+        "docs": [{"doc_id": "D0", "type": "공고문", "text": "본문"}],
+        "meta": {},
+    }
+    path = tmp_path / "minimal.jsonl"
+    path.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    assert load_records(path) == [record]
+
+
+def test_loader_validates_optional_assembly_fields_when_present(tmp_path) -> None:
+    record = _record()
+    record["dropped_doc_counts"] = []
+    path = tmp_path / "invalid.jsonl"
+    path.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="dropped_doc_counts must be dict"):
+        load_records(path)
 
 
 def test_profile_recognizes_korean_completeness_flag(tmp_path) -> None:

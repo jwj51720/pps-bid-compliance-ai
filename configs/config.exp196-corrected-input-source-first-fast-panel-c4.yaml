@@ -1,0 +1,17 @@
+# EXP196: EXP171 source-first/full-final with all audited input corrections.
+inherits: config.exp179-source-first-full-final-repeat-fast-panel-c4.yaml
+experiment:
+  id: exp-196-corrected-input-source-first-fast-panel-c4
+  base_config: configs/config.exp179-source-first-full-final-repeat-fast-panel-c4.yaml
+  allowed_policy_changes:
+    - prompt.decision_cards_path
+    - prompt.competition_product_context_mode
+    - prompt.organizer_input_semantics_mode
+  derived_data: [decision_cards_v10_v6_v7_scope, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: candidate
+output:
+  dir: outputs/exp-196-corrected-input-source-first-fast-panel-c4
+prompt:
+  decision_cards_path: data/derived/decision_cards_v10_v6_v7_scope.json
+  competition_product_context_mode: conditions_and_provenance_v2
+  organizer_input_semantics_mode: anonymization_v1

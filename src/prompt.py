@@ -214,11 +214,19 @@ def build_timeline_fact_system_prompt() -> str:
     return TIMELINE_FACT_SYSTEM
 
 
-def build_source_only_fact_messages(system_prompt: str, source: str) -> list[dict[str, str]]:
+def build_source_only_fact_messages(
+    system_prompt: str,
+    source: str,
+    organizer_input_semantics_context: str | None = None,
+) -> list[dict[str, str]]:
     """Make a source-only navigation message with no metadata or card facts."""
+    semantics = (
+        organizer_input_semantics_context + "\n\n"
+        if organizer_input_semantics_context else ""
+    )
     return [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"[공고 자료 원문]\n{source}"},
+        {"role": "user", "content": semantics + f"[공고 자료 원문]\n{source}"},
     ]
 
 
@@ -911,13 +919,59 @@ def build_official_baseline_context(record: dict[str, Any], max_chars: int | Non
     return text
 
 
-def format_official_baseline_meta(record: dict[str, Any]) -> str:
+_PRODUCT_METADATA_CODE = re.compile(r"\[\s*\d{10}\s*\]")
+_LICENSE_METADATA_CODE = re.compile(r"\(\s*\d{4}\s*\)")
+
+
+def _humanize_official_metadata_value(field: str, value: Any) -> Any:
+    """Remove lookup identifiers from two coded organizer metadata fields only."""
+    if not isinstance(value, str):
+        return value
+    if field == "세부품명번호목록":
+        return _PRODUCT_METADATA_CODE.sub("", value)
+    if field == "면허업종제한목록":
+        return _LICENSE_METADATA_CODE.sub("", value)
+    return value
+
+
+def format_official_baseline_meta(
+    record: dict[str, Any], *, human_readable_codes: bool = False
+) -> str:
     lines = []
     for field in OFFICIAL_BASELINE_META_FIELDS:
         if field in record["meta"]:
             value = record["meta"][field]
+            if human_readable_codes:
+                value = _humanize_official_metadata_value(field, value)
             lines.append(f"- {field}: {'미기재' if value is None else value}")
     return "\n".join(lines)
+
+
+ORGANIZER_ANONYMIZATION_SEMANTICS_V1 = """[주최 측 입력 표기 규약]
+- 기관명·담당자·연락처·주소·공고번호는 익명화 토큰으로 치환되어 있다.
+- `[수요기관(기초자치단체)|지역=r1]` 같은 표기에서는 괄호 안 기관 유형이 보존된 사실이다.
+- `[지역:r1|단위=기초|광역=경기도]` 같은 표기에서는 `단위=기초`가 기초자치단체 계층임을, `광역=경기도`가 그 광역 계층임을 보존한다. 숨겨진 실제 지역명은 추정하지 않는다.
+- 같은 문서의 `r1`과 `r2`는 서로 다른 지역을 뜻한다.
+- 금액·수량·날짜·법령 조문·품명·규격은 익명화 치환 대상이 아니다.
+- 익명화 표기의 존재 자체는 위반이 아니다. 판정 카드, 나라장터 입력 메타, 공고 자료 원문의 실제 조건을 함께 대조한다."""
+
+
+def format_organizer_input_semantics(
+    record: dict[str, Any], mode: str = "off"
+) -> str | None:
+    """Render only organizer-documented input notation semantics.
+
+    This is decoding context for source text, not metadata, evidence, or a
+    deterministic label rule. Records without organizer anonymization do not
+    receive an irrelevant legend.
+    """
+    if mode == "off":
+        return None
+    if mode != "anonymization_v1":
+        raise ValueError("unsupported organizer input semantics mode")
+    if record.get("anon_applied") is not True:
+        return None
+    return ORGANIZER_ANONYMIZATION_SEMANTICS_V1
 
 
 def _ordered_documents(record: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1027,6 +1081,7 @@ def build_messages(
     include_normalized_facts: bool = False,
     document_context: str | None = None,
     competition_product_context: str | None = None,
+    organizer_input_semantics_context: str | None = None,
     v24_comparison_context: str | None = None,
     markdown_sections: bool = False,
     prompt_profile: str = "default",
@@ -1040,13 +1095,25 @@ def build_messages(
     }:
         if output_mode not in {"labels_and_evidence", "labels_only"}:
             raise ValueError("official_baseline_v1 supports VE or labels-only output")
-        if metadata_style not in {"official_lines", "full_json"}:
-            raise ValueError("metadata_style must be official_lines or full_json")
+        if metadata_style not in {
+            "official_lines", "official_lines_human_v2", "full_json"
+        }:
+            raise ValueError(
+                "metadata_style must be official_lines, "
+                "official_lines_human_v2, or full_json"
+            )
         context = document_context if document_context is not None else build_official_baseline_context(record, max_document_chars)
         metadata = (
-            format_official_baseline_meta(record)
-            if metadata_style == "official_lines"
+            format_official_baseline_meta(
+                record,
+                human_readable_codes=metadata_style == "official_lines_human_v2",
+            )
+            if metadata_style in {"official_lines", "official_lines_human_v2"}
             else json.dumps(record["meta"], ensure_ascii=False, sort_keys=True, indent=2)
+        )
+        semantics_section = (
+            "\n\n" + organizer_input_semantics_context
+            if organizer_input_semantics_context else ""
         )
         if "# 역할" in system_prompt:
             product_section = (
@@ -1056,7 +1123,8 @@ def build_messages(
             )
             user_prompt = (
                 "# 나라장터 입력 메타데이터\n"
-                + (metadata if metadata_style == "official_lines" else "```json\n" + metadata + "\n```")
+                + (metadata if metadata_style != "full_json" else "```json\n" + metadata + "\n```")
+                + semantics_section
                 + product_section
                 + "\n\n# 공고 자료\n" + context
                 + "\n\n# 출력\n모든 v의 위반여부와 근거문구를 JSON 객체 하나로 출력한다."
@@ -1069,6 +1137,7 @@ def build_messages(
             )
             user_prompt = (
                 f"[나라장터 입력 메타]\n{metadata}"
+                + semantics_section
                 + product_section
                 + f"\n\n[공고 자료 원문]\n{context}\n"
             )
@@ -1081,6 +1150,7 @@ def build_messages(
             user_prompt = (
                 f"[공고 ID] {record['id']}\n\n"
                 f"[나라장터 입력 메타]\n{metadata}\n\n"
+                + semantics_section
                 + product_section
                 + f"[문서]\n{context}\n"
             )
@@ -1106,6 +1176,8 @@ def build_messages(
             "\n\n[대회 제공 경쟁제품 고시 조회 결과]\n"
             + competition_product_context
         )
+    if organizer_input_semantics_context is not None:
+        facts = "\n\n" + organizer_input_semantics_context + facts
     if v24_comparison_context is not None:
         facts += "\n\n[v24 메타데이터 대조 체크리스트]\n" + v24_comparison_context
     document_text = document_context if document_context is not None else build_document_context(record, max_document_chars)

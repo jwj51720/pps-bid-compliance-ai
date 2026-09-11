@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from src.context_budget import DocumentContext
+from src.context_budget import DocumentContext, pack_contexts_to_token_budget
 from src.external.openrouter import MockClient
 from src.external.openrouter import Completion
 from src.pipeline import (
@@ -16,6 +16,7 @@ from src.pipeline import (
     _combine_pass_judgments,
     _merge_notice_judgments,
     _usage_number,
+    collect_validated_fact_inventory,
     parse_judgment,
     parse_locator_response,
     parse_inventory_response,
@@ -36,9 +37,11 @@ from src.prompt import (
     build_messages,
     build_official_baseline_context,
     build_split_document_contexts,
+    build_source_only_fact_messages,
     build_system_prompt,
     format_official_baseline_meta,
     format_competition_product_context,
+    format_organizer_input_semantics,
     format_v24_comparison_context,
     normalize_notice_facts,
 )
@@ -60,6 +63,39 @@ def _record(text: str = "서울특별시에 본사를 둔 업체로 제한한다
 
 def _judgment() -> dict:
     return {item: {"위반여부": 0, "근거문구": None} for item in ITEMS}
+
+
+def test_shared_navigation_builder_preserves_exp171_message_contract() -> None:
+    record = _record("[지역:r1|단위=기초|광역=경기도] 참가 업체")
+    record["meta"] = {"적용계약법": "지방계약법"}
+    pipeline = BaselinePipeline(
+        item_table={item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS},
+        client=MockClient(),
+        max_document_chars=None,
+        organizer_input_semantics_mode="anonymization_v1",
+        metadata_style="official_lines",
+        prompt_profile="complete_fact_v1",
+    )
+    system = "사실만 발췌"
+    source, messages = pipeline.navigation_messages_for_context(
+        record, None, system
+    )
+    expected = build_messages(
+        record,
+        system,
+        pipeline.max_document_chars,
+        document_context=source,
+        organizer_input_semantics_context=format_organizer_input_semantics(
+            record, "anonymization_v1"
+        ),
+        prompt_profile=pipeline.prompt_profile,
+        metadata_style=pipeline.metadata_style,
+        output_mode="labels_only",
+    )
+
+    assert messages == expected
+    assert "[나라장터 입력 메타]" in messages[1]["content"]
+    assert "[주최 측 입력 표기 규약]" in messages[1]["content"]
 
 
 def test_parse_judgment_requires_every_item() -> None:
@@ -88,6 +124,43 @@ def test_source_inventory_says_missing_candidate_is_not_a_final_zero() -> None:
     assert "[D0] 실제 원문" in content
     assert "후보가 없어도 0이 아니다" in content
     assert "최종 판정 아님" in content
+
+
+def test_organizer_anonymization_semantics_are_friendly_and_non_decisive() -> None:
+    context = format_organizer_input_semantics(_record(), "anonymization_v1")
+
+    assert context is not None
+    assert "`단위=기초`가 기초자치단체 계층" in context
+    assert "`r1`과 `r2`는 서로 다른 지역" in context
+    assert "숨겨진 실제 지역명은 추정하지 않는다" in context
+    assert "표기의 존재 자체는 위반이 아니다" in context
+    assert "위반여부" not in context
+
+
+def test_organizer_anonymization_semantics_off_and_non_anonymous_are_empty() -> None:
+    record = _record()
+    assert format_organizer_input_semantics(record, "off") is None
+    record["anon_applied"] = False
+    assert format_organizer_input_semantics(record, "anonymization_v1") is None
+
+
+def test_organizer_semantics_reach_final_and_source_only_messages() -> None:
+    context = format_organizer_input_semantics(_record(), "anonymization_v1")
+    final = build_messages(
+        _record(),
+        "system",
+        None,
+        organizer_input_semantics_context=context,
+        prompt_profile="complete_fact_v1",
+        metadata_style="official_lines",
+    )
+    source_only = build_source_only_fact_messages("system", "원문", context)
+
+    for messages in (final, source_only):
+        assert "[주최 측 입력 표기 규약]" in messages[1]["content"]
+        assert messages[1]["content"].count("[주최 측 입력 표기 규약]") == 1
+    assert final[1]["content"].index("[주최 측 입력 표기 규약]") < final[1]["content"].index("[공고 자료 원문]")
+    assert source_only[1]["content"].index("[주최 측 입력 표기 규약]") < source_only[1]["content"].index("[공고 자료 원문]")
 
 
 def test_parse_judgment_recovers_only_missing_outer_closure() -> None:
@@ -246,6 +319,61 @@ def test_vonly_consensus_does_not_apply_parent_frozen_rule() -> None:
     assert prediction.final.judgment["v2"] == {"위반여부": 0, "근거문구": ""}
 
 
+def test_frozen_postprocess_preserves_model_judgment_and_exact_change_audit() -> None:
+    item_table = {
+        item: {"항목명": item, "부재탐지": False, "국가계약법": "", "지방계약법": "", "비고": ""}
+        for item in ITEMS
+    }
+    record = _record("실적 3억원 이상인 업체만 참가할 수 있다")
+    record["meta"] = {"입찰추정가격": 100_000_000, "업무구분": "용역"}
+    pipeline = BaselinePipeline(
+        item_table=item_table,
+        client=MockClient(),
+        max_document_chars=4000,
+        context_strategy="single",
+        overflow_split_enabled=False,
+        prompt_profile="official_baseline_v1",
+        frozen_rule_set="exp123_v1",
+    )
+
+    prediction = pipeline.predict(record)
+
+    assert prediction.model_judgment is not None
+    assert prediction.model_judgment["v2"]["위반여부"] == 0
+    assert prediction.judgment["v2"] == {
+        "위반여부": 1,
+        "근거문구": "실적 3억원 이상인 업체만 참가할 수 있다",
+    }
+    assert prediction.postprocess_policy == "exp123_v1"
+    assert [change["item"] for change in prediction.postprocess_changes] == ["v2"]
+    assert prediction.postprocess_changes[0]["before"]["위반여부"] == 0
+    assert prediction.postprocess_changes[0]["after"]["위반여부"] == 1
+    assert prediction.postprocess_changes[0]["label_changed"] is True
+    assert prediction.postprocess_changes[0]["evidence_changed"] is True
+
+
+def test_rule_free_prediction_has_model_owned_final_and_empty_change_audit() -> None:
+    item_table = {
+        item: {"항목명": item, "부재탐지": False, "국가계약법": "", "지방계약법": "", "비고": ""}
+        for item in ITEMS
+    }
+    pipeline = BaselinePipeline(
+        item_table=item_table,
+        client=MockClient(),
+        max_document_chars=4000,
+        context_strategy="single",
+        overflow_split_enabled=False,
+        prompt_profile="official_baseline_v1",
+        frozen_rule_set=None,
+    )
+
+    prediction = pipeline.predict(_record())
+
+    assert prediction.model_judgment == prediction.judgment
+    assert prediction.postprocess_policy is None
+    assert prediction.postprocess_changes == ()
+
+
 def test_item_navigation_keeps_source_candidate_advisory_and_full_final() -> None:
     class ItemFactClient:
         def complete(self, messages, response_schema):
@@ -273,6 +401,88 @@ def test_item_navigation_keeps_source_candidate_advisory_and_full_final() -> Non
     rendered = "\n".join(message["content"] for message in prediction.final_messages_by_context[0])
     assert "후보없음 (이는 0이 아님)" in rendered
     assert "서울특별시에 본사를 둔 업체로 제한한다" in rendered
+
+
+def test_fact_inventory_final_parse_retry_keeps_same_source_first_messages() -> None:
+    from src.schema import FACT_INVENTORY_CATEGORIES
+
+    class MalformedOnceClient:
+        def __init__(self):
+            self.calls = []
+
+        def complete(self, messages, response_schema):
+            self.calls.append(messages)
+            if tuple(response_schema.get("required", ())) == FACT_INVENTORY_CATEGORIES:
+                payload = {category: [] for category in FACT_INVENTORY_CATEGORIES}
+                content = json.dumps(payload, ensure_ascii=False)
+            elif len(self.calls) == 2:
+                content = "malformed"
+            else:
+                payload = _judgment()
+                payload["v1"] = {
+                    "위반여부": 1,
+                    "근거문구": "서울특별시에 본사를 둔 업체로 제한한다",
+                }
+                content = json.dumps(payload, ensure_ascii=False)
+            return Completion(content, "test", 0.0, {})
+
+    client = MalformedOnceClient()
+    pipeline = BaselinePipeline(
+        item_table={item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS},
+        client=client,
+        max_document_chars=None,
+        context_strategy="single",
+        overflow_split_enabled=True,
+        count_tokens=lambda messages: len(messages),
+        prompt_profile="complete_fact_v1",
+    )
+
+    prediction = pipeline.predict_with_fact_inventory_then_full_final(_record())
+
+    assert prediction.final_recovery_used
+    assert prediction.final_retry_count == 1
+    assert prediction.inventory_retry_count == 0
+    assert not prediction.final.parse_errors
+    assert prediction.final.judgment["v1"]["위반여부"] == 1
+    assert client.calls[2] == client.calls[1]
+    assert "최종 판정 아님" in client.calls[2][-1]["content"]
+
+
+def test_fact_inventory_parse_retry_keeps_same_navigation_message() -> None:
+    from src.schema import FACT_INVENTORY_CATEGORIES
+
+    class MalformedInventoryOnceClient:
+        def __init__(self):
+            self.calls = []
+
+        def complete(self, messages, response_schema):
+            self.calls.append(messages)
+            if len(self.calls) == 1:
+                content = "malformed"
+            elif tuple(response_schema.get("required", ())) == FACT_INVENTORY_CATEGORIES:
+                payload = {category: [] for category in FACT_INVENTORY_CATEGORIES}
+                content = json.dumps(payload, ensure_ascii=False)
+            else:
+                content = json.dumps(_judgment(), ensure_ascii=False)
+            return Completion(content, "test", 0.0, {})
+
+    client = MalformedInventoryOnceClient()
+    pipeline = BaselinePipeline(
+        item_table={item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS},
+        client=client,
+        max_document_chars=None,
+        context_strategy="single",
+        overflow_split_enabled=True,
+        count_tokens=lambda messages: len(messages),
+        prompt_profile="complete_fact_v1",
+    )
+
+    prediction = pipeline.predict_with_fact_inventory_then_full_final(_record())
+
+    assert prediction.inventory_retry_count == 1
+    assert prediction.inventory_parse_errors == ()
+    assert client.calls[1] == client.calls[0]
+    assert not prediction.final_recovery_used
 
 
 def test_triage_then_strict_routes_absence_items_even_when_triage_says_not_applicable() -> None:
@@ -505,6 +715,55 @@ def test_official_baseline_profile_has_its_exact_context_and_message_contract() 
     assert "v10: v10  [근거 없음 — null]" in system
 
 
+def test_human_readable_metadata_removes_only_product_and_license_codes() -> None:
+    record = _record()
+    record["meta"] = {
+        "세부품명번호목록": "축제기획및대행서비스[9015189001], 가구[5610151901]",
+        "면허업종제한목록": "[기타자유업(행사대행업)(9901)]",
+        "입찰추정가격": 327272727,
+        "조항호내용": "제25조(예외 4개)",
+        "정보화사업여부": "미입력",
+        "낙찰하한율": None,
+    }
+
+    historical = format_official_baseline_meta(record)
+    human = format_official_baseline_meta(record, human_readable_codes=True)
+
+    assert "축제기획및대행서비스[9015189001]" in historical
+    assert "(9901)" in historical
+    assert "축제기획및대행서비스, 가구" in human
+    assert "[기타자유업(행사대행업)]" in human
+    assert "9015189001" not in human
+    assert "5610151901" not in human
+    assert "9901" not in human
+    assert "- 입찰추정가격: 327272727" in human
+    assert "- 조항호내용: 제25조(예외 4개)" in human
+    assert "- 정보화사업여부: 미입력" in human
+    assert "- 낙찰하한율: 미기재" in human
+
+
+def test_complete_fact_human_metadata_style_keeps_source_codes_unchanged() -> None:
+    record = _record("원문 세부품명번호 9015189001")
+    record["meta"] = {"세부품명번호목록": "축제기획및대행서비스[9015189001]"}
+    item_table = {
+        item: {"항목명": item, "부재탐지": False, "비고": ""}
+        for item in ITEMS
+    }
+    system = build_system_prompt(item_table, profile="complete_fact_v1")
+    user = build_messages(
+        record,
+        system,
+        None,
+        prompt_profile="complete_fact_v1",
+        metadata_style="official_lines_human_v2",
+    )[1]["content"]
+
+    metadata, source = user.split("[공고 자료 원문]", 1)
+    assert "9015189001" not in metadata
+    assert "축제기획및대행서비스" in metadata
+    assert "9015189001" in source
+
+
 def test_official_baseline_profile_supports_labels_only_without_evidence_contract() -> None:
     item_table = {item: {"항목명": item, "부재탐지": item == "v10", "비고": ""} for item in ITEMS}
     prompt = build_system_prompt(
@@ -649,6 +908,73 @@ def test_fact_inventory_contract_is_source_only_and_non_final() -> None:
     )
     assert len(before_source) == 2
     assert before_source[-1]["content"].index("최종 판정 아님") < before_source[-1]["content"].index("[공고 자료 원문]")
+
+
+def test_shared_fact_inventory_keeps_only_source_substrings_and_survives_malformed() -> None:
+    from src.schema import FACT_INVENTORY_CATEGORIES
+
+    record = _record("서울특별시에  본사를 둔 업체로 제한한다\n실적 3억원 이상")
+    first = {category: [] for category in FACT_INVENTORY_CATEGORIES}
+    first[FACT_INVENTORY_CATEGORIES[0]] = [
+        "서울특별시에 본사를 둔 업체로 제한한다",
+        "원문에 없는 제한",
+    ]
+    second = {category: [] for category in FACT_INVENTORY_CATEGORIES}
+    second[FACT_INVENTORY_CATEGORIES[0]] = ["실적 3억원 이상"]
+
+    inventory, errors = collect_validated_fact_inventory(
+        record,
+        [
+            (record["docs"][0]["text"], json.dumps(first, ensure_ascii=False)),
+            (record["docs"][0]["text"], "malformed"),
+            (record["docs"][0]["text"], json.dumps(second, ensure_ascii=False)),
+        ],
+    )
+
+    assert inventory[FACT_INVENTORY_CATEGORIES[0]] == (
+        ("D0", "서울특별시에  본사를 둔 업체로 제한한다"),
+        ("D0", "실적 3억원 이상"),
+    )
+    assert len(errors) == 1
+    assert all("원문에 없는 제한" not in excerpt for _, excerpt in inventory[FACT_INVENTORY_CATEGORIES[0]])
+
+
+def test_shared_fact_inventory_final_plan_matches_direct_construction() -> None:
+    from src.prompt import append_fact_inventory
+    from src.schema import FACT_INVENTORY_CATEGORIES
+
+    record = _record("공고 전체 원문")
+    pipeline = BaselinePipeline(
+        item_table={item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS},
+        client=MockClient(),
+        max_document_chars=None,
+        context_strategy="single",
+        overflow_split_enabled=True,
+        count_tokens=lambda messages: sum(len(message["content"]) for message in messages),
+        prompt_budget_tokens=100_000,
+        prompt_profile="complete_fact_v1",
+    )
+    inventory = {category: () for category in FACT_INVENTORY_CATEGORIES}
+
+    def old_messages(context):
+        return append_fact_inventory(
+            pipeline.messages_for_context(record, context), inventory,
+        )
+
+    expected_contexts = pack_contexts_to_token_budget(
+        record,
+        pipeline.system_prompt_for_record(record),
+        pipeline.count_tokens,
+        pipeline.prompt_budget_tokens,
+        pipeline.notice_anchor_chars,
+        message_builder=old_messages,
+    )
+    expected_messages = [old_messages(context) for context in expected_contexts]
+
+    contexts, messages = pipeline.fact_inventory_final_plan(record, inventory)
+
+    assert contexts == expected_contexts
+    assert messages == expected_messages
 
 
 def test_timeline_navigation_is_role_grounded_and_never_a_final_label() -> None:

@@ -41,6 +41,7 @@ from src.prompt import (
     build_system_prompt,
     build_triage_system_prompt,
     format_competition_product_context,
+    format_organizer_input_semantics,
     format_v24_comparison_context,
 )
 from src.schema import (
@@ -108,6 +109,9 @@ class Prediction:
     v8_observations: tuple[dict[str, Any], ...] = ()
     parse_errors: tuple[dict[str, Any], ...] = ()
     applicability_inactive_items: tuple[tuple[str, str], ...] = ()
+    model_judgment: dict[str, dict[str, Any]] | None = None
+    postprocess_policy: str | None = None
+    postprocess_changes: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -238,6 +242,8 @@ class FactInventoryFullFinalPrediction:
     procedure_navigation: bool = False
     source_only_inventory: bool = False
     item_navigation: bool = False
+    inventory_retry_count: int = 0
+    final_retry_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -638,6 +644,56 @@ def _clean_evidence(value: str | None, source: str) -> str:
     return resolved[:EVIDENCE_MAX_CHARS] if resolved else ""
 
 
+def collect_validated_fact_inventory(
+    record: dict[str, Any],
+    source_responses: list[tuple[str, str]],
+    *,
+    max_items: int = 3,
+    categories: tuple[str, ...] = FACT_INVENTORY_CATEGORIES,
+) -> tuple[dict[str, tuple[tuple[str, str], ...]], tuple[str, ...]]:
+    """Parse and source-validate a record's factual navigation responses.
+
+    Malformed responses contribute no excerpts, while valid responses from
+    other source packs remain available. Every retained excerpt is an exact
+    (or whitespace-resolved) substring of the source pack and is linked to
+    its original document when possible.
+    """
+    collected: dict[str, list[tuple[str, str]]] = {
+        category: [] for category in categories
+    }
+    errors: list[str] = []
+    for source, raw_response in source_responses:
+        try:
+            parsed = parse_fact_inventory_response(
+                raw_response,
+                max_items=max_items,
+                categories=categories,
+            )
+        except PredictionError as exc:
+            errors.append(str(exc))
+            continue
+        for category, values in parsed.items():
+            for value in values:
+                excerpt = _clean_evidence(value, source)
+                if not excerpt:
+                    continue
+                doc_id = next(
+                    (
+                        str(doc["doc_id"])
+                        for doc in record["docs"]
+                        if excerpt in str(doc["text"])
+                    ),
+                    "source",
+                )
+                candidate = (doc_id, excerpt)
+                if candidate not in collected[category]:
+                    collected[category].append(candidate)
+    return (
+        {category: tuple(values) for category, values in collected.items()},
+        tuple(errors),
+    )
+
+
 def postprocess_judgment(
     judgment: dict[str, dict[str, Any]],
     record: dict[str, Any],
@@ -696,6 +752,7 @@ class BaselinePipeline:
         decision_cards: dict[str, dict[str, Any]] | None = None,
         competition_products: dict[str, dict[str, str]] | None = None,
         competition_product_context_mode: str = "names_only_v1",
+        organizer_input_semantics_mode: str = "off",
         v8_composite_merge_enabled: bool = False,
         v8_composite_merge_mode: str = "fallback_or",
         candidate_detection: bool = False,
@@ -727,6 +784,9 @@ class BaselinePipeline:
         }:
             raise ValueError("unsupported competition product context mode")
         self.competition_product_context_mode = competition_product_context_mode
+        if organizer_input_semantics_mode not in {"off", "anonymization_v1"}:
+            raise ValueError("unsupported organizer input semantics mode")
+        self.organizer_input_semantics_mode = organizer_input_semantics_mode
         self.law_bundle_router = law_bundle_router
         self.v8_composite_merge_enabled = v8_composite_merge_enabled
         self.v8_composite_merge_mode = v8_composite_merge_mode
@@ -825,17 +885,52 @@ class BaselinePipeline:
             )
         return self._routed_system_prompts[route.profile]
 
+    def _apply_configured_postprocess(
+        self,
+        record: dict[str, Any],
+        model_judgment: dict[str, dict[str, Any]],
+    ) -> tuple[dict[str, dict[str, Any]], tuple[dict[str, Any], ...]]:
+        """Apply one declared legacy policy and expose every changed cell."""
+        copied = {item: dict(value) for item, value in model_judgment.items()}
+        if self.frozen_rule_set is None:
+            return copied, ()
+        if self.frozen_rule_set != "exp123_v1":
+            raise ValueError("unsupported configured postprocess policy")
+        final = apply_exp123_frozen_rules(record, copied)
+        changes = tuple(
+            {
+                "item": item,
+                "before": dict(copied[item]),
+                "after": dict(final[item]),
+                "label_changed": (
+                    int(copied[item]["위반여부"])
+                    != int(final[item]["위반여부"])
+                ),
+                "evidence_changed": (
+                    str(copied[item].get("근거문구") or "")
+                    != str(final[item].get("근거문구") or "")
+                ),
+            }
+            for item in self.active_items
+            if copied[item] != final[item]
+        )
+        return final, changes
+
     def predict(self, record: dict[str, Any]) -> Prediction:
         effective, inactive = self.effective_pipeline_for_record(record)
         if effective is not self:
             prediction = effective.predict(record)
-            judgment = prediction.judgment
-            if self.frozen_rule_set == "exp123_v1":
-                judgment = apply_exp123_frozen_rules(record, judgment)
+            model_judgment = prediction.model_judgment or prediction.judgment
+            judgment, postprocess_changes = self._apply_configured_postprocess(
+                record, model_judgment
+            )
             return replace(
                 prediction,
                 judgment=judgment,
                 applicability_inactive_items=tuple(sorted(inactive.items())),
+                model_judgment=model_judgment,
+                postprocess_policy=self.frozen_rule_set,
+                postprocess_changes=postprocess_changes,
             )
         contexts = self.contexts_for_record(record)
         completions: list[Any] = []
@@ -914,6 +1009,7 @@ class BaselinePipeline:
             decision_cards=self._decision_cards,
             competition_products=self.competition_products,
             competition_product_context_mode=self.competition_product_context_mode,
+            organizer_input_semantics_mode=self.organizer_input_semantics_mode,
             v8_composite_merge_enabled=False,
             v8_composite_merge_mode=self.v8_composite_merge_mode,
             candidate_detection=self._candidate_detection,
@@ -1040,6 +1136,7 @@ class BaselinePipeline:
             include_normalized_facts=self.include_normalized_facts,
             document_context=context.text if isinstance(context, DocumentContext) else context,
             competition_product_context=self.competition_product_context_for_record(record),
+            organizer_input_semantics_context=self.organizer_input_semantics_for_record(record),
             v24_comparison_context=(format_v24_comparison_context(record) if "v24" in self.active_items else None),
             markdown_sections=self.prompt_layout in {"markdown", "markdown_v2"},
             prompt_profile=self.prompt_profile,
@@ -1077,6 +1174,7 @@ class BaselinePipeline:
             decision_cards=self._decision_cards,
             competition_products=self.competition_products,
             competition_product_context_mode=self.competition_product_context_mode,
+            organizer_input_semantics_mode=self.organizer_input_semantics_mode,
             v8_composite_merge_enabled=False,
             v8_composite_merge_mode=self.v8_composite_merge_mode,
             candidate_detection=self._candidate_detection,
@@ -1289,8 +1387,10 @@ class BaselinePipeline:
             final_judgment = zero_judgment()
             for item in strict_items:
                 final_judgment[item] = strict.judgment[item]
-            if self.frozen_rule_set == "exp123_v1":
-                final_judgment = apply_exp123_frozen_rules(record, final_judgment)
+            model_judgment = final_judgment
+            final_judgment, postprocess_changes = self._apply_configured_postprocess(
+                record, model_judgment
+            )
             final = Prediction(
                 record_id=record["id"],
                 judgment=final_judgment,
@@ -1302,6 +1402,9 @@ class BaselinePipeline:
                 pass_judgments=strict.pass_judgments,
                 v8_observations=strict.v8_observations,
                 parse_errors=strict.parse_errors,
+                model_judgment=model_judgment,
+                postprocess_policy=self.frozen_rule_set,
+                postprocess_changes=postprocess_changes,
             )
         return TriageThenStrictPrediction(
             triage_raw_response=triage_completion.content,
@@ -1335,6 +1438,7 @@ class BaselinePipeline:
             include_normalized_facts=self.include_normalized_facts,
             document_context=context.text if isinstance(context, DocumentContext) else context,
             competition_product_context=self.competition_product_context_for_record(record),
+            organizer_input_semantics_context=self.organizer_input_semantics_for_record(record),
             v24_comparison_context=None,
             markdown_sections=self.prompt_layout in {"markdown", "markdown_v2"},
             prompt_profile=self.prompt_profile,
@@ -1412,6 +1516,7 @@ class BaselinePipeline:
                 self._visible_record(record), inventory_system, self.max_document_chars,
                 document_context=context.text if isinstance(context, DocumentContext) else context,
                 competition_product_context=self.competition_product_context_for_record(record),
+                organizer_input_semantics_context=self.organizer_input_semantics_for_record(record),
                 prompt_profile=self.prompt_profile, metadata_style=self.metadata_style,
                 output_mode="labels_only",
             )
@@ -1479,6 +1584,7 @@ class BaselinePipeline:
             messages = build_messages(
                 visible, inventory_system, self.max_document_chars,
                 document_context=source,
+                organizer_input_semantics_context=self.organizer_input_semantics_for_record(visible),
                 prompt_profile=self.prompt_profile,
                 metadata_style=self.metadata_style,
                 output_mode="labels_only",
@@ -1559,6 +1665,8 @@ class BaselinePipeline:
         collected: dict[str, list[tuple[str, str]]] = {
             category: [] for category in navigation_fields
         }
+        fact_source_responses: list[tuple[str, str]] = []
+        inventory_retry_count = 0
         raw: list[str] = []
         usages: list[dict[str, Any]] = []
         latencies: list[float] = []
@@ -1566,18 +1674,13 @@ class BaselinePipeline:
         messages_log: list[tuple[dict[str, str], ...]] = []
         visible = self._visible_record(record)
         for context in stage_contexts:
-            source = context.text if isinstance(context, DocumentContext) else (
-                context if context is not None else build_official_baseline_context(visible, None)
-            )
-            messages = (
-                build_source_only_fact_messages(inventory_system, source)
-                if procedure_navigation or source_only_inventory or item_navigation else build_messages(
-                    visible, inventory_system, self.max_document_chars,
-                    document_context=source,
-                    prompt_profile=self.prompt_profile,
-                    metadata_style=self.metadata_style,
-                    output_mode="labels_only",
-                )
+            source, messages = self.navigation_messages_for_context(
+                record,
+                context,
+                inventory_system,
+                source_only=(
+                    procedure_navigation or source_only_inventory or item_navigation
+                ),
             )
             messages_log.append(tuple(messages))
             completion = self.client.complete(
@@ -1585,19 +1688,33 @@ class BaselinePipeline:
                 item_fact_schema() if item_navigation else procedure_fact_schema() if procedure_navigation
                 else fact_inventory_schema(inventory_max_items, categories=inventory_categories),
             )
+            if not item_navigation and not procedure_navigation:
+                try:
+                    parse_fact_inventory_response(
+                        completion.content,
+                        max_items=inventory_max_items,
+                        categories=inventory_categories,
+                    )
+                except PredictionError:
+                    inventory_retry_count += 1
+                    completion = self.client.complete(
+                        messages,
+                        fact_inventory_schema(
+                            inventory_max_items,
+                            categories=inventory_categories,
+                        ),
+                    )
             raw.append(completion.content)
             usages.append(completion.usage)
             latencies.append(completion.latency_seconds)
+            if not item_navigation and not procedure_navigation:
+                fact_source_responses.append((source, completion.content))
+                continue
             try:
                 if item_navigation:
                     parsed = parse_item_fact_response(completion.content)
                 elif procedure_navigation:
                     parsed = parse_procedure_fact_response(completion.content)
-                else:
-                    parsed = parse_fact_inventory_response(
-                        completion.content, max_items=inventory_max_items,
-                        categories=inventory_categories,
-                    )
             except PredictionError as exc:
                 errors.append(str(exc))
                 parsed = {category: [] for category in navigation_fields}
@@ -1613,7 +1730,18 @@ class BaselinePipeline:
                     if (doc_id, excerpt) not in collected[category]:
                         collected[category].append((doc_id, excerpt))
 
-        inventory = {category: tuple(values) for category, values in collected.items()}
+        if not item_navigation and not procedure_navigation:
+            inventory, shared_errors = collect_validated_fact_inventory(
+                visible,
+                fact_source_responses,
+                max_items=inventory_max_items,
+                categories=inventory_categories,
+            )
+            errors.extend(shared_errors)
+        else:
+            inventory = {
+                category: tuple(values) for category, values in collected.items()
+            }
         timeline: dict[str, tuple[tuple[str, str], ...]] | None = None
         timeline_raw: list[str] = []
         timeline_usages: list[dict[str, Any]] = []
@@ -1658,7 +1786,9 @@ class BaselinePipeline:
                             timeline_collected[role].append((doc_id, excerpt))
             timeline = {role: tuple(values) for role, values in timeline_collected.items()}
 
-        def final_messages_for(context: str | None) -> list[dict[str, str]]:
+        def final_messages_for(
+            context: str | DocumentContext | None,
+        ) -> list[dict[str, str]]:
             messages = (
                 append_item_fact_navigation(
                     self.messages_for_context(record, context), inventory,
@@ -1672,20 +1802,28 @@ class BaselinePipeline:
             )
             return append_timeline_fact_navigation(messages, timeline) if timeline is not None else messages
 
-        final_contexts = pack_contexts_to_token_budget(
-            visible,
-            self.system_prompt_for_record(record),
-            self.count_tokens,
-            self.prompt_budget_tokens,
-            self.notice_anchor_chars,
-            message_builder=final_messages_for,
+        if not item_navigation and not procedure_navigation and timeline is None:
+            final_contexts, final_messages = self.fact_inventory_final_plan(
+                record,
+                inventory,
+                position=inventory_position,
+                categories=inventory_categories,
+            )
+        else:
+            final_contexts = pack_contexts_to_token_budget(
+                visible,
+                self.system_prompt_for_record(record),
+                self.count_tokens,
+                self.prompt_budget_tokens,
+                self.notice_anchor_chars,
+                message_builder=final_messages_for,
+            )
+            final_messages = [final_messages_for(context) for context in final_contexts]
+        final, final_retry_count = self.complete_final_messages_with_parse_retry(
+            record,
+            final_messages,
+            final_contexts,
         )
-        final_messages = [final_messages_for(context) for context in final_contexts]
-        completions = [self.client.complete(messages, self.response_schema) for messages in final_messages]
-        final = self.finalize(record, completions, final_contexts)
-        recovery = bool(final.parse_errors)
-        if recovery:
-            final = self.predict(record)
         return FactInventoryFullFinalPrediction(
             inventory_raw_responses=tuple(raw),
             inventory_by_category=inventory,
@@ -1698,7 +1836,7 @@ class BaselinePipeline:
             inventory_categories=inventory_categories,
             final=final,
             final_messages_by_context=tuple(tuple(messages) for messages in final_messages),
-            final_recovery_used=recovery,
+            final_recovery_used=bool(final_retry_count),
             timeline_raw_responses=tuple(timeline_raw),
             timeline_by_role=timeline,
             timeline_usage=tuple(timeline_usages),
@@ -1708,7 +1846,117 @@ class BaselinePipeline:
             procedure_navigation=procedure_navigation,
             source_only_inventory=source_only_inventory,
             item_navigation=item_navigation,
+            inventory_retry_count=inventory_retry_count,
+            final_retry_count=final_retry_count,
         )
+
+    def navigation_messages_for_context(
+        self,
+        record: dict[str, Any],
+        context: str | DocumentContext | None,
+        system_prompt: str,
+        *,
+        source_only: bool = False,
+    ) -> tuple[str, list[dict[str, str]]]:
+        """Build one shared navigation request for local and submission runs."""
+        visible = self._visible_record(record)
+        source = context.text if isinstance(context, DocumentContext) else (
+            context
+            if context is not None
+            else build_official_baseline_context(visible, None)
+        )
+        if source_only:
+            messages = build_source_only_fact_messages(
+                system_prompt,
+                source,
+                self.organizer_input_semantics_for_record(visible),
+            )
+        else:
+            messages = build_messages(
+                visible,
+                system_prompt,
+                self.max_document_chars,
+                document_context=source,
+                organizer_input_semantics_context=(
+                    self.organizer_input_semantics_for_record(visible)
+                ),
+                prompt_profile=self.prompt_profile,
+                metadata_style=self.metadata_style,
+                output_mode="labels_only",
+            )
+        return source, messages
+
+    def fact_inventory_final_plan(
+        self,
+        record: dict[str, Any],
+        inventory: dict[str, tuple[tuple[str, str], ...]],
+        *,
+        position: str = "after_source",
+        categories: tuple[str, ...] = FACT_INVENTORY_CATEGORIES,
+    ) -> tuple[
+        list[str | DocumentContext | None],
+        list[list[dict[str, str]]],
+    ]:
+        """Build the exact-token admitted, source-complete final request plan."""
+        if self.count_tokens is None:
+            raise ValueError("fact-inventory full-final requires exact tokenizer admission")
+        visible = self._visible_record(record)
+
+        def final_messages_for(
+            context: str | DocumentContext | None,
+        ) -> list[dict[str, str]]:
+            return append_fact_inventory(
+                self.messages_for_context(record, context),
+                inventory,
+                position=position,
+                categories=categories,
+            )
+
+        contexts = pack_contexts_to_token_budget(
+            visible,
+            self.system_prompt_for_record(record),
+            self.count_tokens,
+            self.prompt_budget_tokens,
+            self.notice_anchor_chars,
+            message_builder=final_messages_for,
+        )
+        return contexts, [final_messages_for(context) for context in contexts]
+
+    def complete_final_messages_with_parse_retry(
+        self,
+        record: dict[str, Any],
+        messages_by_context: list[list[dict[str, str]]],
+        contexts: list[str | DocumentContext | None],
+    ) -> tuple[Prediction, int]:
+        """Retry malformed final passes without changing the inference policy.
+
+        The historical staged path silently replaced any malformed source-first
+        final with ``predict(record)``, which discards the inventory navigation
+        and changes the experiment into a direct one-stage call. Submission
+        already retries the same malformed message. Keep local execution on the
+        same source-first prompt and leave an unrecovered pass parse-visible.
+        """
+        if len(messages_by_context) != len(contexts):
+            raise ValueError("final message/context cardinality mismatch")
+        completions = [
+            self.client.complete(messages, self.response_schema)
+            for messages in messages_by_context
+        ]
+        final = self.finalize(record, completions, contexts)
+        failed_indices = {
+            int(error["pass_index"]) - 1
+            for error in final.parse_errors
+            if isinstance(error.get("pass_index"), int)
+        }
+        if not failed_indices:
+            return final, 0
+        for index in sorted(failed_indices):
+            if not 0 <= index < len(completions):
+                raise ValueError("final parse error has invalid pass index")
+            completions[index] = self.client.complete(
+                messages_by_context[index], self.response_schema
+            )
+        return self.finalize(record, completions, contexts), len(failed_indices)
 
     def contexts_for_record(
         self, record: dict[str, Any]
@@ -1782,6 +2030,7 @@ class BaselinePipeline:
             include_normalized_facts=self.include_normalized_facts,
             document_context=context.text if isinstance(context, DocumentContext) else context,
             competition_product_context=self.competition_product_context_for_record(record),
+            organizer_input_semantics_context=self.organizer_input_semantics_for_record(record),
             v24_comparison_context=(format_v24_comparison_context(record) if "v24" in self.active_items else None),
             markdown_sections=self.prompt_layout in {"markdown", "markdown_v2"},
             prompt_profile=self.prompt_profile,
@@ -1817,6 +2066,13 @@ class BaselinePipeline:
             competition_product_fact(record, self.competition_products),
             self.active_items,
             self.competition_product_context_mode,
+        )
+
+    def organizer_input_semantics_for_record(
+        self, record: dict[str, Any]
+    ) -> str | None:
+        return format_organizer_input_semantics(
+            record, self.organizer_input_semantics_mode
         )
 
     def finalize(
@@ -1882,10 +2138,11 @@ class BaselinePipeline:
         # A group pass is still serializable as the competition's complete 24-item
         # row.  Its inactive items are placeholders and are never treated as a
         # group decision by the grouped orchestrator.
-        judgment = zero_judgment()
-        judgment.update(merged_active)
-        if self.frozen_rule_set == "exp123_v1":
-            judgment = apply_exp123_frozen_rules(record, judgment)
+        model_judgment = zero_judgment()
+        model_judgment.update(merged_active)
+        judgment, postprocess_changes = self._apply_configured_postprocess(
+            record, model_judgment
+        )
         completion = completions[0]
         return Prediction(
             record_id=record["id"],
@@ -1898,6 +2155,9 @@ class BaselinePipeline:
             pass_judgments=tuple(judgments),
             v8_observations=tuple(v8_observations),
             parse_errors=tuple(parse_errors),
+            model_judgment=model_judgment,
+            postprocess_policy=self.frozen_rule_set,
+            postprocess_changes=postprocess_changes,
         )
 
 

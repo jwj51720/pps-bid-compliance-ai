@@ -160,6 +160,25 @@ CARD_TEXT_V9_V6_SCOPE = {
 }
 
 
+# v10 keeps the independently audited v6 correction and fixes the same
+# applicability inversion for v7. National/local limited-tender rules govern
+# adjacent-area expansion; local two-quote small contracts are a separate
+# explicit allowance, not v7's sole applicability gate.
+CARD_TEXT_V10_V6_V7_SCOPE = {
+    **CARD_TEXT_V9_V6_SCOPE,
+    "v7": (
+        "판정 순서: 1) 고시금액 미만인지, 2) 둘 이상의 지역이 실제 참가자격 범위인지, "
+        "3) 현장·납품지의 기준 지역에 인접 시·군·구 또는 시·도를 더한 관계인지, "
+        "4) 적용계약법과 계약방법에서 그 확대를 허용하는 명시적 사유가 충족되는지 "
+        "확인한다. 1 조건: 국가·지방 제한입찰에서 허용 사유가 확인되지 않은 인접 "
+        "지역 확대를 실제 참가자격으로 둔 경우다. 0 조건: 지방 2인 이상 견적 "
+        "수의계약 등 적용 규정이 해당 인접 확대를 허용하고 그 요건이 확인된 경우, "
+        "지역명 나열·현장·납품지 설명뿐인 경우, 또는 고시금액 미만·실제 참가제한·"
+        "인접 관계·허용 여부 중 하나를 확인할 수 없는 경우다."
+    ),
+}
+
+
 # Legal micro-cards deliberately distil only the decision conditions already
 # identified from the organizer-provided item table and mapped official sources.
 # They are not a substitute for legal retrieval: no threshold, exception, or
@@ -242,7 +261,7 @@ def main() -> int:
         "--version",
         choices=(
             "v1", "v2", "v3", "v3_draft", "v4", "v5", "v6", "v7",
-            "v9_v6_scope", "legal_micro_v1",
+            "v9_v6_scope", "v10_v6_v7_scope", "legal_micro_v1",
         ),
         default="v1",
     )
@@ -266,6 +285,8 @@ def main() -> int:
         card_text = CARD_TEXT_V7
     elif args.version == "v9_v6_scope":
         card_text = CARD_TEXT_V9_V6_SCOPE
+    elif args.version == "v10_v6_v7_scope":
+        card_text = CARD_TEXT_V10_V6_V7_SCOPE
     else:
         card_text = CARD_TEXT_V2
     if set(card_text) != set(item_table):
@@ -290,7 +311,7 @@ def main() -> int:
         "purpose": (
             "item-local prompt decision policy distilled from organizer-provided "
             "item table and law review; it is not runtime legal RAG"
-            if args.version in {"v6", "v7", "v9_v6_scope"}
+            if args.version in {"v6", "v7", "v9_v6_scope", "v10_v6_v7_scope"}
             else "conservative prompt decision policy; exact thresholds and exceptions require official RAG facts"
         ),
         "source_item_table": str(item_table_path),

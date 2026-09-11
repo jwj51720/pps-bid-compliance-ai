@@ -76,6 +76,7 @@ class ExperimentConfig:
     decision_cards_path: Path | None
     competition_products_path: Path | None
     competition_product_context_mode: str
+    organizer_input_semantics_mode: str
     prompt_mode: str
     include_normalized_facts: bool
     v8_composite_merge_enabled: bool
@@ -104,25 +105,45 @@ def _mapping(value: Any, name: str) -> dict[str, Any]:
     return value
 
 
-def load_config(path: str | Path) -> ExperimentConfig:
-    config_path = Path(path).resolve()
+def _load_raw_config(
+    config_path: Path,
+    inheritance_stack: tuple[Path, ...] = (),
+) -> dict[str, Any]:
+    """Load a config and its complete inheritance chain.
+
+    Top-level sections retain the historical one-level mapping merge. Only the
+    inheritance traversal is recursive, so existing experiment semantics do not
+    change when a parent itself inherits another config.
+    """
+    config_path = config_path.resolve()
+    if config_path in inheritance_stack:
+        chain = " -> ".join(
+            str(path) for path in (*inheritance_stack, config_path)
+        )
+        raise ValueError(f"config inheritance cycle: {chain}")
     with config_path.open(encoding="utf-8") as handle:
         raw = yaml.safe_load(handle)
     raw = _mapping(raw, "config")
     inherits = raw.get("inherits")
-    if inherits:
-        parent_path = (config_path.parent / str(inherits)).resolve()
-        with parent_path.open(encoding="utf-8") as handle:
-            parent = _mapping(yaml.safe_load(handle), "parent config")
-        merged = dict(parent)
-        for key, value in raw.items():
-            if key == "inherits":
-                continue
-            if isinstance(value, dict) and isinstance(merged.get(key), dict):
-                merged[key] = {**merged[key], **value}
-            else:
-                merged[key] = value
-        raw = merged
+    if not inherits:
+        return raw
+
+    parent_path = (config_path.parent / str(inherits)).resolve()
+    parent = _load_raw_config(parent_path, (*inheritance_stack, config_path))
+    merged = dict(parent)
+    for key, value in raw.items():
+        if key == "inherits":
+            continue
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = {**merged[key], **value}
+        else:
+            merged[key] = value
+    return merged
+
+
+def load_config(path: str | Path) -> ExperimentConfig:
+    config_path = Path(path).resolve()
+    raw = _load_raw_config(config_path)
     experiment = _mapping(raw.get("experiment"), "experiment")
     if experiment.get("lifecycle") == "invalidated":
         raise ValueError(
@@ -193,6 +214,9 @@ def load_config(path: str | Path) -> ExperimentConfig:
         else None,
         competition_product_context_mode=str(
             prompt.get("competition_product_context_mode", "names_only_v1")
+        ),
+        organizer_input_semantics_mode=str(
+            prompt.get("organizer_input_semantics_mode", "off")
         ),
         prompt_mode=str(prompt.get("mode", "baseline")),
         include_normalized_facts=bool(prompt.get("include_normalized_facts", False)),
@@ -304,8 +328,13 @@ def load_config(path: str | Path) -> ExperimentConfig:
         )
     if config.item_catalog_style not in {"minimal", "official_references"}:
         raise ValueError("prompt.item_catalog_style must be minimal or official_references")
-    if config.metadata_style not in {"full_json", "official_lines"}:
-        raise ValueError("prompt.metadata_style must be full_json or official_lines")
+    if config.metadata_style not in {
+        "full_json", "official_lines", "official_lines_human_v2"
+    }:
+        raise ValueError(
+            "prompt.metadata_style must be full_json, official_lines, "
+            "or official_lines_human_v2"
+        )
     if config.competition_product_context_mode not in {
         "names_only_v1", "conditions_and_provenance_v2"
     }:
@@ -319,6 +348,10 @@ def load_config(path: str | Path) -> ExperimentConfig:
     ):
         raise ValueError(
             "conditions_and_provenance_v2 requires competition_products_path"
+        )
+    if config.organizer_input_semantics_mode not in {"off", "anonymization_v1"}:
+        raise ValueError(
+            "prompt.organizer_input_semantics_mode must be off or anonymization_v1"
         )
     if config.output_mode not in {"labels_and_evidence", "labels_only", "labels_and_anchor", "labels_and_sparse_evidence"}:
         raise ValueError("invalid prompt.output_mode")
