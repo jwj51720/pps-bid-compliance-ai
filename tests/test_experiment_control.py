@@ -39,3 +39,23 @@ def test_preflight_distinguishes_unset_from_explicit_null_group_override() -> No
     differences = controlled_differences(base, candidate)
     key = "grouped_run.group_context_overrides.G03_specification_model.max_document_chars"
     assert differences[key] == {"base": "<unset>", "candidate": None}
+
+
+def test_exp192_declares_only_product_context_delivery_change() -> None:
+    base = load_config(ROOT / "configs/config.exp169-complete-source-2500-fast-panel-c4.yaml")
+    candidate = load_config(
+        ROOT / "configs/config.exp192-product-condition-delivery-fast-panel-c4.yaml"
+    )
+
+    assert set(controlled_differences(base, candidate)) == {
+        "prompt.competition_product_context_mode"
+    }
+
+
+def test_exp193_declares_only_v6_card_artifact_change() -> None:
+    base = load_config(ROOT / "configs/config.exp169-complete-source-2500-fast-panel-c4.yaml")
+    candidate = load_config(ROOT / "configs/config.exp193-v6-scope-card-fast-panel-c4.yaml")
+
+    assert set(controlled_differences(base, candidate)) == {
+        "prompt.decision_cards_path"
+    }

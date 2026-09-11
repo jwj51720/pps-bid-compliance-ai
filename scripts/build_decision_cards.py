@@ -141,6 +141,25 @@ CARD_TEXT_V7 = {
 }
 
 
+# v9 changes only v6 after an independent organizer-source audit.  National
+# and local rule 25 govern limited tendering at the province/city-province
+# level; small-contract provisions are a separate allowance for a narrower
+# city/county area, not the sole applicability gate for v6.
+CARD_TEXT_V9_V6_SCOPE = {
+    **CARD_TEXT_V6,
+    "v6": (
+        "판정 순서: 1) 고시금액 미만인지, 2) 법인등기부상 본점 또는 사업장 소재지를 "
+        "시·군·구 단위의 실제 참가자격으로 제한했는지, 3) 적용계약법과 계약방법에서 "
+        "그 좁은 지역 단위를 허용하는 명시적 요건이 충족되는지 확인한다. 1 조건: 국가·지방 "
+        "제한입찰에서 원칙적인 시·도 범위보다 좁은 시·군·구로 참가자격을 제한했거나, "
+        "그 밖에 허용 요건이 확인되지 않은 시·군·구 참가제한을 둔 경우다. 0 조건: "
+        "2인 이상 견적 수의계약 등 적용 규정이 시·군 단위 제한을 허용하고 그 요건이 "
+        "확인된 경우, 현장·납품지 설명 또는 지역명 나열뿐인 경우, 고시금액 미만·실제 "
+        "참가제한·제한 단위 중 하나를 확인할 수 없는 경우다."
+    ),
+}
+
+
 # Legal micro-cards deliberately distil only the decision conditions already
 # identified from the organizer-provided item table and mapped official sources.
 # They are not a substitute for legal retrieval: no threshold, exception, or
@@ -219,7 +238,14 @@ def sha256(path: Path) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--item-table", default="data/raw/open/data/항목표.json")
-    parser.add_argument("--version", choices=("v1", "v2", "v3", "v3_draft", "v4", "v5", "v6", "v7", "legal_micro_v1"), default="v1")
+    parser.add_argument(
+        "--version",
+        choices=(
+            "v1", "v2", "v3", "v3_draft", "v4", "v5", "v6", "v7",
+            "v9_v6_scope", "legal_micro_v1",
+        ),
+        default="v1",
+    )
     parser.add_argument("--output")
     args = parser.parse_args()
     item_table_path = Path(args.item_table)
@@ -238,6 +264,8 @@ def main() -> int:
         card_text = CARD_TEXT_V6
     elif args.version == "v7":
         card_text = CARD_TEXT_V7
+    elif args.version == "v9_v6_scope":
+        card_text = CARD_TEXT_V9_V6_SCOPE
     else:
         card_text = CARD_TEXT_V2
     if set(card_text) != set(item_table):
@@ -262,7 +290,7 @@ def main() -> int:
         "purpose": (
             "item-local prompt decision policy distilled from organizer-provided "
             "item table and law review; it is not runtime legal RAG"
-            if args.version in {"v6", "v7"}
+            if args.version in {"v6", "v7", "v9_v6_scope"}
             else "conservative prompt decision policy; exact thresholds and exceptions require official RAG facts"
         ),
         "source_item_table": str(item_table_path),

@@ -12,6 +12,11 @@ and `data/derived/legal_condition_ledger_v1.json`. The ledger retains the
 complete organizer-law source chunks and hashes. This contract introduces no
 dev-label facts, notice-specific facts, or inferred product status.
 
+The v6 row was corrected on 2026-09-11 after tracing both national and local
+rule 25. Limited tendering is part of the base applicability; a qualifying
+small-contract rule is a possible allowance for a narrower area, not the sole
+v6 applicability gate. See `docs/v6_applicability_scope_audit_result.md`.
+
 For an active item, a paid prompt run must show, in its exact rendered input:
 
 1. the matching profile-specific decision condition below;
@@ -59,7 +64,7 @@ not inject any law bundle:
 | v3 | A single actual-qualification performance amount exceeds one times the same contract-object, same-unit reference price. | Cumulative performance, scoring, different object/unit, or no comparable value. | 공고문 and qualification attachments | 적용계약법, 입찰추정가격, 배정예산금액 | rule 25, government/local limitation guide |
 | v4 | At/above threshold, actual qualification is limited to a specific institution or issuer/type of performance without an established special technical/process/performance/quality necessity. | General qualification/performance, or threshold/restriction/necessity is unknown. | 공고문, 제안요청서 | 적용계약법, 업무구분, 입찰추정가격 | government/local limitation guide |
 | v5 | At/above applicable threshold, a geographic condition is an actual participation qualification outside the permitted range. | Place of delivery/site only; a region name alone is not a restriction. | 공고문 and qualification attachments | 적용계약법, 입찰추정가격, 계약방법, 지역제한여부, 제한지역코드목록 | decree 21/20, local rule 24, price notice |
-| v6 | In a local two-or-more-quotation small contract, an actual city/county/district location qualification exceeds the permitted range. | No local-small applicability; site/delivery geography only; special allowance applies. | 공고문 and qualification attachments | 적용계약법, 계약방법, 낙찰방법, 입찰추정가격, 지역제한여부, 제한지역코드목록 | local rule 25, small-contract guide |
+| v6 | Below the applicable notice threshold, a national or local limited tender actually restricts bidder location to a city/county/district narrower than the ordinary province-level range, or another city/county/district restriction lacks an established allowance. | A qualifying two-or-more-quotation small-contract provision expressly permits the narrower city/county area; site/delivery geography only; amount, bidder restriction, or area unit is unproven. | 공고문 and qualification attachments | 적용계약법, 계약방법, 낙찰방법, 입찰추정가격, 지역제한여부, 제한지역코드목록 | national rule 25, local rule 25, small-contract guide |
 | v7 | In the same local-small regime, actual participation area is expanded beyond the permitted base area to neighbouring city/county/district or province. | Multiple place names alone; no actual participation restriction; allowance/contract regime unproven. | 공고문 and qualification attachments | 적용계약법, 계약방법, 낙찰방법, 입찰추정가격, 지역제한여부, 제한지역코드목록 | local rule 25, small-contract guide |
 | v8 | The same bidder qualification simultaneously imposes performance and regional restriction in a local-small regime where that combination is not allowed. | Only one restriction, different clauses/subjects, or allowance/regime unproven. | Same qualification clause(s), including attached requirements | 적용계약법, 계약방법, 낙찰방법, 입찰추정가격, 지역제한여부, 제한지역코드목록; performance facts must come from the same notice qualification clause(s) | local rule 25, small-contract guide |
 | v9 | A specification/task/RFP makes a particular maker/model a required supply condition without equivalent/compatible alternative or concrete special-need basis. | Example, installed-equipment description, general performance specification, or explicit equivalent product allowance. | **규격서, 과업지시서, 제안요청서**; announcement alone is not sufficient evidence. | 업무구분; apply law for rule profile | government/local limitation guide |
