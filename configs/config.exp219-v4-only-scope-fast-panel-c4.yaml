@@ -1,0 +1,15 @@
+# EXP219 diagnostic: ask Gemma only for v4 using the organizer-law corrected card.
+inherits: config.exp205-relation-checklist-after-source-fast-panel-c4.yaml
+experiment:
+  id: exp-219-v4-only-scope-fast-panel-c4
+  base_config: configs/config.exp205-relation-checklist-after-source-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.active_items, prompt.decision_cards_path, prompt.profile, prompt.mode]
+  derived_data: [decision_cards_v11_v4_scope, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-219-v4-only-scope-fast-panel-c4
+prompt:
+  active_items: [v4]
+  decision_cards_path: data/derived/decision_cards_v11_v4_scope.json
+  profile: complete_fact_subset_v1
+  mode: baseline

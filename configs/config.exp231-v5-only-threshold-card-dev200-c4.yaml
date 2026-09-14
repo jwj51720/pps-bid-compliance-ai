@@ -1,0 +1,12 @@
+# EXP231: policy-identical dev200 extension of EXP229/230.
+inherits: config.exp229-v5-only-threshold-card-fast-panel-c4.yaml
+experiment:
+  id: exp-231-v5-only-threshold-card-dev200-c4
+  base_config: configs/config.exp229-v5-only-threshold-card-fast-panel-c4.yaml
+  allowed_policy_changes: []
+  derived_data: [decision_cards_v12_v5_threshold, competition_products_v1]
+  lifecycle: diagnostic
+data:
+  fast_panel_ids_path: null
+output:
+  dir: outputs/exp-231-v5-only-threshold-card-dev200-c4

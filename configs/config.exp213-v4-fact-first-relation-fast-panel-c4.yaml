@@ -1,0 +1,12 @@
+# EXP213: one observable v4 fact review before the model-owned 24-item V/E decision.
+inherits: config.exp205-relation-checklist-after-source-fast-panel-c4.yaml
+experiment:
+  id: exp-213-v4-fact-first-relation-fast-panel-c4
+  base_config: configs/config.exp205-relation-checklist-after-source-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.mode]
+  derived_data: [decision_cards_v10_v6_v7_scope, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-213-v4-fact-first-relation-fast-panel-c4
+prompt:
+  mode: v4_fact_first_relation_v1

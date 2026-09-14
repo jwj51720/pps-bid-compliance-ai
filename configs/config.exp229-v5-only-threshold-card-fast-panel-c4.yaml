@@ -1,0 +1,12 @@
+# EXP229: v5-only numeric-operand completion after the EXP228 attention control.
+inherits: config.exp228-v5-only-existing-card-fast-panel-c4.yaml
+experiment:
+  id: exp-229-v5-only-threshold-card-fast-panel-c4
+  base_config: configs/config.exp228-v5-only-existing-card-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.decision_cards_path]
+  derived_data: [decision_cards_v12_v5_threshold, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-229-v5-only-threshold-card-fast-panel-c4
+prompt:
+  decision_cards_path: data/derived/decision_cards_v12_v5_threshold.json

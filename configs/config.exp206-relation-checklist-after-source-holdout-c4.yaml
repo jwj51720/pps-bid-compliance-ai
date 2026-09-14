@@ -1,0 +1,12 @@
+# EXP206: policy-identical independent holdout for EXP205.
+inherits: config.exp205-relation-checklist-after-source-fast-panel-c4.yaml
+experiment:
+  id: exp-206-relation-checklist-after-source-holdout-c4
+  base_config: configs/config.exp205-relation-checklist-after-source-fast-panel-c4.yaml
+  allowed_policy_changes: []
+  derived_data: [decision_cards_v10_v6_v7_scope, competition_products_v1, dev_prompt_holdout_v1]
+  lifecycle: diagnostic
+data:
+  fast_panel_ids_path: configs/dev_prompt_holdout_v1.json
+output:
+  dir: outputs/exp-206-relation-checklist-after-source-holdout-c4

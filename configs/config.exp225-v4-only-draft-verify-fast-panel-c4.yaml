@@ -1,0 +1,12 @@
+# EXP225: one v4-only V draft followed by a complete-source v4/e4 final owner.
+inherits: config.exp219-v4-only-scope-fast-panel-c4.yaml
+experiment:
+  id: exp-225-v4-only-draft-verify-fast-panel-c4
+  base_config: configs/config.exp219-v4-only-scope-fast-panel-c4.yaml
+  allowed_policy_changes: [staged_run, staged_run.mode]
+  derived_data: [decision_cards_v11_v4_scope, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-225-v4-only-draft-verify-fast-panel-c4
+staged_run:
+  mode: vonly_draft_full_final_v1

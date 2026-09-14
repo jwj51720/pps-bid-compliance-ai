@@ -1,0 +1,12 @@
+# EXP230: policy-identical independent holdout for EXP229.
+inherits: config.exp229-v5-only-threshold-card-fast-panel-c4.yaml
+experiment:
+  id: exp-230-v5-only-threshold-card-holdout-c4
+  base_config: configs/config.exp229-v5-only-threshold-card-fast-panel-c4.yaml
+  allowed_policy_changes: []
+  derived_data: [decision_cards_v12_v5_threshold, competition_products_v1, dev_prompt_holdout_v1]
+  lifecycle: diagnostic
+data:
+  fast_panel_ids_path: configs/dev_prompt_holdout_v1.json
+output:
+  dir: outputs/exp-230-v5-only-threshold-card-holdout-c4
