@@ -485,6 +485,9 @@ def _prediction_to_json(
         "finish_reason": prediction.finish_reason,
         "pass_judgments": list(prediction.pass_judgments),
         "v8_observations": list(prediction.v8_observations),
+        "v4_fact_reviews": list(prediction.v4_fact_reviews),
+        "v24_fact_reviews": list(prediction.v24_fact_reviews),
+        "category_fact_reviews": list(prediction.category_fact_reviews),
         "parse_errors": list(prediction.parse_errors),
         "applicability_inactive_items": dict(prediction.applicability_inactive_items),
     }

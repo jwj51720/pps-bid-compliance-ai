@@ -36,6 +36,30 @@ PROCEDURE_FACT_FIELDS = (
     "일정참가_관계",
     "공고메타_대조값",
 )
+V24_COMPARISON_FIELDS = ("예산", "계약방법", "지역제한", "업종")
+V24_COMPARISON_RELATIONS = ("양립가능", "양립불가능", "판단불가")
+V4_PRESENCE_STATES = ("있음", "없음", "불명")
+V4_CLAUSE_ROLES = (
+    "참가자격",
+    "제안평가_배점",
+    "증빙서류_행정",
+    "시설_조직_제품_기술조건",
+    "기타",
+    "불명",
+)
+V4_CLIENT_SCOPES = (
+    "특정발주기관만",
+    "민간_공공_또는_모든기관인정",
+    "발주기관제한없음",
+    "불명",
+)
+V4_PERFORMANCE_SCOPES = (
+    "동등유사배제_좁은실적만",
+    "폭넓은동등유사실적인정",
+    "일반적인동종동일목적실적",
+    "실적제한아님",
+    "불명",
+)
 
 
 def judgment_schema(
@@ -134,6 +158,156 @@ def judgment_schema(
         "additionalProperties": False,
         "required": [*items, *( ["v8병합관찰"] if v8_composite_enabled and "v8" in items else [])],
         "properties": properties,
+    }
+
+
+def v24_fact_first_judgment_schema(
+    items: tuple[str, ...] = ITEMS,
+) -> dict[str, Any]:
+    """Return a one-call observable v24 review followed by final V/E."""
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["v24대조", "판정"],
+        "properties": {
+            "v24대조": {
+                "type": "array",
+                "maxItems": len(V24_COMPARISON_FIELDS),
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["필드", "원문값", "메타값", "관계"],
+                    "properties": {
+                        "필드": {"type": "string", "enum": list(V24_COMPARISON_FIELDS)},
+                        "원문값": {"type": ["string", "null"], "maxLength": 500},
+                        "메타값": {"type": ["string", "null"], "maxLength": 300},
+                        "관계": {"type": "string", "enum": list(V24_COMPARISON_RELATIONS)},
+                    },
+                },
+            },
+            "판정": judgment_schema(items=items),
+        },
+    }
+
+
+def v4_fact_first_judgment_schema(
+    items: tuple[str, ...] = ITEMS,
+) -> dict[str, Any]:
+    """Return a one-call observable v4 review followed by model-owned V/E."""
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["v4검토", "판정"],
+        "properties": {
+            "v4검토": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "참가자격실적근거", "금액구간", "특정발주기관한정",
+                    "특정실적종류한정", "구체적필요사유", "카드대조",
+                ],
+                "properties": {
+                    "참가자격실적근거": {"type": ["string", "null"], "maxLength": 500},
+                    "금액구간": {
+                        "type": "string", "enum": ["고시금액이상", "고시금액미만", "불명"],
+                    },
+                    "특정발주기관한정": {
+                        "type": "string", "enum": list(V4_PRESENCE_STATES),
+                    },
+                    "특정실적종류한정": {
+                        "type": "string", "enum": list(V4_PRESENCE_STATES),
+                    },
+                    "구체적필요사유": {
+                        "type": "string", "enum": list(V4_PRESENCE_STATES),
+                    },
+                    "카드대조": {
+                        "type": "string", "enum": ["1조건충족", "0조건충족", "판단불가"],
+                    },
+                },
+            },
+            "판정": judgment_schema(items=items),
+        },
+    }
+
+
+def v4_specialist_fact_first_judgment_schema() -> dict[str, Any]:
+    """Return a role-aware v4-only review followed by model-owned v4/e4."""
+    items = ("v4",)
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["v4역할검토", "판정"],
+        "properties": {
+            "v4역할검토": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "실적요구원문",
+                    "조항역할",
+                    "과거계약실적요구",
+                    "발주기관범위",
+                    "실적종류범위",
+                    "유사동등실적인정",
+                    "구체적필요사유",
+                    "카드대조",
+                ],
+                "properties": {
+                    "실적요구원문": {"type": ["string", "null"], "maxLength": 500},
+                    "조항역할": {"type": "string", "enum": list(V4_CLAUSE_ROLES)},
+                    "과거계약실적요구": {
+                        "type": "string", "enum": list(V4_PRESENCE_STATES),
+                    },
+                    "발주기관범위": {
+                        "type": "string", "enum": list(V4_CLIENT_SCOPES),
+                    },
+                    "실적종류범위": {
+                        "type": "string", "enum": list(V4_PERFORMANCE_SCOPES),
+                    },
+                    "유사동등실적인정": {
+                        "type": "string", "enum": list(V4_PRESENCE_STATES),
+                    },
+                    "구체적필요사유": {
+                        "type": "string", "enum": list(V4_PRESENCE_STATES),
+                    },
+                    "카드대조": {
+                        "type": "string", "enum": ["1조건충족", "0조건충족", "판단불가"],
+                    },
+                },
+            },
+            "판정": judgment_schema(items=items),
+        },
+    }
+
+
+def category_fact_first_judgment_schema(
+    items: tuple[str, ...] = ITEMS,
+    max_facts_per_category: int = 2,
+) -> dict[str, Any]:
+    """Return a one-call source-fact inventory followed by model-owned V/E."""
+    if max_facts_per_category <= 0:
+        raise ValueError("max_facts_per_category must be positive")
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["사실목록", "판정"],
+        "properties": {
+            "사실목록": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": list(FACT_INVENTORY_CATEGORIES),
+                "properties": {
+                    category: {
+                        "type": "array",
+                        "maxItems": max_facts_per_category,
+                        "items": {
+                            "type": "string", "minLength": 1, "maxLength": 360,
+                        },
+                    }
+                    for category in FACT_INVENTORY_CATEGORIES
+                },
+            },
+            "판정": judgment_schema(items=items),
+        },
     }
 
 

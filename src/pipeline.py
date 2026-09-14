@@ -43,6 +43,7 @@ from src.prompt import (
     format_competition_product_context,
     format_organizer_input_semantics,
     format_v24_comparison_context,
+    format_v24_role_pairs_context,
 )
 from src.schema import (
     ABSENCE_ITEMS,
@@ -61,6 +62,10 @@ from src.schema import (
     item_fact_schema,
     procedure_fact_schema,
     timeline_fact_schema,
+    v4_fact_first_judgment_schema,
+    v4_specialist_fact_first_judgment_schema,
+    v24_fact_first_judgment_schema,
+    category_fact_first_judgment_schema,
     v23_proof_judgment_schema,
     triage_schema,
 )
@@ -107,6 +112,9 @@ class Prediction:
     finish_reason: str | None = None
     pass_judgments: tuple[dict[str, dict[str, Any]], ...] = ()
     v8_observations: tuple[dict[str, Any], ...] = ()
+    v4_fact_reviews: tuple[dict[str, Any], ...] = ()
+    v24_fact_reviews: tuple[dict[str, Any], ...] = ()
+    category_fact_reviews: tuple[dict[str, Any], ...] = ()
     parse_errors: tuple[dict[str, Any], ...] = ()
     applicability_inactive_items: tuple[tuple[str, str], ...] = ()
     model_judgment: dict[str, dict[str, Any]] | None = None
@@ -352,6 +360,119 @@ def _parse_judgment_payload(
             raise PredictionError(f"{item}.근거문구 must be a string or null")
         judgment[item] = {"위반여부": int(violation), "근거문구": evidence}
     return judgment
+
+
+def parse_v24_fact_first_response(
+    text: str, items: tuple[str, ...] = ITEMS,
+) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
+    """Parse the observable review without turning it into a label rule."""
+    payload = extract_json(text)
+    if not isinstance(payload, dict) or set(payload) != {"v24대조", "판정"}:
+        raise PredictionError("v24 fact-first response must contain v24대조 and 판정")
+    reviews = payload["v24대조"]
+    if not isinstance(reviews, list) or len(reviews) > 4:
+        raise PredictionError("v24대조 must be an array of at most 4 comparisons")
+    allowed_fields = {"예산", "계약방법", "지역제한", "업종"}
+    allowed_relations = {"양립가능", "양립불가능", "판단불가"}
+    parsed_reviews: list[dict[str, Any]] = []
+    for review in reviews:
+        if not isinstance(review, dict) or set(review) != {"필드", "원문값", "메타값", "관계"}:
+            raise PredictionError("each v24 comparison has invalid keys")
+        if review["필드"] not in allowed_fields or review["관계"] not in allowed_relations:
+            raise PredictionError("v24 comparison has an invalid field or relation")
+        if review["원문값"] is not None and not isinstance(review["원문값"], str):
+            raise PredictionError("v24 comparison source value must be string or null")
+        if review["메타값"] is not None and not isinstance(review["메타값"], str):
+            raise PredictionError("v24 comparison metadata value must be string or null")
+        parsed_reviews.append(dict(review))
+    return _parse_judgment_payload(payload["판정"], items), parsed_reviews
+
+
+def parse_v4_fact_first_response(
+    text: str, items: tuple[str, ...] = ITEMS,
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    """Parse the observable v4 review without deriving or overriding a label."""
+    payload = extract_json(text)
+    if not isinstance(payload, dict) or set(payload) != {"v4검토", "판정"}:
+        raise PredictionError("v4 fact-first response must contain v4검토 and 판정")
+    review = payload["v4검토"]
+    keys = {
+        "참가자격실적근거", "금액구간", "특정발주기관한정",
+        "특정실적종류한정", "구체적필요사유", "카드대조",
+    }
+    if not isinstance(review, dict) or set(review) != keys:
+        raise PredictionError("v4검토 has invalid keys")
+    excerpt = review["참가자격실적근거"]
+    if excerpt is not None and not isinstance(excerpt, str):
+        raise PredictionError("v4 참가자격실적근거 must be string or null")
+    if review["금액구간"] not in {"고시금액이상", "고시금액미만", "불명"}:
+        raise PredictionError("v4 금액구간 has an invalid state")
+    for field in ("특정발주기관한정", "특정실적종류한정", "구체적필요사유"):
+        if review[field] not in {"있음", "없음", "불명"}:
+            raise PredictionError(f"v4 {field} has an invalid state")
+    if review["카드대조"] not in {"1조건충족", "0조건충족", "판단불가"}:
+        raise PredictionError("v4 카드대조 has an invalid state")
+    return _parse_judgment_payload(payload["판정"], items), dict(review)
+
+
+def parse_v4_specialist_fact_first_response(
+    text: str,
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    """Parse a role-aware v4 review without deriving or overriding its label."""
+    payload = extract_json(text)
+    if not isinstance(payload, dict) or set(payload) != {"v4역할검토", "판정"}:
+        raise PredictionError("v4 specialist response must contain v4역할검토 and 판정")
+    review = payload["v4역할검토"]
+    keys = {
+        "실적요구원문", "조항역할", "과거계약실적요구", "발주기관범위",
+        "실적종류범위", "유사동등실적인정", "구체적필요사유", "카드대조",
+    }
+    if not isinstance(review, dict) or set(review) != keys:
+        raise PredictionError("v4역할검토 has invalid keys")
+    excerpt = review["실적요구원문"]
+    if excerpt is not None and not isinstance(excerpt, str):
+        raise PredictionError("v4 실적요구원문 must be string or null")
+    if review["조항역할"] not in {
+        "참가자격", "제안평가_배점", "증빙서류_행정",
+        "시설_조직_제품_기술조건", "기타", "불명",
+    }:
+        raise PredictionError("v4 조항역할 has an invalid state")
+    for field in ("과거계약실적요구", "유사동등실적인정", "구체적필요사유"):
+        if review[field] not in {"있음", "없음", "불명"}:
+            raise PredictionError(f"v4 {field} has an invalid state")
+    if review["발주기관범위"] not in {
+        "특정발주기관만", "민간_공공_또는_모든기관인정", "발주기관제한없음", "불명",
+    }:
+        raise PredictionError("v4 발주기관범위 has an invalid state")
+    if review["실적종류범위"] not in {
+        "동등유사배제_좁은실적만", "폭넓은동등유사실적인정",
+        "일반적인동종동일목적실적", "실적제한아님", "불명",
+    }:
+        raise PredictionError("v4 실적종류범위 has an invalid state")
+    if review["카드대조"] not in {"1조건충족", "0조건충족", "판단불가"}:
+        raise PredictionError("v4 카드대조 has an invalid state")
+    return _parse_judgment_payload(payload["판정"], ("v4",)), dict(review)
+
+
+def parse_category_fact_first_response(
+    text: str, items: tuple[str, ...] = ITEMS,
+) -> tuple[dict[str, dict[str, Any]], dict[str, list[str]]]:
+    """Parse source-only category facts without deriving or overriding labels."""
+    payload = extract_json(text)
+    if not isinstance(payload, dict) or set(payload) != {"사실목록", "판정"}:
+        raise PredictionError("category fact-first response must contain 사실목록 and 판정")
+    facts = payload["사실목록"]
+    if not isinstance(facts, dict) or set(facts) != set(FACT_INVENTORY_CATEGORIES):
+        raise PredictionError("사실목록 must contain all seven source categories")
+    parsed_facts: dict[str, list[str]] = {}
+    for category in FACT_INVENTORY_CATEGORIES:
+        excerpts = facts[category]
+        if not isinstance(excerpts, list) or len(excerpts) > 2:
+            raise PredictionError(f"{category} must be an array of at most 2 excerpts")
+        if any(not isinstance(excerpt, str) or not excerpt for excerpt in excerpts):
+            raise PredictionError(f"{category} excerpts must be non-empty strings")
+        parsed_facts[category] = list(excerpts)
+    return _parse_judgment_payload(payload["판정"], items), parsed_facts
 
 
 def _parse_labels_payload(
@@ -872,6 +993,24 @@ class BaselinePipeline:
         self.response_schema = judgment_schema(
             self.v8_composite_merge_enabled, active_items, output_mode
         )
+        if prompt_mode == "v24_fact_first_v1":
+            if output_mode != "labels_and_evidence" or active_items != ITEMS:
+                raise ValueError("v24_fact_first_v1 requires all-item V/E output")
+            self.response_schema = v24_fact_first_judgment_schema(active_items)
+        if prompt_mode == "v4_fact_first_relation_v1":
+            if output_mode != "labels_and_evidence" or active_items != ITEMS:
+                raise ValueError("v4_fact_first_relation_v1 requires all-item V/E output")
+            self.response_schema = v4_fact_first_judgment_schema(active_items)
+        if prompt_mode == "v4_specialist_fact_first_v1":
+            if output_mode != "labels_and_evidence" or active_items != ("v4",):
+                raise ValueError(
+                    "v4_specialist_fact_first_v1 requires v4-only V/E output"
+                )
+            self.response_schema = v4_specialist_fact_first_judgment_schema()
+        if prompt_mode == "category_fact_first_relation_v1":
+            if output_mode != "labels_and_evidence" or active_items != ITEMS:
+                raise ValueError("category_fact_first_relation_v1 requires all-item V/E output")
+            self.response_schema = category_fact_first_judgment_schema(active_items)
 
     def system_prompt_for_record(self, record: dict[str, Any]) -> str:
         if self.law_bundle_router is None:
@@ -1137,7 +1276,12 @@ class BaselinePipeline:
             document_context=context.text if isinstance(context, DocumentContext) else context,
             competition_product_context=self.competition_product_context_for_record(record),
             organizer_input_semantics_context=self.organizer_input_semantics_for_record(record),
-            v24_comparison_context=(format_v24_comparison_context(record) if "v24" in self.active_items else None),
+            v24_comparison_context=(
+                format_v24_role_pairs_context(record)
+                if self._prompt_mode == "v24_role_pairs_v1"
+                else format_v24_comparison_context(record)
+                if "v24" in self.active_items else None
+            ),
             markdown_sections=self.prompt_layout in {"markdown", "markdown_v2"},
             prompt_profile=self.prompt_profile,
             metadata_style=self.metadata_style,
@@ -2031,7 +2175,12 @@ class BaselinePipeline:
             document_context=context.text if isinstance(context, DocumentContext) else context,
             competition_product_context=self.competition_product_context_for_record(record),
             organizer_input_semantics_context=self.organizer_input_semantics_for_record(record),
-            v24_comparison_context=(format_v24_comparison_context(record) if "v24" in self.active_items else None),
+            v24_comparison_context=(
+                format_v24_role_pairs_context(record)
+                if self._prompt_mode == "v24_role_pairs_v1"
+                else format_v24_comparison_context(record)
+                if "v24" in self.active_items else None
+            ),
             markdown_sections=self.prompt_layout in {"markdown", "markdown_v2"},
             prompt_profile=self.prompt_profile,
             metadata_style=self.metadata_style,
@@ -2085,13 +2234,90 @@ class BaselinePipeline:
             raise ValueError("contexts and completions must have the same length")
         judgments: list[dict[str, dict[str, Any]]] = []
         v8_observations: list[dict[str, Any]] = []
+        v4_fact_reviews: list[dict[str, Any]] = []
+        v24_fact_reviews: list[dict[str, Any]] = []
+        category_fact_reviews: list[dict[str, Any]] = []
         parse_errors: list[dict[str, Any]] = []
         for pass_index, completion in enumerate(completions, 1):
             try:
-                parsed, raw_observations = parse_pass_response(
-                    completion.content, self.v8_composite_merge_enabled, self.active_items,
-                    self.output_mode,
-                )
+                if self._prompt_mode == "category_fact_first_relation_v1":
+                    parsed, facts = parse_category_fact_first_response(
+                        completion.content, self.active_items
+                    )
+                    context = contexts[pass_index - 1] if contexts is not None else None
+                    if isinstance(context, DocumentContext):
+                        source = context.text
+                    elif isinstance(context, str):
+                        source = context
+                    else:
+                        source = "\n".join(
+                            str(document.get("text", ""))
+                            for document in self._visible_record(record)["docs"]
+                        )
+                    validated_facts = {
+                        category: [
+                            {
+                                "원문": excerpt,
+                                "원문검증됨": bool(_clean_evidence(excerpt, source)),
+                                "검증원문값": _clean_evidence(excerpt, source) or None,
+                            }
+                            for excerpt in excerpts
+                        ]
+                        for category, excerpts in facts.items()
+                    }
+                    category_fact_reviews.append({
+                        "pass_index": pass_index,
+                        "범주": validated_facts,
+                    })
+                    raw_observations = {}
+                elif self._prompt_mode in {
+                    "v4_fact_first_relation_v1", "v4_specialist_fact_first_v1",
+                }:
+                    if self._prompt_mode == "v4_specialist_fact_first_v1":
+                        parsed, review = parse_v4_specialist_fact_first_response(
+                            completion.content
+                        )
+                        excerpt = review["실적요구원문"]
+                    else:
+                        parsed, review = parse_v4_fact_first_response(
+                            completion.content, self.active_items
+                        )
+                        excerpt = review["참가자격실적근거"]
+                    source = "\n".join(
+                        str(document.get("text", ""))
+                        for document in self._visible_record(record)["docs"]
+                    )
+                    validated = _clean_evidence(excerpt, source) if excerpt else ""
+                    v4_fact_reviews.append({
+                        **review,
+                        "pass_index": pass_index,
+                        "원문검증됨": bool(excerpt and validated),
+                        "검증원문값": validated or None,
+                    })
+                    raw_observations = {}
+                elif self._prompt_mode == "v24_fact_first_v1":
+                    parsed, raw_reviews = parse_v24_fact_first_response(
+                        completion.content, self.active_items
+                    )
+                    source = "\n".join(
+                        str(document.get("text", ""))
+                        for document in self._visible_record(record)["docs"]
+                    )
+                    for review in raw_reviews:
+                        excerpt = review["원문값"]
+                        validated = _clean_evidence(excerpt, source) if excerpt else ""
+                        v24_fact_reviews.append({
+                            **review,
+                            "pass_index": pass_index,
+                            "원문검증됨": bool(excerpt and validated),
+                            "검증원문값": validated or None,
+                        })
+                    raw_observations = {}
+                else:
+                    parsed, raw_observations = parse_pass_response(
+                        completion.content, self.v8_composite_merge_enabled, self.active_items,
+                        self.output_mode,
+                    )
             except PredictionError as exc:
                 # Structured decoding is the normal path, but vLLM can still return
                 # an empty/incomplete candidate. Never discard every completed notice
@@ -2154,6 +2380,9 @@ class BaselinePipeline:
             finish_reason=completion.finish_reason,
             pass_judgments=tuple(judgments),
             v8_observations=tuple(v8_observations),
+            v4_fact_reviews=tuple(v4_fact_reviews),
+            v24_fact_reviews=tuple(v24_fact_reviews),
+            category_fact_reviews=tuple(category_fact_reviews),
             parse_errors=tuple(parse_errors),
             model_judgment=model_judgment,
             postprocess_policy=self.frozen_rule_set,

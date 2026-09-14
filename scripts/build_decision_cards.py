@@ -179,6 +179,99 @@ CARD_TEXT_V10_V6_V7_SCOPE = {
 }
 
 
+# v11 changes only v4 after an organizer-law scope audit.  Government contract
+# execution standard article 5(1) makes below-notice-amount performance
+# restriction a v2 issue, while article 5(4) separately prohibits limiting
+# eligible performance to named institutions or narrowly named performance.
+# The latter restriction is not made conditional on the notice amount.  Keeping
+# the amount as a v4 prerequisite therefore suppresses an independently stated
+# violation condition and also conflicts with organizer dev examples where v2
+# and v4 legitimately co-occur.
+CARD_TEXT_V11_V4_SCOPE = {
+    **CARD_TEXT_V10_V6_V7_SCOPE,
+    "v4": (
+        "판정 순서: 1) 과거 실적이 실제 참가자격인지, 2) 특정 기관이 발주한 실적만 "
+        "인정하거나 유사한 실적을 배제하는 특정 명칭·유형의 실적으로 한정하는지, 3) "
+        "그 한정에 특수 기술·공법·성능·품질 등 구체적 필요 사유가 있는지 확인한다. "
+        "1 조건: 특정기관 발주실적만 인정하거나 사실상 동일·유사한 실적을 배제하는 "
+        "특정실적 한정을 실제 참가자격으로 두고 허용 사유가 없는 경우다. 이 금지는 "
+        "고시금액 미만 실적제한 여부와 별개로 확인하며, 같은 공고에서 v2·v3와 함께 "
+        "성립할 수 있다. 0 조건: 발주기관을 한정하지 않는 일반 실적, 평가점수용 실적, "
+        "법정 자격, 또는 구체적 필요 사유가 확인된 경우다."
+    ),
+}
+
+
+# v12 changes only v5 by supplying the numeric operand that its comparison
+# requires.  The values come from the organizer-provided 2026 finance notice;
+# this remains prompt policy, never a Python label threshold.
+CARD_TEXT_V12_V5_THRESHOLD = {
+    **CARD_TEXT_V10_V6_V7_SCOPE,
+    "v5": (
+        "판정 순서: 1) 지역이 납품지·현장 위치가 아니라 법인등기부상 본점·주된 영업소의 "
+        "실제 참가자격 제한인지, 2) 나라장터 입력 메타의 적용계약법·소관구분·업무구분으로 "
+        "적용 기준을 고르고 입찰추정가격과 비교하며, 3) 허용 사유를 확인한다. 금액 기준: "
+        "국가계약법 일반 물품·용역은 2억 3천만원, 소관구분이 공기업 또는 준정부기관으로 "
+        "명시된 계약은 7억 1천만원이다. 지방계약법은 일반 물품·용역 중 세종시·시·군·구는 "
+        "5억원이고, 그 밖의 시·도는 행정안전부 고시금액을 적용한다. 건설기술·설계·감리·"
+        "엔지니어링 등 별도 기준 용역을 일반용역 기준으로 단정하지 않는다. 배정예산금액·"
+        "기초금액·투찰금액을 입찰추정가격 대신 비교하지 않고, 기관명만으로 기관 종류나 "
+        "지방자치단체 단계를 추정하지 않는다. 1 조건: 적용 고시금액 이상 건에서 허용되지 "
+        "않는 지역을 실제 참가자격으로 제한한 경우다. 0 조건: 적용 고시금액 미만이거나, "
+        "지역명·현장 위치·납품지뿐이거나, 적용 기준·입찰추정가격·실제 참가제한·예외 중 "
+        "필요한 사실이 불명이면 0."
+    ),
+}
+
+
+# v13 changes only v15.  Article 2-2 distinguishes a small-enterprise-only
+# restriction from the broader SME class, while article 2-3 permits omitting
+# priority procurement in stated cases.  Merely adding an eligible nonprofit
+# does not erase a small-enterprise restriction that still applies to ordinary
+# for-profit bidders.
+CARD_TEXT_V13_V15_SCOPE = {
+    **CARD_TEXT_V10_V6_V7_SCOPE,
+    "v15": (
+        "판정 순서: 1) 실제 조달대상이 물품 또는 용역이고 적용되는 경쟁제품으로 확인되지 "
+        "않는지, 2) 나라장터 입력 메타의 입찰추정가격이 1억원 이상이고 적용 고시금액 "
+        "미만인지, 3) 실제 참가자격이 소기업·소상공인으로 한정되는지, 4) 그 한정을 "
+        "실제로 제거하는 판로지원 예외가 적용됐는지 확인한다. '중소기업자' 또는 "
+        "'중기업·소기업', '중·소기업'처럼 중기업도 참가 가능한 제한은 소기업만의 제한이 "
+        "아니므로 v15=0이다. 비영리법인 등 특정 예외 대상의 참가를 추가로 허용했더라도 "
+        "일반 영리기업은 여전히 소기업·소상공인으로 한정하면 그 제한은 남아 있다. 반대로 "
+        "예외를 적용하여 기업규모와 무관하게 일반 참가를 허용하면 0이다. 경쟁제품 조회 "
+        "불가만으로 일반제품 또는 경쟁제품을 단정하지 말고 실제 조달대상과 공고 문구를 "
+        "대조한다. 배정예산금액 대신 입찰추정가격을 사용한다. 1 조건: 위 금액구간의 "
+        "비경쟁 물품·용역에서 일반 영리 참가자를 소기업·소상공인으로 한정하고 이를 "
+        "제거하는 예외가 없는 경우다. 0 조건: 중기업도 참가 가능하거나, 금액구간 밖이거나, "
+        "적용 경쟁제품이거나, 실제로 규모 제한을 제거한 예외가 있거나, 필요한 사실이 "
+        "불명인 경우다."
+    ),
+}
+
+
+# v14 changes only v17.  Under article 2-2, below KRW 100 million the normal
+# class is small enterprises/small businesses.  A broader SME restriction that
+# admits medium enterprises is the suspect condition, subject to explicit
+# article 2-2/2-3 exceptions.  The previous card inverted this distinction.
+CARD_TEXT_V14_V17_SCOPE = {
+    **CARD_TEXT_V10_V6_V7_SCOPE,
+    "v17": (
+        "판정 순서: 1) 실제 조달대상이 적용되는 경쟁제품이 아닌 물품 또는 용역인지, "
+        "2) 나라장터 입력 메타의 입찰추정가격이 1억원 미만인지, 3) 실제 참가자격이 "
+        "소기업·소상공인만인지 아니면 중기업까지 포함하는 중소기업자 범위인지, 4) 유찰·"
+        "소수업체·비영리법인 등 명시된 판로지원 예외가 그 넓은 범위를 허용하는지 확인한다. "
+        "'중소기업', '중·소기업', '중기업·소기업'은 중기업을 포함하므로 소기업만의 제한과 "
+        "같지 않다. 반대로 '소기업 또는 소상공인'만 요구하면 원칙적으로 정상 조건이므로 "
+        "v17=0이다. 경쟁제품 조회 불가만으로 일반제품 또는 경쟁제품을 단정하지 말고 실제 "
+        "조달대상과 공고를 대조하며, 배정예산금액 대신 입찰추정가격을 쓴다. 1 조건: 1억원 "
+        "미만의 비경쟁 물품·용역에서 허용 예외 없이 중기업까지 참가 가능한 중소기업 범위로 "
+        "제한한 경우다. 0 조건: 소기업·소상공인만 제한한 경우, 금액구간 밖, 적용 경쟁제품, "
+        "넓은 범위를 허용하는 명시적 예외, 또는 필요한 사실이 불명인 경우다."
+    ),
+}
+
+
 # Legal micro-cards deliberately distil only the decision conditions already
 # identified from the organizer-provided item table and mapped official sources.
 # They are not a substitute for legal retrieval: no threshold, exception, or
@@ -261,7 +354,11 @@ def main() -> int:
         "--version",
         choices=(
             "v1", "v2", "v3", "v3_draft", "v4", "v5", "v6", "v7",
-            "v9_v6_scope", "v10_v6_v7_scope", "legal_micro_v1",
+            "v9_v6_scope", "v10_v6_v7_scope", "v11_v4_scope",
+            "v12_v5_threshold",
+            "v13_v15_scope",
+            "v14_v17_scope",
+            "legal_micro_v1",
         ),
         default="v1",
     )
@@ -287,6 +384,14 @@ def main() -> int:
         card_text = CARD_TEXT_V9_V6_SCOPE
     elif args.version == "v10_v6_v7_scope":
         card_text = CARD_TEXT_V10_V6_V7_SCOPE
+    elif args.version == "v11_v4_scope":
+        card_text = CARD_TEXT_V11_V4_SCOPE
+    elif args.version == "v12_v5_threshold":
+        card_text = CARD_TEXT_V12_V5_THRESHOLD
+    elif args.version == "v13_v15_scope":
+        card_text = CARD_TEXT_V13_V15_SCOPE
+    elif args.version == "v14_v17_scope":
+        card_text = CARD_TEXT_V14_V17_SCOPE
     else:
         card_text = CARD_TEXT_V2
     if set(card_text) != set(item_table):
@@ -311,7 +416,12 @@ def main() -> int:
         "purpose": (
             "item-local prompt decision policy distilled from organizer-provided "
             "item table and law review; it is not runtime legal RAG"
-            if args.version in {"v6", "v7", "v9_v6_scope", "v10_v6_v7_scope"}
+            if args.version in {
+                "v6", "v7", "v9_v6_scope", "v10_v6_v7_scope",
+                "v11_v4_scope", "v12_v5_threshold",
+                "v13_v15_scope",
+                "v14_v17_scope",
+            }
             else "conservative prompt decision policy; exact thresholds and exceptions require official RAG facts"
         ),
         "source_item_table": str(item_table_path),

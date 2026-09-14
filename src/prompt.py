@@ -41,6 +41,199 @@ OFFICIAL_BASELINE_SYSTEM_TAIL = """
 출력은 JSON 하나로만 낸다. 키는 v1~v24, 각 값은 {\"위반여부\": 0 또는 1, \"근거문구\": 문자열 또는 null}이다.
 설명이나 머리말을 덧붙이지 않는다."""
 
+V24_FACT_FIRST_SYSTEM_TAIL = """
+최종 판정 전에, 같은 응답의 `v24대조`에서 원문과 나라장터 입력 메타의 대응값을 먼저 대조한다.
+- 비교 필드는 예산, 계약방법, 지역제한, 업종 중 실제 비교할 값이 있는 것만 최대 4개 쓴다.
+- `원문값`은 공고 자료 원문에 그대로 있는 500자 이하 연속 문자열 또는 null이다.
+- `메타값`은 앞에 제공된 사람이 읽을 수 있는 나라장터 입력값 또는 null이다.
+- `관계`는 양립가능, 양립불가능, 판단불가 중 하나다.
+- 이 대조는 확인 절차일 뿐 자동 위반 판정이 아니다. v24 카드의 적용범위와 1/0 조건에 따라
+  원문과 메타가 같은 의미의 필드인지까지 검토하여 최종 v24를 판정한다.
+
+출력은 JSON 하나로만 내며 키 순서는 `v24대조`, `판정`이다. `판정`에는 v1~v24를 모두 넣고,
+각 값은 {\"위반여부\": 0 또는 1, \"근거문구\": 문자열 또는 null}로 낸다.
+설명이나 머리말을 덧붙이지 않는다."""
+
+V4_FACT_FIRST_SYSTEM_TAIL = """
+최종 판정 전에 같은 응답의 `v4검토`를 먼저 완성한다.
+- `참가자격실적근거`는 실제 참가자격으로 요구한 과거실적 조항의 공고 자료 원문 500자 이하
+  연속 문자열이며, 없거나 찾지 못하면 null이다.
+- `금액구간`은 제공된 metadata와 카드 기준에 따라 고시금액이상, 고시금액미만, 불명 중 하나다.
+- 특정 발주기관 한정, 특정 실적종류 한정, 구체적 필요 사유는 각각 있음, 없음, 불명 중 하나다.
+- `카드대조`는 위 사실과 v4 카드의 적용범위·1 조건·0 조건을 대조한 관찰이며
+  1조건충족, 0조건충족, 판단불가 중 하나다. 이 값은 자동 라벨이 아니며 최종 v4는 원문·metadata·
+  카드와 다시 대조해 모델이 판정한다.
+
+출력은 JSON 하나로만 내며 키 순서는 `v4검토`, `판정`이다. `판정`에는 v1~v24를 모두 넣고,
+각 값은 {\"위반여부\": 0 또는 1, \"근거문구\": 문자열 또는 null}로 낸다.
+설명이나 머리말을 덧붙이지 않는다."""
+
+V4_SPECIALIST_FACT_FIRST_SYSTEM_TAIL = """
+최종 판정 전에 같은 응답의 `v4역할검토`를 반드시 먼저 완성한다.
+- `실적요구원문`은 v4 판단에 가장 직접적인 공고 자료 원문 500자 이하 연속 문자열이다.
+  실제 과거 계약실적 요구를 찾지 못했으면 null이다.
+- `조항역할`은 참가자격, 제안평가_배점, 증빙서류_행정, 시설_조직_제품_기술조건, 기타,
+  불명 중 하나다. 참가자격을 갖추지 못하면 입찰할 수 없는 조건만 `참가자격`이다.
+- `과거계약실적요구`는 입찰 전에 완료한 계약·납품·용역 등의 실적을 참가 조건으로 요구하는지
+  있음, 없음, 불명으로 기록한다.
+- `발주기관범위`는 실적을 주문한 발주기관의 허용 범위다. 실적증명서를 발급·확인하는 기관은
+  발주기관 제한이 아니므로 혼동하지 않는다.
+- `실적종류범위`와 `유사동등실적인정`은 동등·유사 실적을 실질적으로 배제하는 좁은 제한인지
+  확인한다. 단순한 동종·동일목적 실적 요구가 곧 v4 위반은 아니다.
+- 평가표의 실적 배점, 증빙 제출·발급 방법, A/S센터·사업장·인력·제품·기술 조건은 과거실적
+  참가자격과 구별한다.
+- `카드대조`는 관찰 기록일 뿐 자동 라벨이 아니다. 모든 원문과 v4 카드의 적용범위·1 조건·
+  0 조건을 다시 대조하여 Gemma가 최종 v4/e4를 판정한다.
+
+출력은 JSON 하나로만 내며 키 순서는 `v4역할검토`, `판정`이다. `판정`에는 v4만 넣고,
+값은 {"위반여부": 0 또는 1, "근거문구": 문자열 또는 null}로 낸다.
+설명이나 머리말을 덧붙이지 않는다."""
+
+CATEGORY_FACT_FIRST_SYSTEM_TAIL = """
+최종 판정 전에 같은 응답의 `사실목록`을 먼저 완성한다.
+- 사실목록은 참가자격_실적_지역, 제품_기업_직접생산, 규격_모델_기술요구,
+  제출서류_확약서, 계약방식_공동계약, 일정_설명회, 금액_메타대조의 7개 범주다.
+- 각 범주에는 공고 자료 원문에서 최종 판단에 중요한 변경 없는 360자 이하 연속 문자열을
+  최대 2개 복사한다. 관련 문구가 없으면 빈 배열이다.
+- 여기서는 법령 위반 여부를 쓰거나 요약하지 않는다. 빈 배열은 해당 v의 0을 뜻하지 않는다.
+- 사실목록을 만든 뒤에도 그것만으로 판단하지 말고, 모든 원문·metadata·제품 사실·판정 카드의
+  적용범위와 1/0 조건을 다시 대조해 최종 판정한다.
+
+출력은 JSON 하나로만 내며 키 순서는 `사실목록`, `판정`이다. `판정`에는 v1~v24를 모두 넣고,
+각 값은 {"위반여부": 0 또는 1, "근거문구": 문자열 또는 null}로 낸다.
+설명이나 머리말을 덧붙이지 않는다."""
+
+V24_ROLE_PAIRS_GUIDANCE = """
+
+[v24 역할별 대조]
+v24는 아래 역할이 같은 값끼리만 비교한다.
+1. 총사업비·예산·기초금액은 배정예산금액과, 추정가격은 입찰추정가격과 비교한다. 서로 교차 비교하지 않는다.
+2. 일반경쟁·제한경쟁·수의계약이라는 경쟁 범주는 계약방법과 비교한다.
+3. 협상·적격심사·규격가격동시·소액견적 등 낙찰자 결정 방식은 낙찰방법과 비교한다.
+4. 참가자의 본점 소재지 허용 집합은 지역제한 여부와 지역목록에 비교한다. 납품·사업·설명회 장소는 지역제한이 아니다.
+5. 참가자에게 요구한 등록·허가 업종의 AND/OR 집합은 업종제한 여부와 업종목록에 비교한다. 물품명·과업명은 업종이 아니다.
+같은 역할에서 한쪽만 존재하거나 허용 집합의 원소 또는 AND/OR 관계가 다르면 불일치다.
+띄어쓰기·약칭·동의 표현만 다르거나, 같은 공고에 함께 존재할 수 있는 서로 다른 역할이면 불일치가 아니다.
+아래 `[v24 역할별 나라장터 값]`과 공고 자료 원문을 실제로 대조한 뒤 v24를 판정한다.
+"""
+
+RELATION_CHECKLIST_MODE_GUIDANCE = """
+
+[관계 검증 모드]
+공고 자료를 모두 읽은 뒤 user message 마지막의 판정 직전 관계 체크리스트를 적용한다.
+체크리스트는 아래 판정 카드를 바꾸지 않으며, 카드의 적용범위·1 조건·0 조건이 최종 기준이다.
+"""
+
+DECISION_PROTOCOL_MODE_GUIDANCE = """
+
+[구조적 판정 모드]
+공고 자료를 빠짐없이 읽은 뒤 user message 마지막의 판정 실행 절차를 순서대로 적용한다.
+실행 절차는 판정 카드를 바꾸거나 정보를 줄이지 않는다. 각 카드의 적용범위·1 조건·0 조건·예외와
+앞에 제공된 metadata·제품 사실·공고 자료 원문이 최종 기준이다.
+"""
+
+V4_FACT_FIRST_MODE_GUIDANCE = """
+
+[v4 사실 선행 검토 모드]
+v4는 특정 실적 제한 문구 하나만 보고 정하지 않는다. 원문을 읽은 뒤 출력의 `v4검토`에서
+금액 적용범위, 실제 참가자격, 특정 발주기관/실적종류 한정, 구체적 필요 사유를 분리해 확인하고
+v4 카드와 다시 대조한다. 이 검토는 다른 v의 카드나 최종 판정을 바꾸지 않는다.
+"""
+
+V4_SPECIALIST_FACT_FIRST_MODE_GUIDANCE = """
+
+[v4 역할·사실 선행 검토 모드]
+공고 자료 전체에서 실적이라는 단어를 찾는 데 그치지 말고, 그 문구가 실제 참가자격인지부터
+분류한다. 특히 평가 배점, 증빙서류 행정, 시설·조직·제품·기술 조건을 과거실적 참가자격과
+분리하고, 실적의 발주기관과 증명서 발급기관을 분리한다. 이 구조화는 입력을 줄이거나 자동
+판정하지 않으며, 최종 v4/e4는 카드·metadata·모든 원문을 다시 읽은 모델이 결정한다.
+"""
+
+CATEGORY_FACT_FIRST_MODE_GUIDANCE = """
+
+[원문 사실 선행 출력 모드]
+공고 자료를 빠짐없이 읽고 같은 응답의 `사실목록`을 판정보다 먼저 작성한다. 사실목록은 원문
+탐색을 눈에 보이게 하는 보조 기록이며 법률 판단이나 v별 후보 목록이 아니다. 최종 V/E는
+사실목록에만 의존하지 말고 카드·metadata·제품 사실·모든 원문을 다시 대조해 모델이 판정한다.
+"""
+
+V4_FACT_FIRST_AFTER_SOURCE = """
+[v4 출력 전 확인]
+원문을 모두 읽었다. 이제 `v4검토`의 각 사실을 먼저 채우고, 그 관찰을 자동 라벨로 사용하지 말고
+v4 카드의 적용범위·1 조건·0 조건과 원문·metadata를 다시 대조한 뒤 24개 최종 V/E를 출력한다.
+"""
+
+V4_SPECIALIST_FACT_FIRST_AFTER_SOURCE = """
+[v4 출력 전 역할 검증]
+원문을 모두 읽었다. 이제 가장 관련 있는 조항 하나의 원문을 잡고 다음 순서로 검토한다.
+1. 입찰 참가 가능 여부를 정하는 과거 계약실적 조건인가, 평가·서류·시설·제품 조건인가?
+2. 조항에 나온 기관은 실적을 발주한 기관인가, 실적증명서를 발급·확인하는 기관인가?
+3. 민간·공공 또는 동등·유사 실적도 인정하는가, 오직 특정 기관·좁은 실적만 인정하는가?
+4. v4 카드의 1 조건이 모두 성립하는가, 0 조건 또는 비적용 역할인가?
+`v4역할검토`를 먼저 출력한 뒤에도 그것을 자동 라벨로 복사하지 말고 카드·metadata·모든
+원문과 다시 대조하여 최종 v4/e4를 출력한다.
+"""
+
+CATEGORY_FACT_FIRST_AFTER_SOURCE = """
+[출력 전 원문 사실 정리]
+원문을 모두 읽었다. 이제 7개 범주의 `사실목록`을 먼저 원문 그대로 작성한다. 각 범주에 최대
+2개만 기록하되, 기록되지 않은 원문도 버리지 말고 이어지는 `판정`에서 카드와 다시 확인한다.
+사실목록의 존재·부재를 자동 label로 사용하지 말고, 그 뒤 24개 최종 V/E를 출력한다.
+"""
+
+RELATION_CHECKLIST_AFTER_SOURCE = """
+[판정 직전 관계 체크리스트]
+각 관계형 항목에서 다음을 확인한다: (1) 같은 대상·주체인가, (2) 같은 수치·날짜·계약·지역·업종 역할인가,
+(3) 같은 참가자격 조항 또는 명시적 AND/OR 범위인가, (4) 카드의 적용범위·0 조건·예외를 확인했는가.
+- v3: 실적금액은 같은 실적 대상의 기준금액과 비교하고 사업예산과 섞지 않는다.
+- v8: 실적제한과 지역제한이 같은 입찰자에게 함께 적용되는지와 카드의 허용 계약유형을 확인한다.
+- v9: 제조사·모델이 실제 요구인지, 배경 설명·기존장비 언급·동등품/필요성 조건인지 구분한다.
+- v19: 확약서가 실제 의무인지와 제출 시점·목적을 같은 요구에서 확인한다.
+- v21: 공동계약 방식, 구성원 역할, 최소지분이 같은 구성 조건인지 확인한다.
+- v22: 행사가 입찰 전 설명회인지와 불참이 참가자격에 미치는 결과를 함께 확인한다.
+- v23: 공고일·설명회·제안서마감·가격입찰마감의 날짜 역할을 서로 바꾸지 않는다.
+- v24: 예산↔배정예산, 추정가격↔입찰추정가격, 경쟁범주↔계약방법, 낙찰방식↔낙찰방법,
+  참가 지역/업종 집합↔각 metadata 집합처럼 같은 역할만 비교한다.
+체크리스트만으로 1을 만들지 말고, 원문·metadata·해당 카드가 모두 양립할 때 최종 V/E를 출력한다.
+"""
+
+DECISION_PROTOCOL_AFTER_SOURCE = """
+[판정 직전 실행 절차 — 24개 항목을 각각 독립적으로 확인]
+유사한 제한이나 다른 v의 결론을 옮겨 쓰지 말고, 각 v마다 다음 순서를 끝까지 수행한다.
+1. 적용범위: 계약법·업무/제품·금액구간·계약방식 등 카드의 적용 전제가 확인되는가.
+2. 실제 사실: 원문에 그 v가 묻는 참가제한·요구·제출시점·불일치가 실제 의무로 있는가.
+3. 관계: 같은 대상·주체, 같은 수치·날짜·계약·지역·업종 역할, 같은 조항과 AND/OR 범위인가.
+4. 반대 확인: 카드의 0 조건·허용 사유·예외와 양립하면 1로 만들지 않는다.
+5. 결론: 위 단계를 만족한 v만 1로 하고, non-absence 1에는 그 판단을 직접 뒷받침하는 원문
+   substring을 연결한다.
+
+[부재형 v10·v11·v16·v18·v20]
+이 다섯 항목은 필요한 문구가 없다는 것이 위반이다. 먼저 카드의 적용대상인지 확인하고, 적용대상이면
+현재 공고 자료 전체에서 필요한 제한과 명시적 예외를 각각 찾는다. 둘 다 실제로 없으면 1이다.
+부재라서 인용문이 없고 근거문구가 null이라는 이유로 0을 선택하지 않는다. 반대로 적용대상·금액구간·
+제품 성격이 불명확하면 카드대로 0이다.
+
+[제품·기업 v10~v18]
+실제 구매대상과 exact-code 고시 후보의 적용조건, 경쟁제품/일반제품, 금액구간, 요구한 기업범위
+(중소기업인지 소기업·소상공인인지), 직접생산 요구를 서로 섞지 말고 같은 제품에 대해 대조한다.
+고시 후보라는 사실만으로 적용을 확정하지 않고, 조회 불가만으로 일반제품을 배제하지 않는다.
+
+[관계형 항목의 역할 확인]
+- v3: 실적금액은 같은 실적 대상의 기준금액과 비교하고 사업예산과 섞지 않는다.
+- v4: 특정 발주기관·실적종류 제한이 실제 참가자격인지와 구체적 필요 사유를 함께 확인한다.
+- v7: 참가자의 허용 지역 집합과 기준 지역의 인접 확대 관계를 현장·납품지와 구분한다.
+- v8: 실적제한과 지역제한이 같은 입찰자에게 함께 적용되는지와 카드의 허용 계약유형을 확인한다.
+- v9: 제조사·모델이 실제 요구인지, 배경 설명·기존장비 언급·동등품/필요성 조건인지 구분한다.
+- v19: 확약서가 실제 의무인지와 제출 시점·목적을 같은 요구에서 확인한다.
+- v21: 공동계약 방식, 구성원 역할, 최소지분이 같은 구성 조건인지 확인한다.
+- v22: 행사가 입찰 전 설명회인지와 불참이 참가자격에 미치는 결과를 함께 확인한다.
+- v23: 공고일·설명회·제안서마감·가격입찰마감의 날짜 역할을 서로 바꾸지 않는다.
+- v24: 예산↔배정예산, 추정가격↔입찰추정가격, 경쟁범주↔계약방법, 낙찰방식↔낙찰방법,
+  참가 지역/업종 집합↔각 metadata 집합처럼 같은 역할만 비교한다.
+
+이 절차만으로 1을 만들지 말고, 원문·metadata·제품 사실·해당 카드가 모두 양립하는 최종 V/E만 출력한다.
+"""
+
 OFFICIAL_BASELINE_LABELS_ONLY_HEAD = """당신은 공공 입찰공고의 법령 위반 여부를 점검한다.
 공고문과 첨부 문서, 그리고 나라장터 입력 메타를 함께 읽고 아래 24개 항목 각각에 대해
 위반 여부(1/0)를 판정한다.
@@ -157,6 +350,22 @@ def append_fact_inventory(
                 lines.append(f"  - [{doc_id}] {excerpt}")
     navigation = "\n".join(lines)
     if position == "after_source":
+        # A final relation checklist must remain the last instruction before
+        # generation.  Source-first adds navigation as a later user turn, so
+        # move (do not duplicate) the checklist behind that navigation.
+        if messages and messages[-1].get("role") == "user":
+            prefix, marker, checklist = messages[-1]["content"].partition(
+                "\n\n[판정 직전 관계 체크리스트]"
+            )
+            if marker:
+                return [
+                    *messages[:-1],
+                    {"role": "user", "content": prefix.rstrip() + "\n"},
+                    {
+                        "role": "user",
+                        "content": navigation + marker + checklist,
+                    },
+                ]
         return [*messages, {"role": "user", "content": navigation}]
     if position != "before_source":
         raise ValueError("fact inventory position must be after_source or before_source")
@@ -628,7 +837,19 @@ def build_system_prompt(
                 )
                 lines.append(f"- {item}: {definition['항목명']}{note}{tag}{reference}{card}")
         head = OFFICIAL_BASELINE_LABELS_ONLY_HEAD if output_mode == "labels_only" else OFFICIAL_BASELINE_SYSTEM_HEAD
-        tail = OFFICIAL_BASELINE_LABELS_ONLY_TAIL if output_mode == "labels_only" else OFFICIAL_BASELINE_SYSTEM_TAIL
+        tail = (
+            OFFICIAL_BASELINE_LABELS_ONLY_TAIL
+            if output_mode == "labels_only"
+            else CATEGORY_FACT_FIRST_SYSTEM_TAIL
+            if mode == "category_fact_first_relation_v1"
+            else V4_FACT_FIRST_SYSTEM_TAIL
+            if mode == "v4_fact_first_relation_v1"
+            else V4_SPECIALIST_FACT_FIRST_SYSTEM_TAIL
+            if mode == "v4_specialist_fact_first_v1"
+            else V24_FACT_FIRST_SYSTEM_TAIL
+            if mode == "v24_fact_first_v1"
+            else OFFICIAL_BASELINE_SYSTEM_TAIL
+        )
         if profile in {"official_baseline_subset_v1", "complete_fact_subset_v1"}:
             item_list = ", ".join(active_items)
             item_count = len(active_items)
@@ -641,7 +862,20 @@ def build_system_prompt(
         if layout == "markdown_v2":
             head = "# 역할\n" + head.replace("\n\n지켜야 할 것", "\n\n# 기본 규칙\n지켜야 할 것").replace("\n\n판정할 24개 항목", "\n\n# 판정 항목")
             tail = "# 출력 형식\n" + tail.strip()
-        return head + duty_text + "\n" + "\n".join(lines) + "\n" + tail
+        mode_guidance = (
+            V24_ROLE_PAIRS_GUIDANCE if mode == "v24_role_pairs_v1"
+            else RELATION_CHECKLIST_MODE_GUIDANCE
+            if mode == "relation_checklist_after_source_v1"
+            else DECISION_PROTOCOL_MODE_GUIDANCE
+            if mode == "decision_protocol_after_source_v1"
+            else RELATION_CHECKLIST_MODE_GUIDANCE + V4_FACT_FIRST_MODE_GUIDANCE
+            if mode == "v4_fact_first_relation_v1"
+            else V4_SPECIALIST_FACT_FIRST_MODE_GUIDANCE
+            if mode == "v4_specialist_fact_first_v1"
+            else RELATION_CHECKLIST_MODE_GUIDANCE + CATEGORY_FACT_FIRST_MODE_GUIDANCE
+            if mode == "category_fact_first_relation_v1" else ""
+        )
+        return head + duty_text + mode_guidance + "\n" + "\n".join(lines) + "\n" + tail
     if profile != "default":
         raise ValueError(
             "profile must be default, official_baseline_v1, official_baseline_subset_v1, or "
@@ -1135,11 +1369,50 @@ def build_messages(
                 + competition_product_context.rstrip()
                 if competition_product_context else ""
             )
+            v24_section = (
+                "\n\n[v24 역할별 나라장터 값]\n" + v24_comparison_context.rstrip()
+                if v24_comparison_context and "[v24 역할별 대조]" in system_prompt
+                else ""
+            )
+            relation_checklist = (
+                "\n\n"
+                + (
+                    RELATION_CHECKLIST_AFTER_SOURCE.replace(
+                        "최종 V/E를 출력한다", "최종 위반여부 V만 출력한다"
+                    )
+                    if output_mode == "labels_only"
+                    else RELATION_CHECKLIST_AFTER_SOURCE
+                ).strip()
+                + "\n"
+                if "[관계 검증 모드]" in system_prompt else ""
+            )
+            decision_protocol = (
+                "\n\n" + DECISION_PROTOCOL_AFTER_SOURCE.strip() + "\n"
+                if "[구조적 판정 모드]" in system_prompt else ""
+            )
+            v4_fact_first = (
+                "\n\n" + V4_FACT_FIRST_AFTER_SOURCE.strip() + "\n"
+                if "[v4 사실 선행 검토 모드]" in system_prompt else ""
+            )
+            v4_specialist_fact_first = (
+                "\n\n" + V4_SPECIALIST_FACT_FIRST_AFTER_SOURCE.strip() + "\n"
+                if "[v4 역할·사실 선행 검토 모드]" in system_prompt else ""
+            )
+            category_fact_first = (
+                "\n\n" + CATEGORY_FACT_FIRST_AFTER_SOURCE.strip() + "\n"
+                if "[원문 사실 선행 출력 모드]" in system_prompt else ""
+            )
             user_prompt = (
                 f"[나라장터 입력 메타]\n{metadata}"
                 + semantics_section
                 + product_section
+                + v24_section
                 + f"\n\n[공고 자료 원문]\n{context}\n"
+                + relation_checklist
+                + decision_protocol
+                + v4_fact_first
+                + v4_specialist_fact_first
+                + category_fact_first
             )
         else:
             product_section = (
@@ -1379,7 +1652,12 @@ def append_untrusted_review_draft(
         "이 초안이 아니라 공고 자료 원문에서만 그대로 복사한다.\n"
         + "\n".join(labels)
         + "\n\n[재심사]\n"
-        "24개 항목을 모두 다시 판단하여, 지시된 JSON 하나만 출력한다."
+        + (
+            "24개 항목을 모두"
+            if active_items == ITEMS
+            else f"지정 항목({', '.join(active_items)})을"
+        )
+        + " 다시 판단하여, 지시된 JSON 하나만 출력한다."
     )
     return [messages[0], {"role": "user", "content": messages[1]["content"] + review_text}]
 
@@ -1503,6 +1781,26 @@ def format_v24_comparison_context(record: dict[str, Any]) -> str:
         "두 값이 실제로 양립 불가능할 때만 v24=1이며, 값이 없거나 대응이 불명확하면 v24=0.\n"
         + json.dumps(fields, ensure_ascii=False, sort_keys=True)
     )
+
+
+def format_v24_role_pairs_context(record: dict[str, Any]) -> str:
+    """Render organizer metadata by semantic counterpart without deciding equality."""
+    meta = record["meta"]
+
+    def shown(key: str) -> Any:
+        value = meta.get(key)
+        return value if value not in (None, "") else "미기재"
+
+    return "\n".join([
+        f"- 예산 총액 대응값(배정예산금액): {shown('배정예산금액')}",
+        f"- 추정가격 대응값(입찰추정가격): {shown('입찰추정가격')}",
+        f"- 입찰 경쟁 범주 대응값(계약방법): {shown('계약방법')}",
+        f"- 낙찰자 결정 방식 대응값(낙찰방법): {shown('낙찰방법')}",
+        f"- 지역제한 존재 대응값(지역제한여부): {shown('지역제한여부')}",
+        f"- 참가 허용지역 집합 대응값(제한지역코드목록): {shown('제한지역코드목록')}",
+        f"- 업종제한 존재 대응값(업종제한여부): {shown('업종제한여부')}",
+        f"- 참가 허용업종 AND/OR 집합 대응값(면허업종제한목록): {shown('면허업종제한목록')}",
+    ])
 
 
 def normalize_notice_facts(meta: dict[str, Any]) -> dict[str, Any]:

@@ -23,12 +23,17 @@ from src.pipeline import (
     parse_fact_inventory_response,
     parse_procedure_fact_response,
     parse_timeline_fact_response,
+    parse_v4_fact_first_response,
+    parse_v4_specialist_fact_first_response,
+    parse_category_fact_first_response,
     parse_v23_proof_judgment_response,
+    parse_v24_fact_first_response,
     parse_pass_response,
     parse_triage_response,
     postprocess_judgment,
 )
 from src.prompt import (
+    append_fact_inventory,
     append_locator_navigation,
     append_source_inventory,
     build_locator_system_prompt,
@@ -43,9 +48,10 @@ from src.prompt import (
     format_competition_product_context,
     format_organizer_input_semantics,
     format_v24_comparison_context,
+    format_v24_role_pairs_context,
     normalize_notice_facts,
 )
-from src.schema import ITEMS, TRIAGE_STATES, judgment_schema, locator_schema, inventory_schema, triage_schema
+from src.schema import ITEMS, TRIAGE_STATES, category_fact_first_judgment_schema, judgment_schema, locator_schema, inventory_schema, triage_schema, v4_fact_first_judgment_schema, v4_specialist_fact_first_judgment_schema, v24_fact_first_judgment_schema
 from src.law_bundles import MetadataLawBundleRouter
 
 
@@ -101,6 +107,295 @@ def test_shared_navigation_builder_preserves_exp171_message_contract() -> None:
 def test_parse_judgment_requires_every_item() -> None:
     with pytest.raises(PredictionError, match="missing items"):
         parse_judgment('{"v1": {"위반여부": 0, "근거문구": null}}')
+
+
+def test_v24_fact_first_schema_and_parser_put_review_before_final_judgment() -> None:
+    schema = v24_fact_first_judgment_schema()
+    assert schema["required"] == ["v24대조", "판정"]
+    payload = {
+        "v24대조": [{
+            "필드": "예산", "원문값": "예산금액 100원",
+            "메타값": "배정예산금액: 200원", "관계": "양립불가능",
+        }],
+        "판정": _judgment(),
+    }
+    judgment, reviews = parse_v24_fact_first_response(
+        json.dumps(payload, ensure_ascii=False)
+    )
+    assert judgment["v24"]["위반여부"] == 0
+    assert reviews[0]["관계"] == "양립불가능"
+
+
+def test_v4_fact_first_schema_parser_and_source_validation() -> None:
+    schema = v4_fact_first_judgment_schema()
+    assert schema["required"] == ["v4검토", "판정"]
+    payload = {
+        "v4검토": {
+            "참가자격실적근거": "국가기관 발주 실적만 인정",
+            "금액구간": "고시금액이상",
+            "특정발주기관한정": "있음",
+            "특정실적종류한정": "없음",
+            "구체적필요사유": "없음",
+            "카드대조": "1조건충족",
+        },
+        "판정": _judgment(),
+    }
+    parsed, review = parse_v4_fact_first_response(json.dumps(payload, ensure_ascii=False))
+    assert parsed == _judgment()
+    assert review["카드대조"] == "1조건충족"
+
+    class Client:
+        def complete(self, messages, response_schema):
+            return Completion(
+                content=json.dumps(payload, ensure_ascii=False), model="test",
+                latency_seconds=0.0, usage={}, finish_reason="stop",
+            )
+
+    pipeline = BaselinePipeline(
+        item_table={item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS},
+        client=Client(), max_document_chars=None,
+        prompt_mode="v4_fact_first_relation_v1", prompt_profile="complete_fact_v1",
+    )
+    prediction = pipeline.predict(_record("국가기관 발주 실적만 인정"))
+    assert prediction.v4_fact_reviews[0]["원문검증됨"] is True
+    assert prediction.v4_fact_reviews[0]["검증원문값"] == "국가기관 발주 실적만 인정"
+
+
+def test_v4_fact_first_keeps_relation_checklist_after_source() -> None:
+    pipeline = BaselinePipeline(
+        item_table={item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS},
+        client=MockClient(), max_document_chars=None,
+        prompt_mode="v4_fact_first_relation_v1", prompt_profile="complete_fact_v1",
+    )
+    system, user = (
+        message["content"] for message in pipeline.messages_for_context(
+            _record("마지막 원문 문장"), None
+        )
+    )
+    assert "`v4검토`" in system
+    assert user.index("마지막 원문 문장") < user.index("[판정 직전 관계 체크리스트]")
+    assert user.index("[판정 직전 관계 체크리스트]") < user.index("[v4 출력 전 확인]")
+    assert pipeline.response_schema == v4_fact_first_judgment_schema()
+
+
+def test_v4_specialist_fact_first_is_role_aware_and_does_not_override_label() -> None:
+    payload = {
+        "v4역할검토": {
+            "실적요구원문": "실적증명서는 해당 기관 발급분만 인정",
+            "조항역할": "증빙서류_행정",
+            "과거계약실적요구": "없음",
+            "발주기관범위": "발주기관제한없음",
+            "실적종류범위": "실적제한아님",
+            "유사동등실적인정": "불명",
+            "구체적필요사유": "없음",
+            "카드대조": "0조건충족",
+        },
+        "판정": {"v4": {"위반여부": 1, "근거문구": "실적증명서는 해당 기관 발급분만 인정"}},
+    }
+    parsed, review = parse_v4_specialist_fact_first_response(
+        json.dumps(payload, ensure_ascii=False)
+    )
+    assert parsed["v4"]["위반여부"] == 1
+    assert review["조항역할"] == "증빙서류_행정"
+
+    class Client:
+        def complete(self, messages, response_schema):
+            return Completion(
+                content=json.dumps(payload, ensure_ascii=False), model="test",
+                latency_seconds=0.0, usage={}, finish_reason="stop",
+            )
+
+    pipeline = BaselinePipeline(
+        item_table={item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS},
+        client=Client(), max_document_chars=None,
+        prompt_mode="v4_specialist_fact_first_v1",
+        prompt_profile="complete_fact_subset_v1", active_items=("v4",),
+    )
+    prediction = pipeline.predict(_record("실적증명서는 해당 기관 발급분만 인정"))
+    assert prediction.judgment["v4"]["위반여부"] == 1
+    assert prediction.v4_fact_reviews[0]["원문검증됨"] is True
+    system, user = (
+        message["content"] for message in pipeline.messages_for_context(
+            _record("마지막 원문 문장"), None
+        )
+    )
+    assert "`v4역할검토`" in system
+    assert "[판정 직전 관계 체크리스트]" not in user
+    assert user.index("마지막 원문 문장") < user.index("[v4 출력 전 역할 검증]")
+    assert pipeline.response_schema == v4_specialist_fact_first_judgment_schema()
+
+
+def test_v4_specialist_fact_first_rejects_non_v4_active_items() -> None:
+    with pytest.raises(ValueError, match="requires v4-only"):
+        BaselinePipeline(
+            item_table={item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS},
+            client=MockClient(), max_document_chars=None,
+            prompt_mode="v4_specialist_fact_first_v1",
+            prompt_profile="complete_fact_subset_v1", active_items=("v3", "v4"),
+        )
+
+
+def test_category_fact_first_schema_parser_and_prompt_order() -> None:
+    categories = (
+        "참가자격_실적_지역", "제품_기업_직접생산", "규격_모델_기술요구",
+        "제출서류_확약서", "계약방식_공동계약", "일정_설명회", "금액_메타대조",
+    )
+    schema = category_fact_first_judgment_schema()
+    assert schema["required"] == ["사실목록", "판정"]
+    payload = {
+        "사실목록": {category: [] for category in categories},
+        "판정": _judgment(),
+    }
+    payload["사실목록"]["참가자격_실적_지역"] = ["서울 지역 업체로 제한"]
+    parsed, facts = parse_category_fact_first_response(
+        json.dumps(payload, ensure_ascii=False)
+    )
+    assert parsed == _judgment()
+    assert facts["참가자격_실적_지역"] == ["서울 지역 업체로 제한"]
+
+    class Client:
+        def complete(self, messages, response_schema):
+            return Completion(
+                content=json.dumps(payload, ensure_ascii=False), model="test",
+                latency_seconds=0.0, usage={}, finish_reason="stop",
+            )
+
+    pipeline = BaselinePipeline(
+        item_table={item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS},
+        client=Client(), max_document_chars=None,
+        prompt_mode="category_fact_first_relation_v1",
+        prompt_profile="complete_fact_v1",
+    )
+    messages = pipeline.messages_for_context(_record("서울 지역 업체로 제한"), None)
+    assert messages[1]["content"].index("서울 지역 업체로 제한") < messages[1]["content"].index("[판정 직전 관계 체크리스트]")
+    assert messages[1]["content"].index("[판정 직전 관계 체크리스트]") < messages[1]["content"].index("[출력 전 원문 사실 정리]")
+    prediction = pipeline.predict(_record("서울 지역 업체로 제한"))
+    review = prediction.category_fact_reviews[0]["범주"]["참가자격_실적_지역"][0]
+    assert review["원문검증됨"] is True
+    assert review["검증원문값"] == "서울 지역 업체로 제한"
+    assert prediction.judgment["v1"]["위반여부"] == 0
+
+
+def test_v24_fact_review_is_audited_but_never_overrides_label() -> None:
+    record = _record("예산금액 100원")
+    pipeline = BaselinePipeline(
+        item_table={item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS},
+        client=MockClient(), max_document_chars=None,
+        prompt_mode="v24_fact_first_v1", prompt_profile="complete_fact_v1",
+    )
+    payload = {
+        "v24대조": [{
+            "필드": "예산", "원문값": "예산금액 100원",
+            "메타값": "배정예산금액: 200원", "관계": "양립불가능",
+        }],
+        "판정": _judgment(),
+    }
+    completion = Completion(
+        content=json.dumps(payload, ensure_ascii=False), model="mock",
+        latency_seconds=0.0, usage={},
+    )
+    prediction = pipeline.finalize(record, [completion], [None])
+    assert prediction.judgment["v24"]["위반여부"] == 0
+    assert prediction.v24_fact_reviews[0]["원문검증됨"] is True
+    assert prediction.v24_fact_reviews[0]["검증원문값"] == "예산금액 100원"
+
+
+def test_v24_role_pairs_separate_competition_and_award_methods() -> None:
+    record = _record("입찰방법: 제한경쟁, 낙찰방법: 협상에 의한 계약")
+    record["meta"] = {
+        "배정예산금액": 100,
+        "입찰추정가격": 90,
+        "계약방법": "제한경쟁",
+        "낙찰방법": "협상에의한계약",
+        "지역제한여부": "N",
+        "제한지역코드목록": None,
+        "업종제한여부": "N",
+        "면허업종제한목록": None,
+    }
+    context = format_v24_role_pairs_context(record)
+    pipeline = BaselinePipeline(
+        item_table={item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS},
+        client=MockClient(), max_document_chars=None,
+        prompt_mode="v24_role_pairs_v1", prompt_profile="complete_fact_v1",
+    )
+    messages = pipeline.messages_for_context(record, None)
+    system, user = messages[0]["content"], messages[1]["content"]
+
+    assert "경쟁 범주는 계약방법" in system
+    assert "낙찰자 결정 방식은 낙찰방법" in system
+    assert "납품·사업·설명회 장소는 지역제한이 아니다" in system
+    assert "[v24 역할별 나라장터 값]" in user
+    assert context in user
+    assert user.index("[v24 역할별 나라장터 값]") < user.index("[공고 자료 원문]")
+
+
+def test_baseline_complete_fact_does_not_silently_gain_v24_role_context() -> None:
+    record = _record()
+    record["meta"] = {"계약방법": "제한경쟁"}
+    pipeline = BaselinePipeline(
+        item_table={item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS},
+        client=MockClient(), max_document_chars=None,
+        prompt_mode="baseline", prompt_profile="complete_fact_v1",
+    )
+    messages = pipeline.messages_for_context(record, None)
+    assert "[v24 역할별 대조]" not in messages[0]["content"]
+    assert "[v24 역할별 나라장터 값]" not in messages[1]["content"]
+
+
+def test_relation_checklist_is_after_complete_source_without_schema_change() -> None:
+    record = _record("마지막 원문 문장")
+    pipeline = BaselinePipeline(
+        item_table={item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS},
+        client=MockClient(), max_document_chars=None,
+        prompt_mode="relation_checklist_after_source_v1",
+        prompt_profile="complete_fact_v1",
+    )
+    user = pipeline.messages_for_context(record, None)[1]["content"]
+
+    assert user.index("마지막 원문 문장") < user.index("[판정 직전 관계 체크리스트]")
+    assert "v8: 실적제한과 지역제한이 같은 입찰자" in user
+    assert "v23: 공고일·설명회·제안서마감·가격입찰마감" in user
+    assert pipeline.response_schema == judgment_schema()
+
+
+def test_relation_checklist_labels_only_has_no_ve_output_conflict() -> None:
+    record = _record("마지막 원문 문장")
+    pipeline = BaselinePipeline(
+        item_table={item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS},
+        client=MockClient(), max_document_chars=None,
+        prompt_mode="relation_checklist_after_source_v1",
+        prompt_profile="complete_fact_v1", output_mode="labels_only",
+    )
+    system, user = (
+        message["content"] for message in pipeline.messages_for_context(record, None)
+    )
+
+    assert "최종 위반여부 V만 출력한다" in user
+    assert "최종 V/E를 출력한다" not in user
+    assert "근거문구" not in system
+    assert pipeline.response_schema == judgment_schema(output_mode="labels_only")
+
+
+def test_decision_protocol_preserves_ve_schema_and_follows_complete_source() -> None:
+    record = _record("마지막 원문 문장")
+    pipeline = BaselinePipeline(
+        item_table={item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS},
+        client=MockClient(), max_document_chars=None,
+        prompt_mode="decision_protocol_after_source_v1",
+        prompt_profile="complete_fact_v1",
+    )
+    system, user = (
+        message["content"] for message in pipeline.messages_for_context(record, None)
+    )
+
+    assert "[구조적 판정 모드]" in system
+    assert user.index("마지막 원문 문장") < user.index("[판정 직전 실행 절차")
+    assert "부재라서 인용문이 없고 근거문구가 null이라는 이유로 0" in user
+    assert "실제 구매대상과 exact-code 고시 후보의 적용조건" in user
+    assert "v4: 특정 발주기관·실적종류 제한" in user
+    assert "v7: 참가자의 허용 지역 집합" in user
+    assert "v22: 행사가 입찰 전 설명회인지" in user
+    assert pipeline.response_schema == judgment_schema()
 
 
 def test_inventory_contract_is_non_final_and_requires_every_active_item() -> None:
@@ -280,6 +575,29 @@ def test_vonly_draft_full_final_keeps_ve_final_owner() -> None:
     assert set(prediction.final.judgment) == set(ITEMS)
     assert "1차 검토 초안" in prediction.final_messages_by_context[0][1]["content"]
     assert not prediction.final_recovery_used
+
+
+def test_vonly_draft_full_final_supports_one_item_without_python_vote() -> None:
+    item_table = {
+        item: {"항목명": item, "부재탐지": False, "국가계약법": "", "지방계약법": "", "비고": ""}
+        for item in ITEMS
+    }
+    pipeline = BaselinePipeline(
+        item_table=item_table, client=MockClient(), max_document_chars=None,
+        context_strategy="single", overflow_split_enabled=True,
+        count_tokens=lambda messages: len(messages),
+        prompt_profile="complete_fact_subset_v1", active_items=("v4",),
+        output_mode="labels_and_evidence",
+    )
+    prediction = pipeline.predict_with_vonly_draft_then_full_final(_record())
+    assert set(prediction.draft.pass_judgments[0]) == {"v4"}
+    assert set(prediction.final.pass_judgments[0]) == {"v4"}
+    assert "초안의 0 또는 1을 따르거나 인용하지 말고" in (
+        prediction.final_messages_by_context[0][1]["content"]
+    )
+    assert "지정 항목(v4)을 다시 판단" in (
+        prediction.final_messages_by_context[0][1]["content"]
+    )
 
 
 def test_vonly_consensus_uses_model_owned_resolver_not_python_vote() -> None:
@@ -908,6 +1226,25 @@ def test_fact_inventory_contract_is_source_only_and_non_final() -> None:
     )
     assert len(before_source) == 2
     assert before_source[-1]["content"].index("최종 판정 아님") < before_source[-1]["content"].index("[공고 자료 원문]")
+
+
+def test_fact_inventory_keeps_relation_checklist_last_in_source_first_final() -> None:
+    pipeline = BaselinePipeline(
+        item_table={item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS},
+        client=MockClient(), max_document_chars=None,
+        prompt_mode="relation_checklist_after_source_v1",
+        prompt_profile="complete_fact_v1",
+    )
+    base = pipeline.messages_for_context(_record("마지막 원문 문장"), None)
+    inventory = {category: () for category in (
+        "참가자격_실적_지역", "제품_기업_직접생산", "규격_모델_기술요구",
+        "제출서류_확약서", "계약방식_공동계약", "일정_설명회", "금액_메타대조",
+    )}
+    messages = append_fact_inventory(base, inventory)
+    rendered = "\n".join(message["content"] for message in messages)
+    assert rendered.count("[판정 직전 관계 체크리스트]") == 1
+    assert rendered.index("마지막 원문 문장") < rendered.index("[전체 공고 자료에서 수집한 원문 사실")
+    assert rendered.index("[전체 공고 자료에서 수집한 원문 사실") < rendered.index("[판정 직전 관계 체크리스트]")
 
 
 def test_shared_fact_inventory_keeps_only_source_substrings_and_survives_malformed() -> None:

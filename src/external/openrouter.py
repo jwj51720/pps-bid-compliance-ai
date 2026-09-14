@@ -192,6 +192,67 @@ class MockClient:
             }
             content = json.dumps(payload, ensure_ascii=False)
             return Completion(content=content, model=self.model, latency_seconds=0.0, usage={})
+        if "v24대조" in properties and "판정" in properties:
+            label_properties = properties["판정"]["properties"]
+            payload = {
+                "v24대조": [],
+                "판정": {
+                    item: {"위반여부": 0, "근거문구": None}
+                    for item in label_properties
+                },
+            }
+            content = json.dumps(payload, ensure_ascii=False)
+            return Completion(content=content, model=self.model, latency_seconds=0.0, usage={})
+        if "사실목록" in properties and "판정" in properties:
+            fact_properties = properties["사실목록"]["properties"]
+            label_properties = properties["판정"]["properties"]
+            payload = {
+                "사실목록": {category: [] for category in fact_properties},
+                "판정": {
+                    item: {"위반여부": 0, "근거문구": None}
+                    for item in label_properties
+                },
+            }
+            content = json.dumps(payload, ensure_ascii=False)
+            return Completion(content=content, model=self.model, latency_seconds=0.0, usage={})
+        if "v4검토" in properties and "판정" in properties:
+            label_properties = properties["판정"]["properties"]
+            payload = {
+                "v4검토": {
+                    "참가자격실적근거": None,
+                    "금액구간": "불명",
+                    "특정발주기관한정": "불명",
+                    "특정실적종류한정": "불명",
+                    "구체적필요사유": "불명",
+                    "카드대조": "판단불가",
+                },
+                "판정": {
+                    item: {"위반여부": 0, "근거문구": None}
+                    for item in label_properties
+                },
+            }
+            content = json.dumps(payload, ensure_ascii=False)
+            return Completion(content=content, model=self.model, latency_seconds=0.0, usage={})
+        if "v4역할검토" in properties and "판정" in properties:
+            label_properties = properties["판정"]["properties"]
+            payload = {
+                "v4역할검토": {
+                    "실적요구원문": None,
+                    "조항역할": "불명",
+                    "과거계약실적요구": "불명",
+                    "발주기관범위": "불명",
+                    "실적종류범위": "불명",
+                    "유사동등실적인정": "불명",
+                    "구체적필요사유": "불명",
+                    "카드대조": "판단불가",
+                },
+                "판정": {
+                    item: {"위반여부": 0, "근거문구": None}
+                    for item in label_properties
+                },
+            }
+            content = json.dumps(payload, ensure_ascii=False)
+            return Completion(content=content, model=self.model, latency_seconds=0.0, usage={})
         sparse = "판정" in properties and "발췌" in properties
         label_properties = properties["판정"]["properties"] if sparse else properties
         first_item = next(iter(label_properties))
