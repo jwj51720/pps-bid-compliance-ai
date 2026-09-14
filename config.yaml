@@ -1,8 +1,8 @@
-# EXP200 corrected-input submission candidate: source-first navigation plus
-# full-source final V/E. Submission runtime values must match this policy exactly.
+# EXP231 best-local composition: EXP208 all-item relation checklist, then
+# replace v4 and v5 with their independently validated full-source specialists.
 experiment:
-  id: submit-exp200-corrected-input-source-first-v1
-  derived_data: [decision_cards_v10_v6_v7_scope, competition_products_v1]
+  id: submit-exp231-v4-v5-specialists-v1
+  derived_data: [decision_cards_v10_v6_v7_scope, decision_cards_v11_v4_scope, decision_cards_v12_v5_threshold, competition_products_v1]
 
 data:
   root: data/raw/open
@@ -12,7 +12,7 @@ data:
   fast_panel_ids_path: configs/dev_fast_panel_v1.json # default local fast gate; submission does not read this field
 
 output:
-  dir: outputs/submit-exp200-corrected-input-source-first-v1
+  dir: outputs/submit-exp231-v4-v5-specialists-v1
 
 prompt:
   max_document_chars: null
@@ -33,7 +33,7 @@ prompt:
   max_model_len: 32768
   output_reserve_tokens: 2500
   notice_anchor_chars: 4000
-  mode: baseline # options: baseline, structured, guided
+  mode: relation_checklist_after_source_v1
   include_normalized_facts: false # options: true, false
 
 llm:
@@ -56,7 +56,21 @@ run:
   concurrency: 64
 
 staged_run:
-  mode: fact_inventory_full_final_v1
+  mode: "off"
+
+specialist_run:
+  mode: replace_items_v1
+  specialists:
+    - id: exp221_v4
+      active_items: [v4]
+      decision_cards_path: data/derived/decision_cards_v11_v4_scope.json
+      profile: complete_fact_subset_v1
+      mode: baseline
+    - id: exp231_v5
+      active_items: [v5]
+      decision_cards_path: data/derived/decision_cards_v12_v5_threshold.json
+      profile: complete_fact_subset_v1
+      mode: baseline
 
 postprocess:
   frozen_rule_set: exp123_v1

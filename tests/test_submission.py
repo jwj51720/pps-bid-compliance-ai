@@ -4,6 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 from src.pipeline import judgment_to_row
 from src.schema import ITEMS
@@ -137,6 +138,62 @@ def test_submission_runtime_uses_documented_batch_128_default() -> None:
     runtime_path = Path(__file__).resolve().parents[1] / "submission" / "runtime_config.json"
     runtime = json.loads(runtime_path.read_text(encoding="utf-8"))
     assert runtime["runtime"]["batch_size"] == 128
+
+
+def test_submission_runtime_reproduces_exp231_specialist_composition() -> None:
+    runtime_path = Path(__file__).resolve().parents[1] / "submission" / "runtime_config.json"
+    runtime = json.loads(runtime_path.read_text(encoding="utf-8"))
+
+    assert runtime["prompt"]["mode"] == "relation_checklist_after_source_v1"
+    assert runtime["prompt"]["decision_cards_file"] == (
+        "decision_cards_v10_v6_v7_scope.json"
+    )
+    assert runtime["staged_run"] == {"mode": "off"}
+    assert runtime["specialist_run"] == {
+        "mode": "replace_items_v1",
+        "specialists": [
+            {
+                "id": "exp221_v4",
+                "active_items": ["v4"],
+                "decision_cards_file": "decision_cards_v11_v4_scope.json",
+                "profile": "complete_fact_subset_v1",
+                "mode": "baseline",
+            },
+            {
+                "id": "exp231_v5",
+                "active_items": ["v5"],
+                "decision_cards_file": "decision_cards_v12_v5_threshold.json",
+                "profile": "complete_fact_subset_v1",
+                "mode": "baseline",
+            },
+        ],
+    }
+
+
+def test_specialist_merge_replaces_only_declared_items() -> None:
+    script_path = Path(__file__).resolve().parents[1] / "submission" / "script.py"
+    spec = importlib.util.spec_from_file_location("submission_script_specialist", script_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    base_judgment = {
+        item: {"위반여부": 0, "근거문구": ""} for item in ITEMS
+    }
+    base_judgment["v6"] = {"위반여부": 1, "근거문구": "base-v6"}
+    specialist_judgment = {
+        item: {"위반여부": 0, "근거문구": ""} for item in ITEMS
+    }
+    specialist_judgment["v4"] = {"위반여부": 1, "근거문구": "specialist-v4"}
+    specialist_judgment["v6"] = {"위반여부": 0, "근거문구": ""}
+    base = SimpleNamespace(record_id="PPS-1", judgment=base_judgment)
+    specialist = SimpleNamespace(record_id="PPS-1", judgment=specialist_judgment)
+
+    module._replace_specialist_items([base], [specialist], ("v4",))
+
+    assert base.judgment["v4"] == specialist_judgment["v4"]
+    assert base.judgment["v6"] == {"위반여부": 1, "근거문구": "base-v6"}
 
 
 def test_submission_group_json_retry_uses_the_group_item_subset() -> None:

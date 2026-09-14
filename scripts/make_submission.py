@@ -12,7 +12,7 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-STAGING = ROOT / "submission/build/exp200_corrected_input_source_first_v1"
+STAGING = ROOT / "submission/build/exp231_v4_v5_specialists_v1"
 DIST_DIR = ROOT / "dist"
 
 
@@ -85,6 +85,22 @@ def verify_runtime_policy() -> tuple[dict, dict]:
         )
     if canonical.get("staged_run", {}) != runtime.get("staged_run", {}):
         raise ValueError("config.yaml and submission runtime staged_run differ")
+    canonical_specialists = canonical.get("specialist_run", {})
+    runtime_specialists = runtime.get("specialist_run", {})
+    if canonical_specialists.get("mode", "off") != runtime_specialists.get("mode", "off"):
+        raise ValueError("config.yaml and submission runtime specialist_run mode differ")
+    canonical_entries = canonical_specialists.get("specialists", [])
+    runtime_entries = runtime_specialists.get("specialists", [])
+    if len(canonical_entries) != len(runtime_entries):
+        raise ValueError("config.yaml and submission runtime specialist counts differ")
+    for canonical_entry, runtime_entry in zip(canonical_entries, runtime_entries):
+        for field in ("id", "active_items", "profile", "mode"):
+            if canonical_entry.get(field) != runtime_entry.get(field):
+                raise ValueError(f"specialist {field} differs between configs")
+        canonical_path = canonical_entry.get("decision_cards_path")
+        runtime_file = runtime_entry.get("decision_cards_file")
+        if not canonical_path or Path(str(canonical_path)).name != runtime_file:
+            raise ValueError("specialist decision card differs between configs")
     if canonical.get("postprocess", {}) != runtime.get("postprocess", {}):
         raise ValueError("config.yaml and submission runtime postprocess differ")
     canonical_llm = canonical.get("llm", {})
@@ -128,6 +144,14 @@ def main() -> int:
     cards_file = runtime["prompt"].get("decision_cards_file")
     if cards_file:
         shutil.copy2(ROOT / str(canonical["prompt"]["decision_cards_path"]), STAGING / str(cards_file))
+    for canonical_entry, runtime_entry in zip(
+        canonical.get("specialist_run", {}).get("specialists", []),
+        runtime.get("specialist_run", {}).get("specialists", []),
+    ):
+        shutil.copy2(
+            ROOT / str(canonical_entry["decision_cards_path"]),
+            STAGING / str(runtime_entry["decision_cards_file"]),
+        )
     products_file = runtime["prompt"].get("competition_products_file")
     if products_file:
         shutil.copy2(

@@ -18,7 +18,7 @@
     "max_model_len": 32768,
     "output_reserve_tokens": 2500,
     "notice_anchor_chars": 4000,
-    "mode": "baseline",
+    "mode": "relation_checklist_after_source_v1",
     "include_normalized_facts": false
   },
   "runtime": {
@@ -29,6 +29,25 @@
     "quantization_env": "PPS_QUANT",
     "default_quantization": "int8_per_channel_weight_only"
   },
-  "staged_run": {"mode": "fact_inventory_full_final_v1"},
+  "staged_run": {"mode": "off"},
+  "specialist_run": {
+    "mode": "replace_items_v1",
+    "specialists": [
+      {
+        "id": "exp221_v4",
+        "active_items": ["v4"],
+        "decision_cards_file": "decision_cards_v11_v4_scope.json",
+        "profile": "complete_fact_subset_v1",
+        "mode": "baseline"
+      },
+      {
+        "id": "exp231_v5",
+        "active_items": ["v5"],
+        "decision_cards_file": "decision_cards_v12_v5_threshold.json",
+        "profile": "complete_fact_subset_v1",
+        "mode": "baseline"
+      }
+    ]
+  },
   "postprocess": {"frozen_rule_set": "exp123_v1"}
 }

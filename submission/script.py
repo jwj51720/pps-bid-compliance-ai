@@ -302,44 +302,149 @@ def build_submission_pipeline(
     decision_cards: dict[str, dict[str, Any]] | None,
     competition_products: dict[str, dict[str, str]] | None,
     active_items: tuple[str, ...] = tuple(f"v{i}" for i in range(1, 25)),
+    prompt_config: dict[str, Any] | None = None,
 ) -> BaselinePipeline:
     """Build the shared pipeline from every tracked submission prompt option."""
+    selected_prompt = PROMPT_CONFIG if prompt_config is None else prompt_config
     return BaselinePipeline(
         item_table=item_table,
         client=client,
-        max_document_chars=PROMPT_CONFIG["max_document_chars"],
-        prompt_mode=str(PROMPT_CONFIG["mode"]),
-        include_normalized_facts=bool(PROMPT_CONFIG["include_normalized_facts"]),
-        context_strategy=PROMPT_CONFIG["context_strategy"],
-        overflow_split_enabled=bool(PROMPT_CONFIG["overflow_split_enabled"]),
-        strict_document_evidence=bool(PROMPT_CONFIG["strict_document_evidence"]),
-        absence_detection_strategy=PROMPT_CONFIG["absence_detection_strategy"],
+        max_document_chars=selected_prompt["max_document_chars"],
+        prompt_mode=str(selected_prompt["mode"]),
+        include_normalized_facts=bool(selected_prompt["include_normalized_facts"]),
+        context_strategy=selected_prompt["context_strategy"],
+        overflow_split_enabled=bool(selected_prompt["overflow_split_enabled"]),
+        strict_document_evidence=bool(selected_prompt["strict_document_evidence"]),
+        absence_detection_strategy=selected_prompt["absence_detection_strategy"],
         decision_cards=decision_cards,
         competition_products=competition_products,
         competition_product_context_mode=str(
-            PROMPT_CONFIG.get("competition_product_context_mode", "names_only_v1")
+            selected_prompt.get("competition_product_context_mode", "names_only_v1")
         ),
         organizer_input_semantics_mode=str(
-            PROMPT_CONFIG.get("organizer_input_semantics_mode", "off")
+            selected_prompt.get("organizer_input_semantics_mode", "off")
         ),
         count_tokens=client.count_tokens,
         prompt_budget_tokens=MAX_MODEL_LEN - OUTPUT_RESERVE_TOKENS,
         active_items=active_items,
-        prompt_layout=str(PROMPT_CONFIG.get("layout", "plain")),
-        prompt_profile=str(PROMPT_CONFIG.get("profile", "default")),
-        role_directive=str(PROMPT_CONFIG.get("role_directive", "standard")),
-        item_catalog_style=str(PROMPT_CONFIG.get("item_catalog_style", "minimal")),
-        metadata_style=str(PROMPT_CONFIG.get("metadata_style", "full_json")),
-        output_mode=str(PROMPT_CONFIG.get("output_mode", "labels_and_evidence")),
+        prompt_layout=str(selected_prompt.get("layout", "plain")),
+        prompt_profile=str(selected_prompt.get("profile", "default")),
+        role_directive=str(selected_prompt.get("role_directive", "standard")),
+        item_catalog_style=str(selected_prompt.get("item_catalog_style", "minimal")),
+        metadata_style=str(selected_prompt.get("metadata_style", "full_json")),
+        output_mode=str(selected_prompt.get("output_mode", "labels_and_evidence")),
         frozen_rule_set=(
             str(RUNTIME_CONFIG.get("postprocess", {}).get("frozen_rule_set"))
             if RUNTIME_CONFIG.get("postprocess", {}).get("frozen_rule_set") else None
         ),
         visible_document_types=(
-            tuple(PROMPT_CONFIG["visible_document_types"])
-            if PROMPT_CONFIG.get("visible_document_types") is not None else None
+            tuple(selected_prompt["visible_document_types"])
+            if selected_prompt.get("visible_document_types") is not None else None
         ),
     )
+
+
+def _batched_pipeline_predictions(
+    records: list[dict[str, Any]],
+    pipeline: BaselinePipeline,
+    client: Any,
+    batch_size: int,
+    batch_retries: int,
+) -> tuple[list[Any], int, int, int]:
+    """Run one pipeline policy as globally batched source-pack requests."""
+    contexts_by_record: list[list[str | DocumentContext | None]] = []
+    completions: list[list[Completion]] = [[] for _ in records]
+    pending: list[tuple[int, list[dict[str, str]]]] = []
+    for index, record in enumerate(records):
+        contexts = pipeline.contexts_for_record(record)
+        contexts_by_record.append(contexts)
+        for context in contexts:
+            pending.append((index, pipeline.messages_for_context(record, context)))
+
+    retried_malformed = 0
+    for start in range(0, len(pending), batch_size):
+        batch = pending[start : start + batch_size]
+        outputs, retries = _complete_group_with_json_retries(
+            client,
+            [messages for _, messages in batch],
+            pipeline.response_schema,
+            batch_retries,
+            pipeline.active_items,
+        )
+        retried_malformed += retries
+        for (index, _), output in zip(batch, outputs):
+            completions[index].append(output)
+
+    predictions = [
+        pipeline.finalize(record, completions[index], contexts_by_record[index])
+        for index, record in enumerate(records)
+    ]
+    unrecovered = sum(len(prediction.parse_errors) for prediction in predictions)
+    return predictions, retried_malformed, unrecovered, len(pending)
+
+
+def _replace_specialist_items(
+    base_predictions: list[Any],
+    specialist_predictions: list[Any],
+    active_items: tuple[str, ...],
+) -> None:
+    """Replace only declared model-owned fields, matching offline CSV composition."""
+    if len(base_predictions) != len(specialist_predictions):
+        raise ValueError("base and specialist prediction counts differ")
+    for base, specialist in zip(base_predictions, specialist_predictions):
+        if base.record_id != specialist.record_id:
+            raise ValueError("base and specialist ordered IDs differ")
+        for item in active_items:
+            base.judgment[item] = dict(specialist.judgment[item])
+
+
+def _specialist_composite_rows(
+    records: list[dict[str, Any]],
+    item_table: dict[str, dict[str, Any]],
+    base_pipeline: BaselinePipeline,
+    competition_products: dict[str, dict[str, str]] | None,
+    client: Any,
+    batch_size: int,
+    batch_retries: int,
+) -> tuple[list[dict[str, Any]], int, int]:
+    """Reproduce EXP208 + EXP221(v4) + EXP231(v5) replacement composition."""
+    base, retried, unrecovered, request_count = _batched_pipeline_predictions(
+        records, base_pipeline, client, batch_size, batch_retries
+    )
+    _log(f"composite base requests={request_count}")
+    for specialist_config in RUNTIME_CONFIG["specialist_run"]["specialists"]:
+        active_items = tuple(str(item) for item in specialist_config["active_items"])
+        prompt_config = {
+            **PROMPT_CONFIG,
+            "mode": str(specialist_config["mode"]),
+            "profile": str(specialist_config["profile"]),
+        }
+        cards = load_decision_cards(
+            ROOT / str(specialist_config["decision_cards_file"]), item_table
+        )
+        specialist_pipeline = build_submission_pipeline(
+            item_table=item_table,
+            client=client,
+            decision_cards=cards,
+            competition_products=competition_products,
+            active_items=active_items,
+            prompt_config=prompt_config,
+        )
+        specialist, retries, parse_errors, specialist_requests = (
+            _batched_pipeline_predictions(
+                records, specialist_pipeline, client, batch_size, batch_retries
+            )
+        )
+        retried += retries
+        unrecovered += parse_errors
+        request_count += specialist_requests
+        _replace_specialist_items(base, specialist, active_items)
+        _log(
+            f"composite specialist={specialist_config['id']} "
+            f"items={','.join(active_items)} requests={specialist_requests}"
+        )
+    _log(f"composite total_requests={request_count}")
+    return prediction_rows(base), retried, unrecovered
 
 
 def _source_first_full_final_rows(
@@ -480,14 +585,21 @@ def main() -> int:
     client = MockClient() if args.mock else VLLMClient(model_dir)
     grouping = str(RUNTIME.get("grouping", "all"))
     staged_mode = str(RUNTIME_CONFIG.get("staged_run", {}).get("mode", "off"))
+    specialist_mode = str(
+        RUNTIME_CONFIG.get("specialist_run", {}).get("mode", "off")
+    )
     batch_retries = int(RUNTIME.get("batch_retries", 2))
     if batch_retries < 0:
         raise ValueError("runtime.batch_retries must be non-negative")
     groups = groups_for_scheme(grouping) if grouping != "all" else ()
     if staged_mode not in {"off", "fact_inventory_full_final_v1"}:
         raise ValueError(f"unsupported submission staged mode: {staged_mode}")
+    if specialist_mode not in {"off", "replace_items_v1"}:
+        raise ValueError(f"unsupported submission specialist mode: {specialist_mode}")
     if staged_mode != "off" and groups:
         raise ValueError("source-first submission mode does not support item grouping")
+    if specialist_mode != "off" and (staged_mode != "off" or groups):
+        raise ValueError("specialist replacement cannot be combined with staging or grouping")
 
     pipeline = build_submission_pipeline(
         item_table=item_table,
@@ -497,7 +609,12 @@ def main() -> int:
     )
     retried_malformed = 0
 
-    if staged_mode == "fact_inventory_full_final_v1":
+    if specialist_mode == "replace_items_v1":
+        output_rows, retried_malformed, unrecovered = _specialist_composite_rows(
+            records, item_table, pipeline, competition_products, client,
+            args.batch_size, batch_retries,
+        )
+    elif staged_mode == "fact_inventory_full_final_v1":
         output_rows, retried_malformed, unrecovered = _source_first_full_final_rows(
             records, pipeline, client, args.batch_size, batch_retries,
         )
