@@ -2,6 +2,10 @@
 
 작성일: 2026-09-21
 
+결과: **fast20에서 중단**. TP 1 / FP 4 / FN 2로 양성 하나를 회수했지만 FP<=3 조건을 넘었고,
+1건의 length fallback이 발생했다. holdout20/dev200은 실행하지 않았다. 상세 결과와 구현 결함
+분해는 `docs/clean_exp_c002r_v24_multi_observation_fast20_result.md`에 기록한다.
+
 ## 1. 목적과 기준선
 
 EXP-C002R은 실패한 EXP-C002를 수정 실행하는 것이 아니라, C002 fast20에서 입증된 표현력 결함을
