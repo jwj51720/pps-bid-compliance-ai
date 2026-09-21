@@ -39,3 +39,13 @@ surface로 반환했다. Python은 이를 100,000,000원으로 검증해 입찰�
 Dev200 gate는 계획서의 최소 TP>=6, FP<=1, FN<=2이며 목표는 8/0/0이다. 다른 23개 final
 cell은 exact equality여야 하고 invalid response는 0이어야 한다.
 
+## Dev200 1차 실행
+
+- v3: TP 7 / FP 1 / FN 1 / F1 `0.875000`
+- Macro: `0.8009804827`
+- 다른 23개 changed cells: 0
+- invalid responses: 2 (`PPS-DEV-08`, `PPS-DEV-157`)
+
+품질 최소 gate는 통과했지만 invalid=0 조건은 실패했으므로 상태는 INCOMPLETE다. 두 건은
+8,192 completion-token whitespace loop이며, `docs/clean_exp_c004rr_v3_keyed_recovery_plan.md`의
+exact-task recovery를 통과하기 전에는 완료 결과로 승격하지 않는다.
