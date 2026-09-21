@@ -176,3 +176,57 @@ source span의 변경 없는 substring이어야 한다. Python parser는 일반�
   removal과 logical-call/runtime 재구성을 검증한다.
 - 금액이 아닌 규모·양 관계는 실제 오류 사례와 organizer 적용 사실을 먼저 확보한 후 별도 owner로
   확장한다. 이번 결과를 v3 전체 truth condition의 완결 증명이라고 부르지 않는다.
+
+## 7. 2026-09-21 구현·유료 실행 전 검증
+
+Clean native 구현과 manifest preflight를 완료했다.
+
+- manifest: `experiments/manifests/clean_exp_c004_v3_monetary_v1.json`
+- active modules:
+  - `src/pps_ai/views/v3_monetary.py`
+  - `src/pps_ai/decisions/v3_monetary.py`
+  - `src/pps_ai/v3_monetary_experiment.py`
+- manifest diff: 선언되지 않은 변경 0, 사용되지 않은 선언 0, PASS
+- dev200 source coverage:
+  - 200 notices, organizer 제공 374 documents 전부 inspected
+  - uninspected 0
+  - candidate-bearing notices 61, exact candidates 100
+  - specialist tokens: min 1,030 / p95 3,028 / max 3,676 / sum 100,041
+  - total logical calls: baseline 600 + specialist 61 = 661
+- 오류 panel 9건의 실제 참가자격 금액 문장 recall: 9/9
+- dev200 v3 양성 8건 중 monetary candidate가 없는 건: 0
+- active tests: 37 passed
+- fast20 mock: 20 rows, 49-column export/evidence validation PASS, baseline cell 재현
+
+정확한 rendered message를 다음 경로에서 직접 읽었다.
+
+- short complete:
+  `outputs/clean-exp-c004-v3-monetary-v1/dev200/rendered_inputs/short_PPS-DEV-02.json`
+- attachment:
+  `outputs/clean-exp-c004-v3-monetary-v1/dev200/rendered_inputs/attachment_PPS-DEV-03.json`
+- largest candidate prompt:
+  `outputs/clean-exp-c004-v3-monetary-v1/dev200/rendered_inputs/largest_PPS-DEV-138.json`
+- error panel 9건:
+  `outputs/clean-exp-c004-v3-monetary-v1/dev200/rendered_inputs/error_panel_*.json`
+
+사람 검토 결론:
+
+1. 모든 message에 입찰추정가격 실제 값, 실제 참가자격/평가/서식 구분, `요구금액 >
+   입찰추정가격`의 엄격 부등식, 같거나 작을 때의 0 조건이 존재한다.
+2. short `PPS-DEV-02`는 참가자격 `3천만원`과 추정가격 `83,100,000원`을 함께 보존한다.
+3. attachment `PPS-DEV-03`은 공고문의 실제 자격요건 `3천만원`을 보존하고, 제공 과업지시서도
+   inspected ledger에 존재한다. 첫 후보의 사업예산/`총액, 실적` 문구와 실제 자격 후보가 분리돼
+   있어 role observation의 필요성도 확인된다.
+4. largest `PPS-DEV-138`은 제안요청서의 평가·서식 실적 후보 네 개를 모두 포함하며, 공고문과
+   제안요청서 모두 inspected다. 이 사례는 qualification observation이 없으면 강제 0이 아니라
+   baseline fallback하는 계약을 검증한다.
+5. 오류 panel의 actual requirement/estimate 쌍은 모두 message에 존재한다. 특히 기존 FP
+   `PPS-DEV-054`는 `1억원`과 `327,272,727원`, fast FN `051/062`는 각각 `3억원`과
+   `245,454,545/227,272,727원`을 정확히 전달한다.
+6. 다른 23개 item은 L41 cell을 그대로 읽고 final equality를 검사한다. 이 실험이 변경하는
+   semantic-input contract는 v3 하나뿐이다.
+
+따라서 fast20 유료 실행에 필요한 source coverage, exact tokenizer admission, rendered-input
+review, semantic-input contract, mock, isolated output path가 모두 갖춰졌다. 다음 gate는 fast20
+specialist 10호출이며, TP >= 2 / FP = 0 / malformed·fallback = 0을 통과하기 전에는 holdout을
+실행하지 않는다.
