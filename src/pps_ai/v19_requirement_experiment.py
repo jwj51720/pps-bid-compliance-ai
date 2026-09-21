@@ -27,6 +27,7 @@ from .ingest import load_notice_records
 from .preflight import compare_manifests
 from .runtime.openrouter import OpenRouterRuntime, atomic_json
 from .runtime.tokenizer import GemmaTokenCounter
+from .v19_serialization_recovery import V19SerializationRecovery
 from .views.v19_requirements import (
     V19RequirementCandidate,
     build_v19_requirement_view,
@@ -386,6 +387,19 @@ class V19RequirementExperiment:
                     atomic_json(response_dir / f"{task_id}.json", response)
                     responses[task_id] = response
 
+        recovery_report = None
+        if not mock and self.config.raw.get("v19_serialization_recovery") is not None:
+            recovery = V19SerializationRecovery(
+                self.config,
+                output_dir=self.output_dir,
+            )
+            responses, recovery_report = recovery.apply(
+                records=records,
+                primary_tasks=tasks,
+                task_candidates=task_candidates,
+                responses=responses,
+            )
+
         base_rows = _read_rows(self.base_output_dir / "submission.csv")
         candidate_rows: dict[str, dict[str, Any]] = {}
         output_observations = []
@@ -509,6 +523,7 @@ class V19RequirementExperiment:
                 "completion_tokens_sum": sum(completion_tokens),
                 "completion_tokens_max": max(completion_tokens, default=0),
             },
+            "serialization_recovery": recovery_report,
             "seconds": round(time.monotonic() - started, 3),
         }
         atomic_json(
