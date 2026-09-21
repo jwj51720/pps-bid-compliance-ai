@@ -239,10 +239,27 @@ EXP-C004S 결과: organizer source에 없는 SINGLE_CONTRACT gate를 제거한 0
 한 건만 회수했다. Dev200 v3는 TP 8 / FP 1 / FN 0 / F1 `.941176`, Macro는 `.803738`이다.
 남은 v3 작업은 FP 137 FORM role 하나이며, 다음 큰 기대기여는 v19/v9 쪽으로 이동한다.
 
+### C004S 이후 수학적 재정렬
+
+C004S를 새 quality baseline으로 고정하면 v19의 완전교정 기여는 Macro `+.021825`, v9은
+`+.023810`, v4는 `+.019444`다. 그러나 v9은 고정 fast positive의 source-gold 정합성이
+입증되지 않아 실행 목표가 없고, v4는 same-response structure와 independent verifier가 각각
+fast 또는 holdout에서 일반화 gate를 통과하지 못했다. v19는 오류 11건이 requirement instance의
+서류종류·작성주체·의무·시점 관계로 감사 가능하다.
+
+따라서 다음 quality 실험은 EXP-C005 v19 requirement-instance observation/reducer로 정한다.
+보수적 목표 `TP/FP/FN=6/6/0`은 C004S Macro를 약 `.811674`로, 목표 `6/3/0`은 약 `.817230`으로
+올린다. 상세 가설·허용 변경·중단 조건은
+`docs/clean_exp_c005_v19_requirement_instances_plan.md`에 고정한다.
+
 ### v19
 
 문서 전체에서 requirement instance를 복수 추출한다. issuer/content/deadline/mandatory가 같은
 요구에 연결된 경우만 양성으로 합성한다. 서로 다른 서류의 속성을 join하지 않는다.
+
+EXP-C005에서는 Gemma가 candidate별 typed observation만 출력하고 final v19는 출력하지 않는다.
+Python은 organizer truth condition의 명시식만 계산한다. 과거 EXP285-288처럼 관찰과 모순되는
+final label을 같은 응답에서 다시 허용하지 않는다.
 
 ### v9
 
