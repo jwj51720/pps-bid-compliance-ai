@@ -1,7 +1,7 @@
 # EXP-C005R v19 positive-only quote resolution replay 계획
 
 작성일: 2026-09-21  
-상태: 0-call replay 구현 승인, provider call 금지
+상태: fast20 PASS, unchanged-policy independent holdout20 승인
 
 ## 진단
 
@@ -62,3 +62,13 @@ label을 생성하지 않는다.
 
 통과하면 C005R 결과를 C005의 실질 fast 결과로 간주하고, 동일 quote policy를 고정한 별도
 holdout manifest를 만든다. 실패하면 holdout을 실행하지 않는다.
+
+## fast20 결과
+
+0-call replay는 task hash 17/17 MATCH, invalid 0, non-v19 변화 0으로 완료됐다. v19은
+`TP/FP/FN=1/0/0`, F1 `1.0`, 전체 fast Macro `.741667`이다. Quote audit은 byte-exact 18,
+whitespace-unique 5, no-match negative 17, ambiguous 0이다. 상세는
+`docs/clean_exp_c005r_v19_quote_resolution_fast20_result.md`에 기록한다.
+
+사전 gate를 모두 통과했으므로 동일 semantic task와 positive-only quote resolution을 고정한
+holdout20만 승인한다. 추가 prompt/card/schema/reducer 조정은 금지한다.

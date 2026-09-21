@@ -1,7 +1,7 @@
 # EXP-C005 v19 requirement-instance observation/reducer 계획
 
 작성일: 2026-09-21  
-상태: Phase A PASS, 고정 fast20 provider 실행 승인
+상태: C005R로 fast20 PASS, independent holdout20 승인
 
 ## 1. 기준선과 단일 변경 범위
 
@@ -241,3 +241,11 @@ pass로 나눈다. 상세는 `docs/clean_exp_c005_v19_requirement_instances_phas
 
 가설의 모든 구성요소가 구현·선택됐으므로 fast20의 17 candidate calls만 승인한다. Fast gate
 실패 시 holdout을 실행하지 않는다.
+
+## 13. Fast20 및 C005R
+
+원 C005 fast 응답은 14건이 negative candidate의 `N/A` 또는 공백 정규화 quote 때문에 전체
+fallback되어 quality 판정이 불가능했다. Semantic task를 바꾸지 않은 C005R positive-only quote
+resolution 0-call replay에서 invalid가 0이 됐고 v19 `TP/FP/FN=1/0/0`, F1 `1.0`, fast Macro
+`.741667`을 기록했다. 따라서 계획의 fast gate는 C005R 결과로 PASS다. 상세는
+`docs/clean_exp_c005r_v19_quote_resolution_fast20_result.md`를 따른다.
