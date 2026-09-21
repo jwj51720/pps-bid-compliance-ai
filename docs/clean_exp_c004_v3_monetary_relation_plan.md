@@ -230,3 +230,10 @@ Clean native 구현과 manifest preflight를 완료했다.
 review, semantic-input contract, mock, isolated output path가 모두 갖춰졌다. 다음 gate는 fast20
 specialist 10호출이며, TP >= 2 / FP = 0 / malformed·fallback = 0을 통과하기 전에는 holdout을
 실행하지 않는다.
+
+## 8. fast20 결과
+
+점수는 목표를 달성했다(v3 TP 3 / FP 0 / FN 0 / F1 1.0, Macro 0.700000). 그러나 10응답 중
+2건이 candidate ID 중복·누락으로 local contract를 통과하지 못했다. 따라서 결과 상태는
+`INCOMPLETE`이며 holdout으로 승격하지 않는다. 상세는
+`docs/clean_exp_c004_v3_monetary_fast20_result.md`에 기록한다.
