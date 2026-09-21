@@ -1,7 +1,7 @@
 # EXP-C005 v19 requirement-instance observation/reducer 계획
 
 작성일: 2026-09-21  
-상태: 계획 승인 전, provider call 금지
+상태: Phase A PASS, 고정 fast20 provider 실행 승인
 
 ## 1. 기준선과 단일 변경 범위
 
@@ -230,3 +230,14 @@ outputs/clean-exp-c005-v19-requirement-instances-v1/
 ```
 
 각 단계 결과는 별도 문서로 남기며, paid call 전 계획 문서의 상태를 승인으로 갱신한다.
+
+## 12. Phase A 결과
+
+2026-09-21에 clean 구현, declared-diff preflight, dev200 374/374 source audit, exact tokenizer
+admission, short/attachment/largest/error-panel rendered review, active-v19 semantic contract,
+dev200·fast20 mock, 49-column/evidence/owner isolation과 52 tests를 완료했다. 자연 overflow는 없고
+max prompt는 9,344/14,848 tokens였다. Synthetic low-budget test는 candidate를 누락 없이 두
+pass로 나눈다. 상세는 `docs/clean_exp_c005_v19_requirement_instances_phase_a.md`에 기록한다.
+
+가설의 모든 구성요소가 구현·선택됐으므로 fast20의 17 candidate calls만 승인한다. Fast gate
+실패 시 holdout을 실행하지 않는다.
