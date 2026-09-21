@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import csv
 import hashlib
 import json
 import os
@@ -16,6 +15,7 @@ from .config import CleanExperimentConfig
 from .domain import NoticeRecord
 from .evaluate import evaluate_rows
 from .evidence import clean_final_rows
+from .export import write_submission_csv
 from .facts import ReferenceFactLayer
 from .ingest import load_notice_records
 from .reference import FrozenL41Reference
@@ -50,18 +50,9 @@ def _schema_sample(schema: dict[str, Any]) -> Any:
     return None
 
 
-def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
-    columns = ["id"] + [f"v{i}" for i in range(1, 25)] + [f"e{i}" for i in range(1, 25)]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(".tmp")
-    with temporary.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=columns, lineterminator="\n")
-        writer.writeheader()
-        writer.writerows(rows)
-    temporary.replace(path)
-
-
 def _label_ids(path: Path) -> set[str]:
+    import csv
+
     with path.open(encoding="utf-8", newline="") as handle:
         return {row["id"] for row in csv.DictReader(handle)}
 
@@ -281,7 +272,7 @@ class CleanReferencePipeline:
         del control, residual_control, raw
         rows, evidence_report = clean_final_rows(list(raw_records.values()), candidate)
         output_name = "submission.mock.csv" if mock else "submission.csv"
-        _write_csv(self.output_dir / output_name, rows)
+        write_submission_csv(self.output_dir / output_name, rows)
         diagnostic_summary = {
             arm: sum(bool(diagnostics[arm, notice_id].get("fallback", not diagnostics[arm, notice_id].get("valid", True))) for notice_id in raw_records)
             for arm in ("r10", "B", "C24")

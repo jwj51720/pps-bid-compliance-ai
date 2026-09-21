@@ -11,6 +11,7 @@ from src.pps_ai.config import load_experiment_config
 from src.pps_ai.domain import NoticeDocument, SourceSpan
 from src.pps_ai.evidence import clean_final_rows
 from src.pps_ai.runtime.openrouter import OpenRouterRuntime
+from src.pps_ai.runtime.recovery import response_is_usable, write_attempt
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -107,3 +108,23 @@ def test_openrouter_retries_in_flight_budget_402(monkeypatch: pytest.MonkeyPatch
     result = runtime.complete({"arm": "B", "messages": [], "schema": {"type": "object", "properties": {}}})
     assert result["attempts"] == 2
     assert result["finish_reason"] == "stop"
+
+
+def test_response_recovery_rejects_length_and_malformed() -> None:
+    assert response_is_usable({
+        "finish_reason": "stop", "invalid": False, "content": '{"v24": {}}',
+    })
+    assert not response_is_usable({
+        "finish_reason": "length", "invalid": False, "content": '{"v24":',
+    })
+    assert not response_is_usable({
+        "finish_reason": "stop", "invalid": False, "content": "not-json",
+    })
+
+
+def test_attempt_ledger_is_append_only(tmp_path: Path) -> None:
+    response = {"finish_reason": "stop", "invalid": False, "content": "{}"}
+    path = write_attempt(tmp_path, "C24", "N1", 1, response)
+    assert json.loads(path.read_text(encoding="utf-8")) == response
+    with pytest.raises(FileExistsError, match="already exists"):
+        write_attempt(tmp_path, "C24", "N1", 1, response)
