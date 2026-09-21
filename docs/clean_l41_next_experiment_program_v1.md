@@ -76,6 +76,11 @@ M = (Σ F1_i) / 24
 `docs/clean_exp_c001_c24_serialization_recovery_result.md`에 기록한다. canonical baseline에는
 반영하지 않는다.
 
+후속 EXP-C001B 결과: request field를 `max_completion_tokens`로 교정해 실제 1,536-token
+제한을 확인했다. 남은 4건 중 1건만 복구되고 3건은 동일 whitespace loop를 반복했다. transport
+수정은 유지하되 결과는 baseline에 병합하지 않는다. 상세 결과는
+`docs/clean_exp_c001b_c24_completion_limit_result.md`에 기록한다.
+
 ### 가설
 
 C24의 9개 `finish_reason=length`는 법률판정 실패가 아니라 JSON value 앞 whitespace가 1,536
