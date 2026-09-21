@@ -86,3 +86,22 @@ observation을 candidate-complete array로 되돌린 뒤 동일 reducer에 전�
 C004 final v3/e3 동일 2/2였다. 상세는
 `docs/clean_exp_c004r_v3_keyed_serialization_probe_result.md`에 기록한다. 다음은 별도 full-fast
 manifest로 10건 전체를 재실행한다.
+
+## Full-fast 재실행 승인
+
+- manifest: `experiments/manifests/clean_exp_c004r_v3_keyed_full_fast_v11.json`
+- base: `clean_exp_c004_v3_monetary_v1.json`
+- allowed changes: `layers.decisions`, `v3_serialization`
+- undeclared/unused manifest changes: 0/0
+- fast20 supplied documents inspected: 35/35, uninspected 0
+- candidate notices/candidates: 10/14
+- exact tokenizer: min 1,088 / p95 2,889 / max 2,889 / sum 14,965
+- mock: 20 rows, output/evidence validation PASS, baseline score 재현
+- active tests: 40 passed
+- rendered review:
+  `outputs/clean-exp-c004r-v3-keyed-full-fast-v11/fast20/rendered_inputs/`
+
+short/error `PPS-DEV-062`, attachment `PPS-DEV-32`, largest/serialization-error
+`PPS-DEV-165`, positive error-panel `042/051/062`를 읽었다. candidate text, 입찰추정가격,
+role/basis/mandatory/amount 의미, strict `>` reducer 설명은 C004와 동일하고 output container만
+required-key object로 바뀌었다. 따라서 후보 10건의 새 유료 fast20 실행을 승인한다.
