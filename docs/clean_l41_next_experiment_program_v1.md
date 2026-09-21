@@ -230,6 +230,11 @@ schema와 card에서 제거하면 logical calls를 늘리지 않고 prompt/compl
 단일 `id`를 없애고 qualification source와 amount/scale source를 분리한다. Python은
 `qualification=Y AND required_amount>=budget OR required_scale>current_scale/3`만 계산한다.
 
+EXP-C004R 결과: monetary relation owner가 fast/holdout/dev200에서 모두 개선됐고 dev200 v3
+F1은 `.363636 → .875000`, Macro는 `.779674 → .800980`이 됐다. Invalid response 두 건은
+C004RR exact-task recovery로 0건이 됐다. 남은 FN 059의 SINGLE_CONTRACT gate source 감사와
+FP 137의 FORM role 검증은 서로 분리한다.
+
 ### v19
 
 문서 전체에서 requirement instance를 복수 추출한다. issuer/content/deadline/mandatory가 같은

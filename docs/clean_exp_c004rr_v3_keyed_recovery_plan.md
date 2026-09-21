@@ -51,3 +51,9 @@ Legacy는 import·실행·복사·생성하지 않는다. Attempt는 별도 outp
 - active tests: 40 passed
 
 따라서 exact-task append-only recovery 2호출을 실행할 수 있다.
+
+## 결과
+
+PASS. 두 target 모두 local valid로 복구됐고 remaining invalid 0, normal replay 0, final cell 변화
+0이었다. 상세는 `docs/clean_exp_c004rr_v3_keyed_recovery_result.md`와 통합 dev200 결과
+`docs/clean_exp_c004r_v3_keyed_dev200_result.md`에 기록한다.
