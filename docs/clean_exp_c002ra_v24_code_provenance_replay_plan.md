@@ -2,6 +2,11 @@
 
 작성일: 2026-09-21
 
+결과: **PASS**. 외부 호출 0회로 저장 response 20개를 재생했고, 예상한 correctness defect 두 건만
+1→0으로 바뀌었다. v24는 TP 1 / FP 2 / FN 2 / F1 0.333333이 됐지만 기존 fallback 1건을
+그대로 보존했으므로 holdout으로 승격하지 않는다. 상세 결과는
+`docs/clean_exp_c002ra_v24_code_provenance_replay_result.md`에 기록한다.
+
 ## 목적
 
 C002R fast20에서 확인된 두 implementation defect만 교정한다. 새 Gemma 호출 없이 저장된 exact
