@@ -1,0 +1,12 @@
+# EXP241: output-contract ablation of the same joint v4+v5 specialist.
+inherits: config.exp240-v4-v5-joint-specialist-ve-fast-panel-c4.yaml
+experiment:
+  id: exp-241-v4-v5-joint-specialist-vonly-fast-panel-c4
+  base_config: configs/config.exp240-v4-v5-joint-specialist-ve-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.output_mode]
+  derived_data: [decision_cards_v15_v4_v5_scope_threshold, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-241-v4-v5-joint-specialist-vonly-fast-panel-c4
+prompt:
+  output_mode: labels_only

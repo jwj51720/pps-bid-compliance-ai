@@ -1,0 +1,12 @@
+# EXP308: identical corrected v7 input with labels-only serialization.
+inherits: config.exp307-v7-threshold-card-ve-fast-panel-c4.yaml
+experiment:
+  id: exp-308-v7-threshold-card-vonly-fast-panel-c4
+  base_config: configs/config.exp307-v7-threshold-card-ve-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.output_mode]
+  derived_data: [decision_cards_v23_v7_threshold, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-308-v7-threshold-card-vonly-fast-panel-c4
+prompt:
+  output_mode: labels_only

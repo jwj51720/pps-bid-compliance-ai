@@ -1,0 +1,12 @@
+# EXP338: policy-identical v30 multi-V-only resolver on the independent holdout panel.
+inherits: config.exp336-v30-vonly-consensus-fast-panel-c4.yaml
+experiment:
+  id: exp-338-v30-vonly-consensus-holdout-c4
+  base_config: configs/config.exp336-v30-vonly-consensus-fast-panel-c4.yaml
+  allowed_policy_changes: []
+  derived_data: [decision_cards_v30_full_source_concordance, competition_products_v1, dev_prompt_holdout_v1]
+  lifecycle: diagnostic
+data:
+  fast_panel_ids_path: configs/dev_prompt_holdout_v1.json
+output:
+  dir: outputs/exp-338-v30-vonly-consensus-holdout-c4

@@ -1,0 +1,12 @@
+# EXP335: one v30 V-only draft followed by a full-source V/E final owner.
+inherits: config.exp333-v30-full-source-concordance-fast-panel-c4.yaml
+experiment:
+  id: exp-335-v30-vonly-draft-ve-final-fast-panel-c4
+  base_config: configs/config.exp333-v30-full-source-concordance-fast-panel-c4.yaml
+  allowed_policy_changes: [staged_run, staged_run.mode]
+  derived_data: [decision_cards_v30_full_source_concordance, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-335-v30-vonly-draft-ve-final-fast-panel-c4
+staged_run:
+  mode: vonly_draft_full_final_v1

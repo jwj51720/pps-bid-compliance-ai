@@ -1,0 +1,11 @@
+# EXP325: one untrusted V-only draft followed by a full-source V/E final owner.
+inherits: config.exp323-v26-ve-fast-panel-c4.yaml
+experiment:
+  id: exp-325-v26-vonly-draft-ve-final-fast-panel-c4
+  base_config: configs/config.exp323-v26-ve-fast-panel-c4.yaml
+  allowed_policy_changes: [staged_run, staged_run.mode]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-325-v26-vonly-draft-ve-final-fast-panel-c4
+staged_run:
+  mode: vonly_draft_full_final_v1

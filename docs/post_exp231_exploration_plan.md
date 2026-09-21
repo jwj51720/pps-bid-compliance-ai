@@ -118,3 +118,72 @@ source로 입증된 card defect가 있는 가장 작은 item만 수정한다. v1
   review, active-item semantic contract, mock와 isolated output을 완료한다.
 - fast20은 고정 panel만 사용하고 independent holdout 확인 후에만 dev200으로 확장한다.
 - local quality와 evaluator runtime을 별도로 판단한다. batch size는 호출 수를 줄이지 않는다.
+
+## 2026-09-15 V-only / v10 verification update
+
+최신 v18 audit 후속 EXP314–318: source-correct 카드의 fast recall 회복은 holdout에서
+FP4→11, F1 `.333333→.153846`으로 악화했다. V-only fast F1은0. 원문/카드/금액을
+모두 담은 한pass에서도 명시 제한과 금액 적용범위를 어기는 raw label이 확인됐다.
+카드 출처 정확성과 모델 개선을 구분하고 v18 재문구/repeat/dev200 확대를 중단한다.
+상세 `docs/exp314_exp316_v18_absence_card_plan.md`. 남은 구조 탐색에서 이 실패를
+기각된 큰 observable schema나 Python label rule로 재포장하지 않는다.
+
+- v5-only V/E와 V-only는 같은 labels를 냈고, V-only는 completion만 줄였다. v4에서도 같은
+  결론이었다. 출력 형식 자체의 품질 이득은 확인되지 않았다.
+- full catalog + structured v10 V-only는 fast/holdout/dev200에서 zero recall을 회복했지만
+  dev200 `TP 4 / FP 66 / FN 3`, F1 `.103896`으로 precision이 너무 낮았다. 현재 최고
+  EXP231 composition에 단순 replacement한 연구 상한은 `.333594`지만 submission 후보가 아니다.
+- structured review에서 full catalog만 제거한 EXP250은 fast v10이 다시 all-zero가 되어,
+  unknown exact-code 공고의 organizer-grounded product-name mapping이 실제 필요함을 입증했다.
+- 같은 complete input을 두 번 읽는 v10 V-only final-owner EXP251은 fast F1을
+  `.444444 -> .500000`으로 올렸지만, policy-identical holdout EXP252는
+  `.285714 -> .200000`으로 악화했다. EXP187의 all-item consensus, EXP225/226 v4 결과와 함께
+  반복 V-only 검증을 일반 성능 lever로 기각한다. pass 수·투표·wording을 반복 조정하지 않는다.
+
+다음 우선순위는 반복 호출이 아니라 zero-F1 item의 truth condition을 organizer source에서
+검증하고, 그 관계가 일반 7-category/checklist로 표현되지 않는 가장 작은 item 하나만 구조화하는
+것이다. v13은 dev200 gold 6건 중 exact-code matched 4건으로 v10보다 적용성 입력이 낫고,
+공식 기준도 `경쟁제품 적용 → 소기업·소상공인만의 참가자격 제한 → 소액수의/별도 허용 사유`
+관계로 명확하다. 따라서 다음 후보는 v13-only V/E observable schema가 우선이다. e13은 필요한
+항목이므로 V-only 뒤 알고리즘 생성으로 바꾸지 않고, model evidence를 기존 substring validator로
+검증한다. full catalog 필요성은 matched/unknown을 분리해 먼저 감사하고 prompt에는 raw code/status를
+노출하지 않는다.
+
+## 2026-09-15 later item/V-only update
+
+- EXP269–271은 v1 card 범위를 조직·상시인력·보유시설·서비스망까지 source-grounded하게
+  보완하고 V/E와 V-only를 비교했지만 세 arm의 v1 labels가 완전히 같았다. V-only completion은
+  92.9% 줄었으나 label gain은 없었다.
+- EXP272–274는 v23의 계약법·계약방식·금액구간·최소일수·날짜역할·계산일수·예외를 한 응답의
+  observable proof로 완결했다. ordinary V/E F1 `.142857`에서 proof V/E `.125000`, proof
+  V-only `.105263`으로 악화했다. 모델은 국가계약/비협상과 최소일수 이상을 스스로 기록하고도
+  모든 review를 `1조건충족`으로 냈다.
+- 따라서 V-only는 지금까지 v4, v5, v6, v1에서 V/E와 동률, v10 repeated verification과
+  v23 quantitative proof에서는 열위다. completion 절감은 반복 호출/evidence recovery를 정당화할
+  label-quality 증거가 아니다. v23의 발췌/checklist/partial-proof/full-proof branch도 종료한다.
+
+다음 탐색은 이미 실패한 proof 문구를 늘리지 않는다. model output이 아니라 organizer 입력에서
+아직 적용성 사실이 불완전한 zero-recall item을 하나씩 감사한다. 부재탐지 중에서는 v11 gold
+6건 가운데 exact document-code 경쟁제품 match가 3건, unknown이 3건이고 현재 card는 적용 불명을
+자동 0으로 둔다. 그러므로 v11은 `경쟁제품 적용성 → 실제 중소기업자간 경쟁 참가제한의 존재/부재
+→ 명시 예외`를 source와 CSV로 먼저 감사할 다음 후보지만, v10의 full-catalog 과호출을 그대로
+복제하지 않고 matched/unknown 분리를 선행한다.
+
+## 2026-09-15 v12/v7 후속 결과
+
+- v12의 실제 구매대상↔고시후보↔특이사항↔직생요구 관계를 source-correct card와 structured
+  review로 보완한 EXP298~300은 existing-card fast F1 `.6667`보다 모두 나빴다. V/E review는
+  `0/3/1`, V-only review는 `0/7/1`이었다. 모델은 `경쟁제품적용=적용`이라고 관찰하고도
+  `1조건충족`을 내므로 card/checklist를 더 늘리지 않는다.
+- v7-only existing-card EXP306은 fast `1/0/1`, `.6667`; EXP312 dev200은 `3/2/4`, `.5`로
+  all-item zero recall을 일부 회복했다. EXP262 composition에 v7만 교체한 local research upper
+  bound는 `.3746082750`이다.
+- 그러나 EXP306/309는 과거 EXP223/224와 정책이 같다. holdout positive의 actual request JSON은
+  byte-identical인데 과거에는 0, 이번에는 1이었다. 이는 temperature 0 OpenRouter repeat
+  variability이며, 새 independent confirmation이나 반복 호출의 성능 근거로 세지 않는다.
+- v7 corrected threshold card와 V-only는 existing-card V/E와 fast labels가 모두 같았다.
+  V-only completion 절감만으로 다중 V-only/evidence recovery를 만들지 않는다.
+
+현재 quality 방향은 검증된 item-isolation 효과를 specialist 200-call씩 쌓는 것이 아니라,
+한 bounded final에서 attention을 보존하는 구조를 찾는 것이다. 동일 prompt repeat/majority는
+provider 변동에서 좋은 결과만 선택하게 만들 위험이 있으므로 계속 금지한다.

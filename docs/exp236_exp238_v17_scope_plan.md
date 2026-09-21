@@ -59,15 +59,37 @@ evidence validity, and changed cells.
   merged macro remains `0.325000`.
 
 The corrected card removes the control's false positive but still misses the
-fast positive, so EXP238 is not run. Inspection identifies an input-semantic
-limit rather than another prose defect: `PPS-DEV-042` is a general service with
+fast positive, so EXP238 is not run. Inspection identifies a possible input-semantic
+limit, not a proven model cause: `PPS-DEV-042` is a service with
 no detailed product code. Its exact-code competition-product fact is therefore
 unknown. The message contains the amount and broad `중·소기업` restriction but
 does not contain a definitive negative fact that the service is not an
 applicable competition product. The card correctly refuses to turn unknown
-lookup into a negative-product assertion, and Gemma returns 0.
+lookup into a negative-product assertion, and Gemma returns 0. These observations
+do not prove lookup unknown caused the decision. The saved raw response quotes
+the broad enterprise-class qualification while returning 0 and supplies no
+applicability or exception reasoning. Python then clears the quote because the
+label is 0; it does not change the label.
 
 Do not tune v17 further from this panel. A future candidate must establish a
 source-grounded, reproducible applicability representation for no-code services
 without treating lookup failure as proof. That is a separate input-completeness
 hypothesis, not a prompt-emphasis change.
+
+## 2026-09-15 source recheck
+
+The incumbent card groups SME/small-enterprise/small-business restrictions together;
+the already-tested v14 replacement corrects that direction. Do not repackage this
+as a new card-only experiment. The replacement still summarizes eligible-pool and
+failed-tender exceptions without article2-2(1)(1)'s explicit 3-or-fewer eligible
+firms / fewer-than2 participants / no-qualified-participant conditions. That is
+a source-fidelity incompleteness, not evidence that adding these numbers recovers042.
+
+The fixed holdout positive053 is research procurement with event-service product
+codes, a broad SME qualification and express nonprofit participation permission.
+Product applicability and exception scope both need legal/source resolution before
+it is treated as an unambiguous validation pair. Nonprofit admission alone must not
+be generalized into proof that every broader SME restriction is permitted.
+
+No new card/config/provider call is introduced by this recheck. The original fast
+metrics and decision not to run238 remain unchanged.

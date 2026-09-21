@@ -1,0 +1,12 @@
+# EXP247: v10-only observable product-applicability and absence review.
+inherits: config.exp245-v10-full-product-catalog-fast-panel-c4.yaml
+experiment:
+  id: exp-247-v10-product-presence-review-fast-panel-c4
+  base_config: configs/config.exp245-v10-full-product-catalog-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.mode]
+  derived_data: [decision_cards_v10_v6_v7_scope, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-247-v10-product-presence-review-fast-panel-c4
+prompt:
+  mode: v10_product_presence_review_v1

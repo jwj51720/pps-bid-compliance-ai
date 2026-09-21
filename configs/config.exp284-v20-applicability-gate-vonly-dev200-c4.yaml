@@ -1,0 +1,12 @@
+# EXP284: conditional policy-identical dev200 confirmation for EXP283.
+inherits: config.exp283-v20-applicability-gate-vonly-holdout-c4.yaml
+experiment:
+  id: exp-284-v20-applicability-gate-vonly-dev200-c4
+  base_config: configs/config.exp283-v20-applicability-gate-vonly-holdout-c4.yaml
+  allowed_policy_changes: []
+  derived_data: [decision_cards_v20_v20_applicability_gate, competition_products_v1]
+  lifecycle: diagnostic
+data:
+  fast_panel_ids_path: null
+output:
+  dir: outputs/exp-284-v20-applicability-gate-vonly-dev200-c4

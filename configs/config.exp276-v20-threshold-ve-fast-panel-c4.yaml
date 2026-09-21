@@ -1,0 +1,12 @@
+# EXP276: source-correct v20 threshold card with V/E serialization.
+inherits: config.exp275-v20-only-existing-card-fast-panel-c4.yaml
+experiment:
+  id: exp-276-v20-threshold-ve-fast-panel-c4
+  base_config: configs/config.exp275-v20-only-existing-card-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.decision_cards_path]
+  derived_data: [decision_cards_v19_v20_threshold, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-276-v20-threshold-ve-fast-panel-c4
+prompt:
+  decision_cards_path: data/derived/decision_cards_v19_v20_threshold.json

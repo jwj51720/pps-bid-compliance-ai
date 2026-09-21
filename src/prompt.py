@@ -13,6 +13,7 @@ from src.schema import (
     FACT_INVENTORY_CATEGORIES_V2,
     ITEMS,
     PROCEDURE_FACT_FIELDS,
+    V6_GEOGRAPHY_FACT_FIELDS,
 )
 
 DOCUMENT_ORDER = ("공고문", "규격서", "과업지시서", "제안요청서", "예외공표서")
@@ -89,6 +90,172 @@ V4_SPECIALIST_FACT_FIRST_SYSTEM_TAIL = """
 값은 {"위반여부": 0 또는 1, "근거문구": 문자열 또는 null}로 낸다.
 설명이나 머리말을 덧붙이지 않는다."""
 
+V5_NUMERIC_RELATION_SYSTEM_TAIL = """
+최종 판정 전에 같은 응답의 `v5수치대조`를 반드시 먼저 완성한다.
+- `적용분기`는 제공된 적용계약법·소관구분·업무구분만으로 고른다. 기관명으로 분기를
+  추정하거나 별도 기준 용역을 일반 물품·용역으로 바꾸지 않는다.
+- `입찰추정가격`은 나라장터 입력 메타의 그 필드 정수값만 옮긴다. 배정예산·기초금액·
+  투찰금액을 대신 쓰지 않는다.
+- `적용임계값`은 v5 카드의 선택된 분기에 명시된 정수 금액이다. 카드가 숫자를 확정하지
+  않는 지방기타시도·별도기준용역 또는 분기 불명은 null이다.
+- `금액관계`는 입찰추정가격과 적용임계값을 직접 비교해 이상, 미만, 불명 중 하나다.
+  둘 중 하나가 null이면 불명이다.
+- `지역문구역할`은 본점·주된 영업소를 입찰 참가조건으로 제한할 때만 참가자격이다.
+- `허용사유`는 있음, 없음, 불명 중 하나다.
+- 이 review는 관찰 기록이며 Python 규칙이나 자동 label이 아니다. 모든 필드와 원문, v5
+  카드의 적용범위·1 조건·0 조건을 다시 대조해 Gemma가 최종 v5/e5를 판정한다.
+
+출력은 JSON 하나로만 내며 키 순서는 `v5수치대조`, `판정`이다. `판정`에는 v5만 넣고,
+값은 {"위반여부": 0 또는 1, "근거문구": 문자열 또는 null}로 낸다.
+설명이나 머리말을 덧붙이지 않는다."""
+
+V6_GEOGRAPHY_PROOF_SYSTEM_TAIL = """
+최종 판정 전에 같은 응답의 `v6지역대조`를 반드시 먼저 완성한다.
+- `금액구간`은 나라장터 입력 메타의 적용계약법·소관구분·업무구분·입찰추정가격과
+  v6 카드의 숫자 기준을 직접 대조해 고시금액미만, 고시금액이상, 불명 중 하나로 적는다.
+- `지역참가자격원문`은 본점 또는 사업장 소재지가 입찰 참가 가능 여부를 정하는 가장 직접적인
+  공고 자료 원문 500자 이하 연속 문자열이다. 없거나 찾지 못하면 null이다.
+- `지역문구역할`은 참가자격, 현장납품지, 지역명기타, 없음, 불명 중 하나다.
+- `기초지역참가제한`은 참가 허용범위에 시·군·구급 기초지역이 하나라도 실제 제한 단위로
+  포함되는지 기록한다. `[지역:...|단위=기초|광역=...]`에서 `단위=기초`는 익명화된
+  시·군·구급 지역을 뜻한다. 다른 시·도나 지역을 OR 대안으로 함께 허용해도 그 사실 때문에
+  기초지역 제한 자체를 미포함으로 바꾸지 않는다.
+- `계약절차`는 실제 공고의 계약방법을 제한경쟁, 2인이상견적수의, 기타, 불명 중 하나로 적는다.
+  일반 입찰·제한경쟁을 금액이 작다는 이유만으로 2인 이상 견적 수의계약으로 바꾸지 않는다.
+- `허용요건`은 카드가 정한 시·군·구 제한 허용요건이 실제로 충족, 불충족, 불명인지 기록한다.
+- `카드대조`는 위 관찰과 v6 카드의 적용범위·1 조건·0 조건을 대조한 기록일 뿐 자동 label이
+  아니다. 모든 원문·metadata·카드를 다시 대조해 Gemma가 최종 v6/e6를 판정한다.
+
+출력은 JSON 하나로만 내며 키 순서는 `v6지역대조`, `판정`이다. `판정`에는 v6만 넣고,
+값은 {"위반여부": 0 또는 1, "근거문구": 문자열 또는 null}로 낸다.
+설명이나 머리말을 덧붙이지 않는다."""
+
+V23_QUANTITATIVE_PROOF_SYSTEM_TAIL = """
+최종 판정 전에 같은 응답의 `v23기간대조`를 반드시 먼저 완성한다.
+- `적용계약법`과 `계약방식`은 제공된 나라장터 입력 메타와 실제 공고 자료를 대조해 각각
+  지방계약/국가계약/불명, 협상/기타/불명으로 적는다. 기관명만으로 추정하지 않는다.
+- `입찰추정가격`은 나라장터 입력 메타의 그 필드 정수값만 옮긴다. 배정예산·기초금액·
+  투찰금액으로 바꾸지 않는다.
+- `금액구간`은 입찰추정가격을 v23 카드의 기준과 대조해 10억이상, 1억이상10억미만,
+  1억미만, 불명 중 하나로 적는다.
+- `적용최소일수`는 카드의 해당 금액구간 기준인 40, 20, 10 중 하나다. 금액구간이 불명이면
+  null이다. 긴급·재공고여도 먼저 일반 금액구간 기준을 적는다.
+- `공고일근거`와 `종료일근거`는 각각 공고일과 적격 현장·사업설명회 또는 제안서 제출·접수
+  마감일을 보여 주는 공고 자료 원문 500자 이하 연속 문자열이다. 찾지 못하면 null이다.
+- `종료일역할`은 현장설명회, 제안서마감, 없음, 불명 중 하나다. 가격입찰·전자입찰·개찰·
+  평가·계약 날짜뿐이면 없음이다.
+- `계산일수`는 공고일에서 적격 종료일까지의 달력일 차이를 직접 계산한 0 이상의 정수다.
+  두 날짜 중 하나가 없거나 역할이 불명이면 null이다.
+- `긴급재공고`는 실제 공고 자료의 명시 문구에 따라 긴급, 재공고, 해당없음, 불명 중 하나다.
+- `카드대조`는 위 관찰과 v23 카드의 적용범위·1 조건·0 조건을 대조한 기록일 뿐 자동 label이
+  아니다. 모든 원문·metadata·카드를 다시 대조해 Gemma가 최종 v23을 판정한다.
+
+출력은 JSON 하나로만 내며 키 순서는 `v23기간대조`, `판정`이다. `판정`에는 v23만 넣고,
+값은 {"위반여부": 0 또는 1, "근거문구": 문자열 또는 null}로 낸다.
+설명이나 머리말을 덧붙이지 않는다."""
+
+V23_QUANTITATIVE_PROOF_LABELS_ONLY_TAIL = V23_QUANTITATIVE_PROOF_SYSTEM_TAIL.replace(
+    '값은 {"위반여부": 0 또는 1, "근거문구": 문자열 또는 null}로 낸다.',
+    '값은 0 또는 1로 낸다. 근거문구 키는 출력하지 않는다.',
+)
+
+V19_ROLE_PROOF_SYSTEM_TAIL = """
+최종 판정 전에 같은 응답의 `v19역할대조`를 반드시 먼저 완성한다.
+- `후보원문`은 물품공급·기술지원 확약/협약 문서의 종류, 요구행위, 시점과 입찰효과를 가장
+  잘 보여 주는 공고 자료 원문 500자 이하 연속 문자열이다. 관계를 확인할 수 없으면 null이다.
+- `서류종류`는 물품공급·기술지원확약서, 일반확약서, 기타서류, 없음, 불명 중 하나다.
+  청렴·안전 서약이나 종류가 드러나지 않는 `확약서` 서식은 물품공급 확약서가 아니다.
+- `요구행위`는 발급·보유, 제출, 제출가능자격, 언급만, 없음, 불명 중 하나다.
+- `기준시점`은 입찰·제안전, 입찰마감후·낙찰전, 계약체결·납품, 복수시점, 없음, 불명 중
+  하나다. 입찰 전 보유 후 계약 시 제출처럼 둘 이상의 시점이 있으면 복수시점이다.
+- `입찰효과`는 미제출·미보유시참가배제, 필수제출, 계약이행, 목록·서식, 없음, 불명 중
+  하나다. 단순 서류명 목록이나 제출 가능한 업체라는 표현을 입찰 전 실제 제출로 바꾸지 않는다.
+- `카드대조`는 위 source 관찰과 v19 카드의 1/0 조건을 대조한 기록일 뿐 자동 label이 아니다.
+  발주기관의 사전 협약 후 낙찰자가 계약 단계에 확약서를 받는 정상 절차와, 입찰자에게 입찰 전
+  발급·보유·제출을 요구하는 절차를 구분한다.
+
+출력은 JSON 하나로만 내며 키 순서는 `v19역할대조`, `판정`이다. `판정`에는 v19만 넣고,
+값은 {"위반여부": 0 또는 1, "근거문구": 문자열 또는 null}로 낸다.
+설명이나 머리말을 덧붙이지 않는다."""
+
+V19_ROLE_PROOF_LABELS_ONLY_TAIL = V19_ROLE_PROOF_SYSTEM_TAIL.replace(
+    '값은 {"위반여부": 0 또는 1, "근거문구": 문자열 또는 null}로 낸다.',
+    '값은 0 또는 1로 낸다. 최종 판정에는 근거문구 키를 출력하지 않는다.',
+)
+
+V10_PRODUCT_PRESENCE_SYSTEM_TAIL = """
+최종 판정 전에 같은 응답의 `v10제품검토`를 반드시 먼저 완성한다.
+- `실제구매대상`은 공고 제목만 복사하지 말고 원문상 실제 조달하는 물품·용역을 짧게 적는다.
+- `고시후보세부품명`은 exact-code 확인 결과 또는 대회 제공 전체 목록에서 실제 구매대상과
+  가장 직접 대응하는 행 하나만 적는다. 대응 행이 없거나 결정할 수 없으면 null이다.
+- `적용조건상태`는 그 행의 괄호 조건과 공고의 금액·규격을 대조해 충족, 불충족, 조건없음,
+  불명 중 하나로 적는다.
+- `경쟁제품적용`은 이름 유사성만이 아니라 실제 구매대상과 적용조건을 함께 대조한다.
+- `직접생산요구`는 공고 자료 전체에서 직접생산확인증명서 보유·제출이 실제 참가자격 또는
+  필수요건인지 확인해 있음, 없음, 불명 중 하나로 적는다. 계약상대자의 일반 준수·제재 문구는
+  직접생산 확인 요구가 아니다.
+- `직접생산요구원문`은 있음일 때 그 요구를 보여 주는 변경 없는 원문 substring이고, 없음 또는
+  불명이면 null이다.
+- review는 관찰 기록이며 자동 label이 아니다. 경쟁제품 적용대상인데 필요한 직접생산 요구가
+  공고 자료 전체에 없을 때만 최종 v10=1이다.
+
+출력은 JSON 하나로만 내며 키 순서는 `v10제품검토`, `판정`이다. `판정`에는
+{"v10": 0 또는 1}만 넣는다. 설명이나 머리말을 덧붙이지 않는다."""
+
+V13_PRODUCT_SCOPE_SYSTEM_TAIL = """
+최종 판정 전에 같은 응답의 `v13제품기업검토`를 반드시 먼저 완성한다.
+- `실제구매대상`은 공고 제목만 복사하지 말고 원문상 실제 조달하는 물품·용역을 짧게 적는다.
+- `고시후보세부품명`은 exact-code 확인 결과 또는 대회 제공 전체 목록에서 실제 구매대상과
+  가장 직접 대응하는 행 하나만 적는다. 대응 행이 없거나 결정할 수 없으면 null이다.
+- `적용조건상태`는 그 행의 괄호 조건과 공고의 추정가격·규격을 대조한다. 조건부 행은 조건을
+  실제로 만족해야 경쟁제품 적용 후보가 된다.
+- `경쟁제품적용`은 이름 유사성만이 아니라 실제 구매대상과 적용조건을 함께 대조한다.
+- `기업제한원문`은 기업 규모가 실제 입찰 참가 가능 여부를 정하는 변경 없는 공고 자료 원문
+  500자 이하 연속 문자열이다. 그런 제한을 찾지 못하면 null이다.
+- `기업제한역할`은 참가자격, 평가우대, 서류안내, 없음, 불명 중 하나다. 확인서 제출 안내도
+  참가 불가와 연결될 때만 참가자격이다.
+- `일반중기업참가`는 벤처·창업·비영리 등 일부 예외가 아니라, 일반 중기업도 참가할 수 있는지
+  가능, 불가, 불명으로 적는다.
+- `허용사유`는 소액수의, 기타명시, 없음, 불명 중 하나다. 단순한 1억원 미만 일반제품 특례를
+  경쟁제품에 자동 적용하지 않는다.
+- `카드대조`는 관찰 기록이며 자동 label이 아니다. 경쟁제품 적용, 참가자격 역할, 일반 중기업
+  배제와 허용사유를 카드·metadata·모든 원문에 다시 대조해 Gemma가 최종 v13/e13을 판정한다.
+
+출력은 JSON 하나로만 내며 키 순서는 `v13제품기업검토`, `판정`이다. `판정`에는 v13만 넣고,
+값은 {"위반여부": 0 또는 1, "근거문구": 문자열 또는 null}로 낸다.
+설명이나 머리말을 덧붙이지 않는다."""
+
+V12_PRODUCT_TARGET_SYSTEM_TAIL = """
+최종 판정 전에 같은 응답의 `v12제품대상검토`를 반드시 먼저 완성한다.
+- `실제구매대상원문`은 공고 제목·사업개요·품명에서 실제 계약으로 조달하는 물품·용역을
+  식별할 수 있는 변경 없는 원문 substring이다. 찾지 못하면 null이다.
+- `고시후보세부품명`은 메시지에 제공된 exact-code 확인 결과 중 검토할 행 하나이며,
+  `고시후보출처`는 그 code가 metadata, 공고자료, 둘다 중 어디에 있었는지 적는다. 제공된
+  후보가 없거나 어느 후보인지 결정할 수 없으면 각각 없음 또는 불명으로 둔다.
+- `구매대상관계`는 고시 후보가 실제 계약의 구매대상과 같은 물품·용역인지 동일대상,
+  직접생산 참가조건 등 다른 역할의 대상인지 다른대상, 결정할 수 없으면 불명이다.
+- `적용조건상태`는 고시 행의 특이사항과 공고의 입찰추정가격·실제 사업 성격을 대조한다.
+  조건부 행은 그 조건을 실제로 만족할 때만 경쟁제품 적용 후보가 된다.
+- `경쟁제품적용`은 exact code가 문서 어딘가에 있다는 사실만으로 정하지 않는다. 실제 구매대상과
+  동일대상이고 적용조건을 충족하거나 조건이 없을 때 적용으로 둔다. 다른대상 또는 조건 불충족이면
+  비적용이며, 필요한 사실이 없으면 불명이다.
+- `직접생산요구원문`은 직접생산확인증명서의 보유·제출이 실제 참가 가능 여부와 연결된 변경 없는
+  원문 substring이다. 일반 제재·계약이행 문구만 있거나 찾지 못하면 null이다.
+- `직접생산요구역할`은 참가자격, 계약이행일반, 서류안내, 없음, 불명 중 하나다.
+- `허용사유`와 `카드대조`는 source 관찰을 카드에 대조한 기록일 뿐 자동 label이 아니다.
+  실제 구매대상이 경쟁제품으로 적용되지 않고 직접생산을 참가자격으로 요구하며 허용사유가 없을
+  때 v12의 1조건과 양립한다. 관계 관찰 뒤에도 card·metadata·제품 사실·모든 원문을 다시 읽고
+  Gemma가 최종 v12를 결정한다.
+
+출력은 JSON 하나로만 내며 키 순서는 `v12제품대상검토`, `판정`이다. `판정`에는 v12만 넣고,
+값은 {"위반여부": 0 또는 1, "근거문구": 문자열 또는 null}로 낸다.
+설명이나 머리말을 덧붙이지 않는다."""
+
+V12_PRODUCT_TARGET_LABELS_ONLY_TAIL = V12_PRODUCT_TARGET_SYSTEM_TAIL.replace(
+    '값은 {"위반여부": 0 또는 1, "근거문구": 문자열 또는 null}로 낸다.',
+    '값은 0 또는 1로 낸다. 최종 판정에는 근거문구 키를 출력하지 않는다.',
+)
+
 CATEGORY_FACT_FIRST_SYSTEM_TAIL = """
 최종 판정 전에 같은 응답의 `사실목록`을 먼저 완성한다.
 - 사실목록은 참가자격_실적_지역, 제품_기업_직접생산, 규격_모델_기술요구,
@@ -132,6 +299,14 @@ DECISION_PROTOCOL_MODE_GUIDANCE = """
 앞에 제공된 metadata·제품 사실·공고 자료 원문이 최종 기준이다.
 """
 
+EXACT_CARD_RECAP_MODE_GUIDANCE = """
+
+[exact 카드 재대조 모드]
+모든 공고 자료를 읽은 뒤 user message 마지막에 다시 제시되는 동일한 판정 카드 목록을 항목별로
+재대조한다. 재제시된 카드는 system의 기준을 바꾸거나 새로운 정보를 추가하지 않으며, 각 카드의
+적용범위·1 조건·0 조건·예외를 긴 원문 뒤에서 빠뜨리지 않기 위한 동일 사본이다.
+"""
+
 V4_FACT_FIRST_MODE_GUIDANCE = """
 
 [v4 사실 선행 검토 모드]
@@ -147,6 +322,64 @@ V4_SPECIALIST_FACT_FIRST_MODE_GUIDANCE = """
 분류한다. 특히 평가 배점, 증빙서류 행정, 시설·조직·제품·기술 조건을 과거실적 참가자격과
 분리하고, 실적의 발주기관과 증명서 발급기관을 분리한다. 이 구조화는 입력을 줄이거나 자동
 판정하지 않으며, 최종 v4/e4는 카드·metadata·모든 원문을 다시 읽은 모델이 결정한다.
+"""
+
+V5_NUMERIC_RELATION_MODE_GUIDANCE = """
+
+[v5 수치·역할 선행 검토 모드]
+공고 자료 전체를 읽은 뒤 입찰추정가격과 적용 임계값을 같은 금액 역할로 직접 비교하고,
+지역 문구가 실제 참가자격인지 분리한다. 이 구조화는 자동 판정이 아니며 최종 v5/e5는
+카드·metadata·모든 원문을 다시 읽은 모델이 결정한다.
+"""
+
+V6_GEOGRAPHY_PROOF_MODE_GUIDANCE = """
+
+[v6 지역관계 proof 선행 검토 모드]
+공고 자료 전체를 읽고 금액 구간, 지역 문구의 실제 역할, 시·군·구급 기초지역 포함 여부와
+계약절차상 허용요건을 분리한다. 이 구조화는 자동 판정이 아니며 최종 v6/e6는 카드·metadata·
+모든 원문을 다시 읽은 모델이 결정한다.
+"""
+
+V23_QUANTITATIVE_PROOF_MODE_GUIDANCE = """
+
+[v23 기간관계 proof 선행 검토 모드]
+공고 자료 전체를 읽고 적용 계약법·계약방식, 입찰추정가격의 금액구간, 공고일과 적격 종료일의
+역할, 적용 최소일수, 실제 달력일수와 긴급·재공고 예외를 분리한다. 이 구조화는 자동 판정이
+아니며 최종 v23은 card·metadata·모든 원문을 다시 읽은 모델이 결정한다.
+"""
+
+V19_ROLE_PROOF_MODE_GUIDANCE = """
+
+[v19 확약서 역할·시점 proof 선행 검토 모드]
+공고 자료 전체를 읽고 가장 관련 있는 원문의 서류종류, 요구행위, 기준시점과 입찰효과를
+분리한다. 이 구조화는 자동 판정이 아니며 최종 v19는 card·metadata·모든 원문을 다시 읽은
+모델이 결정한다.
+"""
+
+V10_PRODUCT_PRESENCE_MODE_GUIDANCE = """
+
+[v10 제품 적용·부재 선행 검토 모드]
+공고 자료 전체를 읽고 실제 구매대상과 대회 제공 경쟁제품 행의 대응 및 적용조건을 먼저
+검토한다. 그 뒤 직접생산확인증명서가 실제 참가자격·필수요건으로 존재하는지 공고 전체를
+확인한다. 이 구조화는 자동 판정이 아니며 최종 v10은 모든 원문과 카드를 다시 읽은 모델이
+결정한다.
+"""
+
+V12_PRODUCT_TARGET_MODE_GUIDANCE = """
+
+[v12 실제 구매대상·경쟁제품 조건·직생요구 관계 검토 모드]
+공고 자료 전체를 읽고 실제 계약의 구매대상과 exact-code 고시 후보가 같은 대상인지, 고시 행의
+특이사항 조건이 충족되는지, 직접생산확인이 실제 참가자격인지 분리한다. 이 구조화는 자동 판정이
+아니며 최종 v12는 card·metadata·제품 사실·모든 원문을 다시 읽은 모델이 결정한다.
+"""
+
+V13_PRODUCT_SCOPE_MODE_GUIDANCE = """
+
+[v13 제품 적용·기업범위 선행 검토 모드]
+공고 자료 전체를 읽고 실제 구매대상과 대회 제공 경쟁제품 행의 대응·적용조건을 먼저 검토한다.
+그 뒤 기업 규모 문구가 실제 참가자격인지, 일반 중기업을 배제하는지, 명시적 허용 사유가 있는지
+분리한다. 이 구조화는 자동 판정이 아니며 최종 v13/e13은 모든 원문과 카드를 다시 읽은 모델이
+결정한다.
 """
 
 CATEGORY_FACT_FIRST_MODE_GUIDANCE = """
@@ -172,6 +405,67 @@ V4_SPECIALIST_FACT_FIRST_AFTER_SOURCE = """
 4. v4 카드의 1 조건이 모두 성립하는가, 0 조건 또는 비적용 역할인가?
 `v4역할검토`를 먼저 출력한 뒤에도 그것을 자동 라벨로 복사하지 말고 카드·metadata·모든
 원문과 다시 대조하여 최종 v4/e4를 출력한다.
+"""
+
+V5_NUMERIC_RELATION_AFTER_SOURCE = """
+[v5 출력 전 수치·역할 검증]
+원문을 모두 읽었다. 이제 적용 분기, 입찰추정가격, 적용 임계값, 두 금액의 관계, 지역문구
+역할과 허용 사유를 `v5수치대조`에 먼저 기록한다. 특히 금액관계가 미만 또는 불명이면 카드의
+1 조건인 고시금액 이상과 양립하지 않음을 확인한다. review를 자동 label로 복사하지 말고
+카드·metadata·모든 원문을 다시 대조하여 최종 v5/e5를 출력한다.
+"""
+
+V6_GEOGRAPHY_PROOF_AFTER_SOURCE = """
+[v6 출력 전 지역관계 검증]
+원문을 모두 읽었다. 이제 `v6지역대조`에 금액 구간, 참가자격 원문과 역할, 기초지역 제한의
+포함 여부, 실제 계약절차와 허용요건을 먼저 기록한다. 익명 표기의 `단위=기초`를 광역
+시·도로 바꾸어 읽지 말고, 다른 지역이 OR로 함께 나와도 기초지역 제한의 존재를 지우지 않는다.
+review를 자동 label로 복사하지 말고 카드·metadata·모든 원문을 다시 대조하여 최종 v6/e6를
+출력한다.
+"""
+
+V23_QUANTITATIVE_PROOF_AFTER_SOURCE = """
+[v23 출력 전 기간관계 검증]
+원문을 모두 읽었다. 이제 `v23기간대조`에 계약법·계약방식, 정확한 입찰추정가격과 금액구간,
+카드의 최소일수, 공고일·적격 종료일의 원문과 역할, 직접 계산한 달력일수, 긴급·재공고 여부를
+먼저 기록한다. 가격입찰·전자입찰·개찰·평가 날짜를 적격 종료일로 바꾸어 읽지 않는다.
+review를 자동 label로 복사하지 말고 카드·metadata·모든 원문을 다시 대조하여 최종 v23을
+출력한다.
+"""
+
+V19_ROLE_PROOF_AFTER_SOURCE = """
+[v19 출력 전 역할·시점 검증]
+원문을 모두 읽었다. 이제 `v19역할대조`에 가장 관련 있는 변경 없는 원문과 서류종류·요구행위·
+기준시점·입찰효과를 먼저 기록한다. 일반 확약서, 서식 목록, 제출가능자격, 계약·납품 단계만의
+요구를 입찰 전 물품공급 확약서 제출로 바꾸어 읽지 않는다. 반대로 입찰 전 발급·보유 의무가
+있고 계약 때 제출한다면 입찰 전 의무를 지우지 않는다. review를 자동 label로 복사하지 말고
+카드·metadata·모든 원문을 다시 대조하여 최종 v19를 출력한다.
+"""
+
+V10_PRODUCT_PRESENCE_AFTER_SOURCE = """
+[v10 출력 전 제품 적용·부재 검증]
+원문을 모두 읽었다. 이제 실제 구매대상, 대응하는 고시 세부품명과 적용조건, 경쟁제품 적용
+여부를 `v10제품검토`에 기록한다. 다음으로 모든 공고 자료에서 직접생산확인증명서 요구가
+실제 참가자격·필수요건인지 확인한다. 경쟁제품 적용=적용이고 직접생산요구=없음이면 v10의
+1 조건과 양립함을 확인하되, review를 자동 label로 복사하지 말고 카드·전체 원문을 다시
+대조하여 최종 v10을 출력한다.
+"""
+
+V12_PRODUCT_TARGET_AFTER_SOURCE = """
+[v12 출력 전 제품·대상 관계 검증]
+원문을 모두 읽었다. 이제 실제 구매대상 원문, exact-code 고시 후보의 출처, 두 대상의 관계,
+특이사항 조건, 경쟁제품 적용 여부, 직접생산 요구의 원문·역할과 허용사유를
+`v12제품대상검토`에 먼저 기록한다. 문서에 나타난 모든 code를 실제 구매대상 code로 바꾸어 읽지
+않는다. review를 자동 label로 복사하지 말고 card·metadata·제품 사실·모든 원문을 다시 대조하여
+최종 v12를 출력한다.
+"""
+
+V13_PRODUCT_SCOPE_AFTER_SOURCE = """
+[v13 출력 전 제품 적용·기업범위 검증]
+원문을 모두 읽었다. 이제 실제 구매대상, 대응 고시 세부품명과 적용조건, 경쟁제품 적용 여부,
+기업제한 원문의 역할, 일반 중기업의 참가 가능성, 명시적 허용 사유를 `v13제품기업검토`에
+기록한다. review를 자동 label로 복사하지 말고 카드·metadata·전체 catalog·모든 원문을 다시
+대조하여 최종 v13/e13을 출력한다.
 """
 
 CATEGORY_FACT_FIRST_AFTER_SOURCE = """
@@ -304,6 +598,23 @@ FACT_INVENTORY_SYSTEM = """당신은 공공 입찰공고 원문에서 사실을 
 쓰지 않는다. 문구는 반드시 아래 공고 자료 원문에 있는 연속 문자열이어야 한다."""
 
 
+V6_GEOGRAPHY_FACT_SYSTEM = """당신은 공공 입찰공고 원문에서 지역 참가자격의 관계를 정리한다.
+이 단계는 법령 위반 여부, v 항목의 0/1, 지역제한의 허용 여부, 예외 적용 여부, 금액 비교,
+metadata 값 추정이나 최종 근거문구를 판단하지 않는다. 아래 공고 자료 원문에서만 각 역할이
+함께 이해되는 변경 없는 연속 문자열을 최대 3개씩 복사한다.
+
+반환 대상은 다음과 같다.
+- 참가자격_지역문구: 본점·주된 영업소·사업장 소재지를 참가조건으로 정한 조항과 모든 대안 지역
+- 현장납품지_지역문구: 사업 현장·납품지·시설·행사장소 등 계약 수행장소를 정한 조항
+- 계약방식_절차문구: 제한경쟁·수의계약·견적제출 등 실제 계약·낙찰 절차를 정한 조항
+- 지역범위_보충문구: 지역 범위를 넓히거나 좁히는 조건, 업체 수·유찰·인접 관계 등 보충 사실
+
+연락처·담당자 주소나 단순 기관 소재지는 위 역할의 사실이 아니다. 한 문자열 안에 기준지역과
+추가지역 또는 참가조건과 보충조건이 함께 있으면 그것을 우선한다. 관련 원문이 없으면 빈 배열로
+둔다. 요약·해석·법령설명·metadata·라벨·계산값을 쓰지 않는다. 모든 문구는 반드시 아래 공고
+자료 원문에 있는 연속 문자열이어야 한다."""
+
+
 def build_fact_inventory_system_prompt(
     max_excerpts: int = 3,
     categories: tuple[str, ...] = FACT_INVENTORY_CATEGORIES,
@@ -311,8 +622,16 @@ def build_fact_inventory_system_prompt(
     """Return the source-only fact contract with a declared category cap."""
     if max_excerpts not in {3, 4}:
         raise ValueError("fact inventory max_excerpts must be 3 or 4")
-    if categories not in {FACT_INVENTORY_CATEGORIES, FACT_INVENTORY_CATEGORIES_V2}:
+    if categories not in {
+        FACT_INVENTORY_CATEGORIES,
+        FACT_INVENTORY_CATEGORIES_V2,
+        V6_GEOGRAPHY_FACT_FIELDS,
+    }:
         raise ValueError("fact inventory categories must be a supported version")
+    if categories == V6_GEOGRAPHY_FACT_FIELDS:
+        return V6_GEOGRAPHY_FACT_SYSTEM.replace(
+            "최대 3개씩", f"최대 {max_excerpts}개씩"
+        )
     prompt = FACT_INVENTORY_SYSTEM.replace("최대 3개씩", f"최대 {max_excerpts}개씩")
     if categories == FACT_INVENTORY_CATEGORIES_V2:
         prompt = prompt.replace(
@@ -329,7 +648,11 @@ def append_fact_inventory(
     categories: tuple[str, ...] = FACT_INVENTORY_CATEGORIES,
 ) -> list[dict[str, str]]:
     """Attach source-labelled factual excerpts as non-final navigation material."""
-    if categories not in {FACT_INVENTORY_CATEGORIES, FACT_INVENTORY_CATEGORIES_V2}:
+    if categories not in {
+        FACT_INVENTORY_CATEGORIES,
+        FACT_INVENTORY_CATEGORIES_V2,
+        V6_GEOGRAPHY_FACT_FIELDS,
+    }:
         raise ValueError("fact inventory categories must be a supported version")
     if set(inventory) != set(categories):
         raise ValueError("fact inventory must provide every factual category")
@@ -778,6 +1101,7 @@ def build_system_prompt(
     role_directive: str = "standard",
     item_catalog_style: str = "minimal",
     output_mode: str = "labels_and_evidence",
+    competition_product_context_mode: str = "names_only_v1",
 ) -> str:
     if role_directive not in {"standard", "compliance_expert_v1", "source_first_v1", "v23_specialist_v1"}:
         raise ValueError(
@@ -837,8 +1161,38 @@ def build_system_prompt(
                 )
                 lines.append(f"- {item}: {definition['항목명']}{note}{tag}{reference}{card}")
         head = OFFICIAL_BASELINE_LABELS_ONLY_HEAD if output_mode == "labels_only" else OFFICIAL_BASELINE_SYSTEM_HEAD
+        v10_product_tail = V10_PRODUCT_PRESENCE_SYSTEM_TAIL
+        if competition_product_context_mode != "full_catalog_v1":
+            v10_product_tail = v10_product_tail.replace(
+                "exact-code 확인 결과 또는 대회 제공 전체 목록에서 실제 구매대상과\n"
+                "  가장 직접 대응하는 행 하나만 적는다.",
+                "메시지에 제공된 exact-code 확인 결과에서 실제 구매대상과 직접 대응하는\n"
+                "  행 하나만 적는다. 제공되지 않은 전체 목록을 추정하지 않는다.",
+            )
         tail = (
-            OFFICIAL_BASELINE_LABELS_ONLY_TAIL
+            v10_product_tail
+            if mode == "v10_product_presence_review_v1"
+            else (
+                V12_PRODUCT_TARGET_LABELS_ONLY_TAIL
+                if output_mode == "labels_only"
+                else V12_PRODUCT_TARGET_SYSTEM_TAIL
+            )
+            if mode == "v12_product_target_review_v1"
+            else V13_PRODUCT_SCOPE_SYSTEM_TAIL
+            if mode == "v13_product_scope_review_v1"
+            else (
+                V19_ROLE_PROOF_LABELS_ONLY_TAIL
+                if output_mode == "labels_only"
+                else V19_ROLE_PROOF_SYSTEM_TAIL
+            )
+            if mode == "v19_role_proof_v1"
+            else (
+                V23_QUANTITATIVE_PROOF_LABELS_ONLY_TAIL
+                if output_mode == "labels_only"
+                else V23_QUANTITATIVE_PROOF_SYSTEM_TAIL
+            )
+            if mode == "v23_quantitative_proof_v1"
+            else OFFICIAL_BASELINE_LABELS_ONLY_TAIL
             if output_mode == "labels_only"
             else CATEGORY_FACT_FIRST_SYSTEM_TAIL
             if mode == "category_fact_first_relation_v1"
@@ -846,6 +1200,10 @@ def build_system_prompt(
             if mode == "v4_fact_first_relation_v1"
             else V4_SPECIALIST_FACT_FIRST_SYSTEM_TAIL
             if mode == "v4_specialist_fact_first_v1"
+            else V5_NUMERIC_RELATION_SYSTEM_TAIL
+            if mode == "v5_numeric_relation_v1"
+            else V6_GEOGRAPHY_PROOF_SYSTEM_TAIL
+            if mode == "v6_geography_proof_v1"
             else V24_FACT_FIRST_SYSTEM_TAIL
             if mode == "v24_fact_first_v1"
             else OFFICIAL_BASELINE_SYSTEM_TAIL
@@ -868,10 +1226,26 @@ def build_system_prompt(
             if mode == "relation_checklist_after_source_v1"
             else DECISION_PROTOCOL_MODE_GUIDANCE
             if mode == "decision_protocol_after_source_v1"
+            else EXACT_CARD_RECAP_MODE_GUIDANCE
+            if mode == "exact_card_recap_after_source_v1"
             else RELATION_CHECKLIST_MODE_GUIDANCE + V4_FACT_FIRST_MODE_GUIDANCE
             if mode == "v4_fact_first_relation_v1"
             else V4_SPECIALIST_FACT_FIRST_MODE_GUIDANCE
             if mode == "v4_specialist_fact_first_v1"
+            else V5_NUMERIC_RELATION_MODE_GUIDANCE
+            if mode == "v5_numeric_relation_v1"
+            else V6_GEOGRAPHY_PROOF_MODE_GUIDANCE
+            if mode == "v6_geography_proof_v1"
+            else V23_QUANTITATIVE_PROOF_MODE_GUIDANCE
+            if mode == "v23_quantitative_proof_v1"
+            else V19_ROLE_PROOF_MODE_GUIDANCE
+            if mode == "v19_role_proof_v1"
+            else V10_PRODUCT_PRESENCE_MODE_GUIDANCE
+            if mode == "v10_product_presence_review_v1"
+            else V12_PRODUCT_TARGET_MODE_GUIDANCE
+            if mode == "v12_product_target_review_v1"
+            else V13_PRODUCT_SCOPE_MODE_GUIDANCE
+            if mode == "v13_product_scope_review_v1"
             else RELATION_CHECKLIST_MODE_GUIDANCE + CATEGORY_FACT_FIRST_MODE_GUIDANCE
             if mode == "category_fact_first_relation_v1" else ""
         )
@@ -1349,6 +1723,18 @@ def build_messages(
             "\n\n" + organizer_input_semantics_context
             if organizer_input_semantics_context else ""
         )
+        exact_card_recap = ""
+        if "[exact 카드 재대조 모드]" in system_prompt:
+            marker = re.search(r"판정할 [^\n]*개 항목\n", system_prompt)
+            tail_index = system_prompt.find("\n출력은 JSON 하나로만 낸다.")
+            if marker is None or tail_index < marker.end():
+                raise ValueError("exact card recap could not locate the rendered card catalog")
+            card_catalog = system_prompt[marker.end():tail_index].strip()
+            exact_card_recap = (
+                "\n\n[판정 직전 exact 카드 재대조]\n"
+                + card_catalog
+                + "\n위 목록은 system의 동일 카드 사본이다. 각 v를 독립적으로 다시 대조한 뒤 출력한다.\n"
+            )
         if "# 역할" in system_prompt:
             product_section = (
                 "\n\n# 대회 제공 경쟁제품 고시 확인\n"
@@ -1398,6 +1784,35 @@ def build_messages(
                 "\n\n" + V4_SPECIALIST_FACT_FIRST_AFTER_SOURCE.strip() + "\n"
                 if "[v4 역할·사실 선행 검토 모드]" in system_prompt else ""
             )
+            v5_numeric_relation = (
+                "\n\n" + V5_NUMERIC_RELATION_AFTER_SOURCE.strip() + "\n"
+                if "[v5 수치·역할 선행 검토 모드]" in system_prompt else ""
+            )
+            v6_geography_proof = (
+                "\n\n" + V6_GEOGRAPHY_PROOF_AFTER_SOURCE.strip() + "\n"
+                if "[v6 지역관계 proof 선행 검토 모드]" in system_prompt else ""
+            )
+            v23_quantitative_proof = (
+                "\n\n" + V23_QUANTITATIVE_PROOF_AFTER_SOURCE.strip() + "\n"
+                if "[v23 기간관계 proof 선행 검토 모드]" in system_prompt else ""
+            )
+            v19_role_proof = (
+                "\n\n" + V19_ROLE_PROOF_AFTER_SOURCE.strip() + "\n"
+                if "[v19 확약서 역할·시점 proof 선행 검토 모드]" in system_prompt else ""
+            )
+            v10_product_presence = (
+                "\n\n" + V10_PRODUCT_PRESENCE_AFTER_SOURCE.strip() + "\n"
+                if "[v10 제품 적용·부재 선행 검토 모드]" in system_prompt else ""
+            )
+            v12_product_target = (
+                "\n\n" + V12_PRODUCT_TARGET_AFTER_SOURCE.strip() + "\n"
+                if "[v12 실제 구매대상·경쟁제품 조건·직생요구 관계 검토 모드]"
+                in system_prompt else ""
+            )
+            v13_product_scope = (
+                "\n\n" + V13_PRODUCT_SCOPE_AFTER_SOURCE.strip() + "\n"
+                if "[v13 제품 적용·기업범위 선행 검토 모드]" in system_prompt else ""
+            )
             category_fact_first = (
                 "\n\n" + CATEGORY_FACT_FIRST_AFTER_SOURCE.strip() + "\n"
                 if "[원문 사실 선행 출력 모드]" in system_prompt else ""
@@ -1408,10 +1823,18 @@ def build_messages(
                 + product_section
                 + v24_section
                 + f"\n\n[공고 자료 원문]\n{context}\n"
+                + exact_card_recap
                 + relation_checklist
                 + decision_protocol
                 + v4_fact_first
                 + v4_specialist_fact_first
+                + v5_numeric_relation
+                + v6_geography_proof
+                + v23_quantitative_proof
+                + v19_role_proof
+                + v10_product_presence
+                + v12_product_target
+                + v13_product_scope
                 + category_fact_first
             )
         else:
@@ -1532,17 +1955,25 @@ def build_messages(
 def format_competition_product_context(
     record: dict[str, Any], fact: dict[str, Any], active_items: tuple[str, ...] = ITEMS,
     context_mode: str = "names_only_v1",
+    product_catalog: dict[str, dict[str, str]] | None = None,
 ) -> str:
     """Translate exact CSV lookup facts into concise, model-facing Korean.
 
     The raw fact keeps codes and source IDs for auditability. This layer does
     not expose implementation state names or identifiers to the model.
     """
-    if context_mode not in {"names_only_v1", "conditions_and_provenance_v2"}:
+    if context_mode not in {
+        "names_only_v1", "conditions_and_provenance_v2", "full_catalog_v1"
+    }:
         raise ValueError("unknown competition product context mode")
+    exact_context_mode = (
+        "conditions_and_provenance_v2"
+        if context_mode == "full_catalog_v1"
+        else context_mode
+    )
     status = fact["status"]
     if status == "matched":
-        if context_mode == "names_only_v1":
+        if exact_context_mode == "names_only_v1":
             names = ", ".join(product["세부품명"] for product in fact["matched_products"])
             finding = (
                 "이 공고에서 확인된 세부품명이 대회 제공 중소기업자간 경쟁제품 고시에 "
@@ -1594,7 +2025,7 @@ def format_competition_product_context(
     competition_items = [item for item in ("v10", "v11", "v13") if item in active_items]
     general_items = [item for item in ("v12", "v14", "v15", "v16", "v17", "v18") if item in active_items]
     if competition_items:
-        if context_mode == "conditions_and_provenance_v2":
+        if exact_context_mode == "conditions_and_provenance_v2":
             guidance.append(
                 f"이 조회 결과는 {'·'.join(competition_items)}의 경쟁제품 적용대상 확인에만 사용합니다. "
                 "exact-code 일치는 고시의 후보 행을 찾은 사실입니다. 실제 구매대상이 그 행의 "
@@ -1612,14 +2043,31 @@ def format_competition_product_context(
     if general_items:
         qualifier = (
             "고시 행의 제품·적용조건과 실제 구매대상이 모두 확인된 경쟁제품을"
-            if context_mode == "conditions_and_provenance_v2"
+            if exact_context_mode == "conditions_and_provenance_v2"
             else "경쟁제품으로 정확히 확인된 품목을"
         )
         guidance.append(
             f"{'·'.join(general_items)} 판단에는 {qualifier} 일반제품으로 사용하지 마십시오. "
             "조회 불가는 일반제품 배제 근거가 아니므로, 공고의 물품·금액·제한 또는 예외 문구를 계속 확인하십시오."
         )
-    return f"{finding}\n" + " ".join(guidance)
+    rendered = f"{finding}\n" + " ".join(guidance)
+    if context_mode == "full_catalog_v1":
+        if not product_catalog:
+            raise ValueError("full_catalog_v1 requires a product catalog")
+        rows = []
+        for product in product_catalog.values():
+            name = str(product.get("세부품명", "")).strip()
+            condition = str(product.get("특이사항", "")).strip()
+            if not name:
+                raise ValueError("product catalog row is missing a readable name")
+            rows.append(f"- {name}" + (f" (적용조건: {condition})" if condition else ""))
+        rendered += (
+            "\n\n[대회 제공 경쟁제품 전체 목록 — 적용 후보]\n"
+            "아래 행은 자동 적용 판정이 아닙니다. 공고 원문의 실제 구매대상·금액·규격과 "
+            "같은 제품인지, 괄호의 적용조건을 충족하는지 직접 대조하십시오. 이름이 비슷하다는 "
+            "이유만으로 적용하지 마십시오.\n" + "\n".join(rows)
+        )
+    return rendered
 
 
 def append_untrusted_review_draft(

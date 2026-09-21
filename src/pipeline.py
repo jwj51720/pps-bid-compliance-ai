@@ -52,6 +52,7 @@ from src.schema import (
     FACT_INVENTORY_CATEGORIES_V2,
     PROCEDURE_FACT_FIELDS,
     TIMELINE_FACT_ROLES,
+    V6_GEOGRAPHY_FACT_FIELDS,
     ITEMS,
     V8_COMPOSITE_STATES,
     judgment_schema,
@@ -64,6 +65,13 @@ from src.schema import (
     timeline_fact_schema,
     v4_fact_first_judgment_schema,
     v4_specialist_fact_first_judgment_schema,
+    v5_numeric_relation_judgment_schema,
+    v6_geography_proof_judgment_schema,
+    v19_role_proof_judgment_schema,
+    v23_quantitative_proof_judgment_schema,
+    v10_product_presence_judgment_schema,
+    v12_product_target_judgment_schema,
+    v13_product_scope_judgment_schema,
     v24_fact_first_judgment_schema,
     category_fact_first_judgment_schema,
     v23_proof_judgment_schema,
@@ -115,6 +123,13 @@ class Prediction:
     v4_fact_reviews: tuple[dict[str, Any], ...] = ()
     v24_fact_reviews: tuple[dict[str, Any], ...] = ()
     category_fact_reviews: tuple[dict[str, Any], ...] = ()
+    v5_numeric_reviews: tuple[dict[str, Any], ...] = ()
+    v6_geography_reviews: tuple[dict[str, Any], ...] = ()
+    v10_product_reviews: tuple[dict[str, Any], ...] = ()
+    v12_product_reviews: tuple[dict[str, Any], ...] = ()
+    v13_product_reviews: tuple[dict[str, Any], ...] = ()
+    v23_quantitative_reviews: tuple[dict[str, Any], ...] = ()
+    v19_role_reviews: tuple[dict[str, Any], ...] = ()
     parse_errors: tuple[dict[str, Any], ...] = ()
     applicability_inactive_items: tuple[tuple[str, str], ...] = ()
     model_judgment: dict[str, dict[str, Any]] | None = None
@@ -454,6 +469,169 @@ def parse_v4_specialist_fact_first_response(
     return _parse_judgment_payload(payload["판정"], ("v4",)), dict(review)
 
 
+def parse_v5_numeric_relation_response(
+    text: str,
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    """Parse v5 numeric observations without deriving or overriding its label."""
+    payload = extract_json(text)
+    if not isinstance(payload, dict) or set(payload) != {"v5수치대조", "판정"}:
+        raise PredictionError("v5 numeric response must contain v5수치대조 and 판정")
+    review = payload["v5수치대조"]
+    keys = {
+        "적용분기", "입찰추정가격", "적용임계값", "금액관계",
+        "지역문구역할", "허용사유",
+    }
+    if not isinstance(review, dict) or set(review) != keys:
+        raise PredictionError("v5수치대조 has invalid keys")
+    if review["적용분기"] not in {
+        "국가일반", "공기업준정부기관", "지방세종시군구", "지방기타시도",
+        "별도기준용역", "불명",
+    }:
+        raise PredictionError("v5 적용분기 has an invalid state")
+    for field in ("입찰추정가격", "적용임계값"):
+        if review[field] is not None and (
+            not isinstance(review[field], int) or isinstance(review[field], bool)
+            or review[field] < 0
+        ):
+            raise PredictionError(f"v5 {field} must be a non-negative integer or null")
+    if review["금액관계"] not in {"이상", "미만", "불명"}:
+        raise PredictionError("v5 금액관계 has an invalid state")
+    if review["지역문구역할"] not in {
+        "참가자격", "현장납품지", "지역명기타", "없음", "불명",
+    }:
+        raise PredictionError("v5 지역문구역할 has an invalid state")
+    if review["허용사유"] not in {"있음", "없음", "불명"}:
+        raise PredictionError("v5 허용사유 has an invalid state")
+    return _parse_judgment_payload(payload["판정"], ("v5",)), dict(review)
+
+
+def parse_v6_geography_proof_response(
+    text: str,
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    """Parse v6 proof observations without deriving or overriding its label."""
+    payload = extract_json(text)
+    if not isinstance(payload, dict) or set(payload) != {"v6지역대조", "판정"}:
+        raise PredictionError("v6 proof response must contain v6지역대조 and 판정")
+    review = payload["v6지역대조"]
+    keys = {
+        "금액구간", "지역참가자격원문", "지역문구역할", "기초지역참가제한",
+        "계약절차", "허용요건", "카드대조",
+    }
+    if not isinstance(review, dict) or set(review) != keys:
+        raise PredictionError("v6지역대조 has invalid keys")
+    excerpt = review["지역참가자격원문"]
+    if excerpt is not None and not isinstance(excerpt, str):
+        raise PredictionError("v6 지역참가자격원문 must be string or null")
+    allowed = {
+        "금액구간": {"고시금액미만", "고시금액이상", "불명"},
+        "지역문구역할": {"참가자격", "현장납품지", "지역명기타", "없음", "불명"},
+        "기초지역참가제한": {"포함", "미포함", "불명"},
+        "계약절차": {"제한경쟁", "2인이상견적수의", "기타", "불명"},
+        "허용요건": {"충족", "불충족", "불명"},
+        "카드대조": {"1조건충족", "0조건충족", "판단불가"},
+    }
+    for field, values in allowed.items():
+        if review[field] not in values:
+            raise PredictionError(f"v6 {field} has an invalid state")
+    return _parse_judgment_payload(payload["판정"], ("v6",)), dict(review)
+
+
+def parse_v10_product_presence_response(
+    text: str,
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    """Parse v10 observations without deriving or overriding its label."""
+    payload = extract_json(text)
+    if not isinstance(payload, dict) or set(payload) != {"v10제품검토", "판정"}:
+        raise PredictionError("v10 response must contain v10제품검토 and 판정")
+    review = payload["v10제품검토"]
+    keys = {
+        "실제구매대상", "고시후보세부품명", "적용조건상태",
+        "경쟁제품적용", "직접생산요구", "직접생산요구원문",
+    }
+    if not isinstance(review, dict) or set(review) != keys:
+        raise PredictionError("v10제품검토 has invalid keys")
+    for field in ("실제구매대상", "고시후보세부품명", "직접생산요구원문"):
+        if review[field] is not None and not isinstance(review[field], str):
+            raise PredictionError(f"v10 {field} must be string or null")
+    if review["적용조건상태"] not in {"충족", "불충족", "조건없음", "불명"}:
+        raise PredictionError("v10 적용조건상태 has an invalid state")
+    if review["경쟁제품적용"] not in {"적용", "비적용", "불명"}:
+        raise PredictionError("v10 경쟁제품적용 has an invalid state")
+    if review["직접생산요구"] not in {"있음", "없음", "불명"}:
+        raise PredictionError("v10 직접생산요구 has an invalid state")
+    return _parse_labels_payload(payload["판정"], ("v10",)), dict(review)
+
+
+def parse_v12_product_target_response(
+    text: str, output_mode: str = "labels_and_evidence",
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    """Parse v12 target/product observations without deriving its label."""
+    payload = extract_json(text)
+    if not isinstance(payload, dict) or set(payload) != {"v12제품대상검토", "판정"}:
+        raise PredictionError("v12 response must contain v12제품대상검토 and 판정")
+    review = payload["v12제품대상검토"]
+    keys = {
+        "실제구매대상원문", "고시후보세부품명", "고시후보출처", "구매대상관계",
+        "적용조건상태", "경쟁제품적용", "직접생산요구원문", "직접생산요구역할",
+        "허용사유", "카드대조",
+    }
+    if not isinstance(review, dict) or set(review) != keys:
+        raise PredictionError("v12제품대상검토 has invalid keys")
+    for field in ("실제구매대상원문", "고시후보세부품명", "직접생산요구원문"):
+        if review[field] is not None and not isinstance(review[field], str):
+            raise PredictionError(f"v12 {field} must be string or null")
+    allowed = {
+        "고시후보출처": {"metadata", "공고자료", "둘다", "없음", "불명"},
+        "구매대상관계": {"동일대상", "다른대상", "불명"},
+        "적용조건상태": {"충족", "불충족", "조건없음", "불명"},
+        "경쟁제품적용": {"적용", "비적용", "불명"},
+        "직접생산요구역할": {"참가자격", "계약이행일반", "서류안내", "없음", "불명"},
+        "허용사유": {"있음", "없음", "불명"},
+        "카드대조": {"1조건충족", "0조건충족", "판단불가"},
+    }
+    for field, values in allowed.items():
+        if review[field] not in values:
+            raise PredictionError(f"v12 {field} has an invalid state")
+    parsed = (
+        _parse_labels_payload(payload["판정"], ("v12",))
+        if output_mode == "labels_only"
+        else _parse_judgment_payload(payload["판정"], ("v12",))
+    )
+    return parsed, dict(review)
+
+
+def parse_v13_product_scope_response(
+    text: str,
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    """Parse v13 observations without deriving or overriding its label."""
+    payload = extract_json(text)
+    if not isinstance(payload, dict) or set(payload) != {"v13제품기업검토", "판정"}:
+        raise PredictionError("v13 response must contain v13제품기업검토 and 판정")
+    review = payload["v13제품기업검토"]
+    keys = {
+        "실제구매대상", "고시후보세부품명", "적용조건상태", "경쟁제품적용",
+        "기업제한원문", "기업제한역할", "일반중기업참가", "허용사유", "카드대조",
+    }
+    if not isinstance(review, dict) or set(review) != keys:
+        raise PredictionError("v13제품기업검토 has invalid keys")
+    for field in ("실제구매대상", "고시후보세부품명", "기업제한원문"):
+        if review[field] is not None and not isinstance(review[field], str):
+            raise PredictionError(f"v13 {field} must be string or null")
+    if review["적용조건상태"] not in {"충족", "불충족", "조건없음", "불명"}:
+        raise PredictionError("v13 적용조건상태 has an invalid state")
+    if review["경쟁제품적용"] not in {"적용", "비적용", "불명"}:
+        raise PredictionError("v13 경쟁제품적용 has an invalid state")
+    if review["기업제한역할"] not in {"참가자격", "평가우대", "서류안내", "없음", "불명"}:
+        raise PredictionError("v13 기업제한역할 has an invalid state")
+    if review["일반중기업참가"] not in {"가능", "불가", "불명"}:
+        raise PredictionError("v13 일반중기업참가 has an invalid state")
+    if review["허용사유"] not in {"소액수의", "기타명시", "없음", "불명"}:
+        raise PredictionError("v13 허용사유 has an invalid state")
+    if review["카드대조"] not in {"1조건충족", "0조건충족", "판단불가"}:
+        raise PredictionError("v13 카드대조 has an invalid state")
+    return _parse_judgment_payload(payload["판정"], ("v13",)), dict(review)
+
+
 def parse_category_fact_first_response(
     text: str, items: tuple[str, ...] = ITEMS,
 ) -> tuple[dict[str, dict[str, Any]], dict[str, list[str]]]:
@@ -623,7 +801,11 @@ def parse_fact_inventory_response(
     """Parse category excerpts without assigning any v label semantics."""
     if max_items not in {3, 4}:
         raise ValueError("fact inventory max_items must be 3 or 4")
-    if categories not in {FACT_INVENTORY_CATEGORIES, FACT_INVENTORY_CATEGORIES_V2}:
+    if categories not in {
+        FACT_INVENTORY_CATEGORIES,
+        FACT_INVENTORY_CATEGORIES_V2,
+        V6_GEOGRAPHY_FACT_FIELDS,
+    }:
         raise ValueError("fact inventory categories must be a supported version")
     payload = extract_json(text)
     if not isinstance(payload, dict) or set(payload) != set(categories):
@@ -674,6 +856,82 @@ def parse_v23_proof_judgment_response(
     proof = {field: payload[field] for field in fields - {"판정"}}
     judgment = _parse_judgment_payload({"v23": payload["판정"]}, ("v23",))
     return proof, judgment
+
+
+def parse_v23_quantitative_proof_response(
+    text: str, output_mode: str = "labels_and_evidence",
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    """Parse observable v23 operands without deriving or overriding its label."""
+    payload = extract_json(text)
+    if not isinstance(payload, dict) or set(payload) != {"v23기간대조", "판정"}:
+        raise PredictionError("v23 quantitative response must contain v23기간대조 and 판정")
+    review = payload["v23기간대조"]
+    keys = {
+        "적용계약법", "계약방식", "입찰추정가격", "금액구간", "적용최소일수",
+        "공고일근거", "종료일근거", "종료일역할", "계산일수", "긴급재공고", "카드대조",
+    }
+    if not isinstance(review, dict) or set(review) != keys:
+        raise PredictionError("v23기간대조 has invalid keys")
+    allowed = {
+        "적용계약법": {"지방계약", "국가계약", "불명"},
+        "계약방식": {"협상", "기타", "불명"},
+        "금액구간": {"10억이상", "1억이상10억미만", "1억미만", "불명"},
+        "종료일역할": {"현장설명회", "제안서마감", "없음", "불명"},
+        "긴급재공고": {"긴급", "재공고", "해당없음", "불명"},
+        "카드대조": {"1조건충족", "0조건충족", "판단불가"},
+    }
+    for field, values in allowed.items():
+        if review[field] not in values:
+            raise PredictionError(f"v23 {field} has an invalid state")
+    for field in ("입찰추정가격", "계산일수"):
+        value = review[field]
+        if value is not None and (
+            not isinstance(value, int) or isinstance(value, bool) or value < 0
+        ):
+            raise PredictionError(f"v23 {field} must be a non-negative integer or null")
+    if review["적용최소일수"] not in {10, 20, 40, None}:
+        raise PredictionError("v23 적용최소일수 must be 10, 20, 40, or null")
+    for field in ("공고일근거", "종료일근거"):
+        if review[field] is not None and not isinstance(review[field], str):
+            raise PredictionError(f"v23 {field} must be a string or null")
+    judgment = (
+        _parse_labels_payload(payload["판정"], ("v23",))
+        if output_mode == "labels_only"
+        else _parse_judgment_payload(payload["판정"], ("v23",))
+    )
+    return judgment, dict(review)
+
+
+def parse_v19_role_proof_response(
+    text: str, output_mode: str = "labels_and_evidence",
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    """Parse observable v19 roles without deriving or overriding its label."""
+    payload = extract_json(text)
+    if not isinstance(payload, dict) or set(payload) != {"v19역할대조", "판정"}:
+        raise PredictionError("v19 role response must contain v19역할대조 and 판정")
+    review = payload["v19역할대조"]
+    keys = {"후보원문", "서류종류", "요구행위", "기준시점", "입찰효과", "카드대조"}
+    if not isinstance(review, dict) or set(review) != keys:
+        raise PredictionError("v19역할대조 has invalid keys")
+    allowed = {
+        "서류종류": {"물품공급·기술지원확약서", "일반확약서", "기타서류", "없음", "불명"},
+        "요구행위": {"발급·보유", "제출", "제출가능자격", "언급만", "없음", "불명"},
+        "기준시점": {"입찰·제안전", "입찰마감후·낙찰전", "계약체결·납품", "복수시점", "없음", "불명"},
+        "입찰효과": {"미제출·미보유시참가배제", "필수제출", "계약이행", "목록·서식", "없음", "불명"},
+        "카드대조": {"1조건충족", "0조건충족", "판단불가"},
+    }
+    for field, values in allowed.items():
+        if review[field] not in values:
+            raise PredictionError(f"v19 {field} has an invalid state")
+    excerpt = review["후보원문"]
+    if excerpt is not None and (not isinstance(excerpt, str) or len(excerpt) > 500):
+        raise PredictionError("v19 후보원문 must be a <=500-character string or null")
+    judgment = (
+        _parse_labels_payload(payload["판정"], ("v19",))
+        if output_mode == "labels_only"
+        else _parse_judgment_payload(payload["판정"], ("v19",))
+    )
+    return judgment, dict(review)
 
 
 def parse_procedure_fact_response(text: str) -> dict[str, list[str]]:
@@ -901,7 +1159,7 @@ class BaselinePipeline:
         self.absence_detection_strategy = absence_detection_strategy
         self.competition_products = competition_products
         if competition_product_context_mode not in {
-            "names_only_v1", "conditions_and_provenance_v2"
+            "names_only_v1", "conditions_and_provenance_v2", "full_catalog_v1"
         }:
             raise ValueError("unsupported competition product context mode")
         self.competition_product_context_mode = competition_product_context_mode
@@ -974,6 +1232,7 @@ class BaselinePipeline:
             role_directive=role_directive,
             item_catalog_style=item_catalog_style,
             output_mode=self.output_mode,
+            competition_product_context_mode=self.competition_product_context_mode,
         )
         self._prompt_options = {
             "item_table": item_table,
@@ -982,6 +1241,7 @@ class BaselinePipeline:
             "decision_cards": decision_cards,
             "v8_composite_enabled": v8_composite_enabled,
             "candidate_detection": candidate_detection,
+            "competition_product_context_mode": self.competition_product_context_mode,
             "active_items": active_items,
             "layout": prompt_layout,
             "profile": prompt_profile,
@@ -1007,6 +1267,40 @@ class BaselinePipeline:
                     "v4_specialist_fact_first_v1 requires v4-only V/E output"
                 )
             self.response_schema = v4_specialist_fact_first_judgment_schema()
+        if prompt_mode == "v5_numeric_relation_v1":
+            if output_mode != "labels_and_evidence" or active_items != ("v5",):
+                raise ValueError("v5_numeric_relation_v1 requires v5-only V/E output")
+            self.response_schema = v5_numeric_relation_judgment_schema()
+        if prompt_mode == "v6_geography_proof_v1":
+            if output_mode != "labels_and_evidence" or active_items != ("v6",):
+                raise ValueError("v6_geography_proof_v1 requires v6-only V/E output")
+            self.response_schema = v6_geography_proof_judgment_schema()
+        if prompt_mode == "v23_quantitative_proof_v1":
+            if active_items != ("v23",):
+                raise ValueError("v23_quantitative_proof_v1 requires v23-only output")
+            self.response_schema = v23_quantitative_proof_judgment_schema(output_mode)
+        if prompt_mode == "v19_role_proof_v1":
+            if active_items != ("v19",):
+                raise ValueError("v19_role_proof_v1 requires v19-only output")
+            self.response_schema = v19_role_proof_judgment_schema(output_mode)
+        if prompt_mode == "v10_product_presence_review_v1":
+            if output_mode != "labels_only" or active_items != ("v10",):
+                raise ValueError(
+                    "v10_product_presence_review_v1 requires v10-only V-only output"
+                )
+            self.response_schema = v10_product_presence_judgment_schema()
+        if prompt_mode == "v12_product_target_review_v1":
+            if active_items != ("v12",):
+                raise ValueError(
+                    "v12_product_target_review_v1 requires v12-only output"
+                )
+            self.response_schema = v12_product_target_judgment_schema(output_mode)
+        if prompt_mode == "v13_product_scope_review_v1":
+            if output_mode != "labels_and_evidence" or active_items != ("v13",):
+                raise ValueError(
+                    "v13_product_scope_review_v1 requires v13-only V/E output"
+                )
+            self.response_schema = v13_product_scope_judgment_schema()
         if prompt_mode == "category_fact_first_relation_v1":
             if output_mode != "labels_and_evidence" or active_items != ITEMS:
                 raise ValueError("category_fact_first_relation_v1 requires all-item V/E output")
@@ -2215,6 +2509,7 @@ class BaselinePipeline:
             competition_product_fact(record, self.competition_products),
             self.active_items,
             self.competition_product_context_mode,
+            self.competition_products,
         )
 
     def organizer_input_semantics_for_record(
@@ -2237,8 +2532,16 @@ class BaselinePipeline:
         v4_fact_reviews: list[dict[str, Any]] = []
         v24_fact_reviews: list[dict[str, Any]] = []
         category_fact_reviews: list[dict[str, Any]] = []
+        v5_numeric_reviews: list[dict[str, Any]] = []
+        v6_geography_reviews: list[dict[str, Any]] = []
+        v10_product_reviews: list[dict[str, Any]] = []
+        v12_product_reviews: list[dict[str, Any]] = []
+        v13_product_reviews: list[dict[str, Any]] = []
+        v23_quantitative_reviews: list[dict[str, Any]] = []
+        v19_role_reviews: list[dict[str, Any]] = []
         parse_errors: list[dict[str, Any]] = []
         for pass_index, completion in enumerate(completions, 1):
+            v19_validated_evidence = ""
             try:
                 if self._prompt_mode == "category_fact_first_relation_v1":
                     parsed, facts = parse_category_fact_first_response(
@@ -2295,6 +2598,116 @@ class BaselinePipeline:
                         "검증원문값": validated or None,
                     })
                     raw_observations = {}
+                elif self._prompt_mode == "v5_numeric_relation_v1":
+                    parsed, review = parse_v5_numeric_relation_response(
+                        completion.content
+                    )
+                    v5_numeric_reviews.append({**review, "pass_index": pass_index})
+                    raw_observations = {}
+                elif self._prompt_mode == "v6_geography_proof_v1":
+                    parsed, review = parse_v6_geography_proof_response(
+                        completion.content
+                    )
+                    source = "\n".join(
+                        str(document.get("text", ""))
+                        for document in self._visible_record(record)["docs"]
+                    )
+                    excerpt = review["지역참가자격원문"]
+                    validated = _clean_evidence(excerpt, source) if excerpt else ""
+                    v6_geography_reviews.append({
+                        **review,
+                        "pass_index": pass_index,
+                        "원문검증됨": bool(excerpt and validated),
+                        "검증원문값": validated or None,
+                    })
+                    raw_observations = {}
+                elif self._prompt_mode == "v23_quantitative_proof_v1":
+                    parsed, review = parse_v23_quantitative_proof_response(
+                        completion.content, self.output_mode
+                    )
+                    source = "\n".join(
+                        str(document.get("text", ""))
+                        for document in self._visible_record(record)["docs"]
+                    )
+                    validated_review = {**review, "pass_index": pass_index}
+                    for field in ("공고일근거", "종료일근거"):
+                        excerpt = review[field]
+                        validated = _clean_evidence(excerpt, source) if excerpt else ""
+                        validated_review[f"{field}_원문검증됨"] = bool(excerpt and validated)
+                        validated_review[f"{field}_검증원문값"] = validated or None
+                    v23_quantitative_reviews.append(validated_review)
+                    raw_observations = {}
+                elif self._prompt_mode == "v19_role_proof_v1":
+                    parsed, review = parse_v19_role_proof_response(
+                        completion.content, self.output_mode
+                    )
+                    source = "\n".join(
+                        str(document.get("text", ""))
+                        for document in self._visible_record(record)["docs"]
+                    )
+                    excerpt = review["후보원문"]
+                    v19_validated_evidence = (
+                        _clean_evidence(excerpt, source) if excerpt else ""
+                    )
+                    v19_role_reviews.append({
+                        **review,
+                        "pass_index": pass_index,
+                        "원문검증됨": bool(excerpt and v19_validated_evidence),
+                        "검증원문값": v19_validated_evidence or None,
+                    })
+                    raw_observations = {}
+                elif self._prompt_mode == "v10_product_presence_review_v1":
+                    parsed, review = parse_v10_product_presence_response(
+                        completion.content
+                    )
+                    source = "\n".join(
+                        str(document.get("text", ""))
+                        for document in self._visible_record(record)["docs"]
+                    )
+                    excerpt = review["직접생산요구원문"]
+                    validated = _clean_evidence(excerpt, source) if excerpt else ""
+                    v10_product_reviews.append({
+                        **review,
+                        "pass_index": pass_index,
+                        "원문검증됨": bool(excerpt and validated),
+                        "검증원문값": validated or None,
+                    })
+                    raw_observations = {}
+                elif self._prompt_mode == "v12_product_target_review_v1":
+                    parsed, review = parse_v12_product_target_response(
+                        completion.content, self.output_mode
+                    )
+                    source = "\n".join(
+                        str(document.get("text", ""))
+                        for document in self._visible_record(record)["docs"]
+                    )
+                    validated_review = {**review, "pass_index": pass_index}
+                    for field in ("실제구매대상원문", "직접생산요구원문"):
+                        excerpt = review[field]
+                        validated = _clean_evidence(excerpt, source) if excerpt else ""
+                        validated_review[f"{field}_원문검증됨"] = bool(
+                            excerpt and validated
+                        )
+                        validated_review[f"{field}_검증원문값"] = validated or None
+                    v12_product_reviews.append(validated_review)
+                    raw_observations = {}
+                elif self._prompt_mode == "v13_product_scope_review_v1":
+                    parsed, review = parse_v13_product_scope_response(
+                        completion.content
+                    )
+                    source = "\n".join(
+                        str(document.get("text", ""))
+                        for document in self._visible_record(record)["docs"]
+                    )
+                    excerpt = review["기업제한원문"]
+                    validated = _clean_evidence(excerpt, source) if excerpt else ""
+                    v13_product_reviews.append({
+                        **review,
+                        "pass_index": pass_index,
+                        "원문검증됨": bool(excerpt and validated),
+                        "검증원문값": validated or None,
+                    })
+                    raw_observations = {}
                 elif self._prompt_mode == "v24_fact_first_v1":
                     parsed, raw_reviews = parse_v24_fact_first_response(
                         completion.content, self.active_items
@@ -2343,6 +2756,13 @@ class BaselinePipeline:
                     items=self.active_items,
                     output_mode=self.output_mode,
                 )
+            if (
+                self._prompt_mode == "v19_role_proof_v1"
+                and self.output_mode == "labels_only"
+                and processed["v19"]["위반여부"] == 1
+                and v19_validated_evidence
+            ):
+                processed["v19"]["근거문구"] = v19_validated_evidence
             judgments.append(processed)
             if self.v8_composite_merge_enabled:
                 v8_observations.append(
@@ -2383,6 +2803,13 @@ class BaselinePipeline:
             v4_fact_reviews=tuple(v4_fact_reviews),
             v24_fact_reviews=tuple(v24_fact_reviews),
             category_fact_reviews=tuple(category_fact_reviews),
+            v5_numeric_reviews=tuple(v5_numeric_reviews),
+            v6_geography_reviews=tuple(v6_geography_reviews),
+            v10_product_reviews=tuple(v10_product_reviews),
+            v12_product_reviews=tuple(v12_product_reviews),
+            v13_product_reviews=tuple(v13_product_reviews),
+            v23_quantitative_reviews=tuple(v23_quantitative_reviews),
+            v19_role_reviews=tuple(v19_role_reviews),
             parse_errors=tuple(parse_errors),
             model_judgment=model_judgment,
             postprocess_policy=self.frozen_rule_set,

@@ -53,7 +53,11 @@ from src.pipeline import (
     judgment_to_row,
 )
 from src.submission import validate_submission, write_submission
-from src.schema import FACT_INVENTORY_CATEGORIES, FACT_INVENTORY_CATEGORIES_V2
+from src.schema import (
+    FACT_INVENTORY_CATEGORIES,
+    FACT_INVENTORY_CATEGORIES_V2,
+    V6_GEOGRAPHY_FACT_FIELDS,
+)
 
 
 def _logger(output_dir: Path) -> logging.Logger:
@@ -282,6 +286,8 @@ def _prediction_to_json(
                 if prediction.procedure_navigation
                 else "item_inventory_full_final_v1"
                 if prediction.item_navigation
+                else "v6_geography_inventory_full_final_v1"
+                if prediction.inventory_categories == V6_GEOGRAPHY_FACT_FIELDS
                 else "fact_inventory_full_final_source_only_v1"
                 if prediction.source_only_inventory
                 else "fact_inventory_full_final_timeline_v23"
@@ -488,6 +494,13 @@ def _prediction_to_json(
         "v4_fact_reviews": list(prediction.v4_fact_reviews),
         "v24_fact_reviews": list(prediction.v24_fact_reviews),
         "category_fact_reviews": list(prediction.category_fact_reviews),
+        "v5_numeric_reviews": list(prediction.v5_numeric_reviews),
+        "v6_geography_reviews": list(prediction.v6_geography_reviews),
+        "v10_product_reviews": list(prediction.v10_product_reviews),
+        "v12_product_reviews": list(prediction.v12_product_reviews),
+        "v13_product_reviews": list(prediction.v13_product_reviews),
+        "v23_quantitative_reviews": list(prediction.v23_quantitative_reviews),
+        "v19_role_reviews": list(prediction.v19_role_reviews),
         "parse_errors": list(prediction.parse_errors),
         "applicability_inactive_items": dict(prediction.applicability_inactive_items),
     }
@@ -579,6 +592,7 @@ def _write_staged_input_examples_markdown(
             "fact_inventory_full_final_v23_proof_specialist_v1",
             "fact_inventory_full_final_source_only_v1",
             "item_inventory_full_final_v1",
+            "v6_geography_inventory_full_final_v1",
         }
         procedure_mode = mode == "procedure_inventory_full_final_v1"
         vonly_draft_mode = mode == "vonly_draft_full_final_v1"
@@ -847,6 +861,14 @@ def main() -> int:
 
     load_dotenv(ROOT / ".env")
     config = load_config(args.config)
+    specialist_mode = str(
+        (config.raw.get("specialist_run", {}) or {}).get("mode", "off")
+    )
+    if specialist_mode != "off":
+        raise ValueError(
+            "scripts/run_experiment.py does not yet execute specialist_run; "
+            "refusing to run a base-only surrogate for the declared composition"
+        )
     if config.raw.get("experiment", {}).get("lifecycle") == "preview" and not args.mock:
         raise ValueError("lifecycle: preview config may only run with --mock")
     output_dir = config.output_dir if not args.mock else config.output_dir.with_name(config.output_dir.name + "-mock")
@@ -1050,13 +1072,13 @@ def main() -> int:
                     config.staged_run is not None and config.staged_run.mode == "locator_then_final_v1",
                     config.staged_run is not None and config.staged_run.mode == "inventory_then_final_v1",
                     config.staged_run is not None and config.staged_run.mode == "fact_inventory_then_final_v1",
-                    config.staged_run is not None and config.staged_run.mode in {"fact_inventory_full_final_v1", "fact_inventory_full_final_v2", "fact_inventory_full_final_v3", "fact_inventory_full_final_v4", "fact_inventory_full_final_timeline_v23", "procedure_inventory_full_final_v1", "fact_inventory_full_final_source_only_v1", "item_inventory_full_final_v1"},
+                    config.staged_run is not None and config.staged_run.mode in {"fact_inventory_full_final_v1", "fact_inventory_full_final_v2", "fact_inventory_full_final_v3", "fact_inventory_full_final_v4", "fact_inventory_full_final_timeline_v23", "procedure_inventory_full_final_v1", "fact_inventory_full_final_source_only_v1", "item_inventory_full_final_v1", "v6_geography_inventory_full_final_v1"},
                     4 if config.staged_run is not None and config.staged_run.mode == "fact_inventory_full_final_v2" else 3,
                     "before_source" if config.staged_run is not None and config.staged_run.mode == "fact_inventory_full_final_v3" else "after_source",
-                    FACT_INVENTORY_CATEGORIES_V2 if config.staged_run is not None and config.staged_run.mode == "fact_inventory_full_final_v4" else FACT_INVENTORY_CATEGORIES,
+                    V6_GEOGRAPHY_FACT_FIELDS if config.staged_run is not None and config.staged_run.mode == "v6_geography_inventory_full_final_v1" else FACT_INVENTORY_CATEGORIES_V2 if config.staged_run is not None and config.staged_run.mode == "fact_inventory_full_final_v4" else FACT_INVENTORY_CATEGORIES,
                     config.staged_run is not None and config.staged_run.mode == "fact_inventory_full_final_timeline_v23",
                     config.staged_run is not None and config.staged_run.mode == "procedure_inventory_full_final_v1",
-                    config.staged_run is not None and config.staged_run.mode == "fact_inventory_full_final_source_only_v1",
+                    config.staged_run is not None and config.staged_run.mode in {"fact_inventory_full_final_source_only_v1", "v6_geography_inventory_full_final_v1"},
                     config.staged_run is not None and config.staged_run.mode == "item_inventory_full_final_v1",
                     config.staged_run is not None and config.staged_run.mode == "vonly_draft_full_final_v1",
                     config.staged_run is not None and config.staged_run.mode == "vonly_consensus_full_source_v1",
@@ -1152,6 +1174,8 @@ def main() -> int:
         "input": str(config.data.input_path.relative_to(ROOT)),
         "input_sha256": _sha256(config.data.input_path),
         "labels_sha256": _sha256(config.data.labels_path) if config.data.labels_path else None,
+        "item_table": str(config.data.item_table_path.relative_to(ROOT)),
+        "item_table_sha256": _sha256(config.data.item_table_path),
         "run_signature": run_signature,
         "source_sha256": _source_hashes(),
         "input_count": len(records),

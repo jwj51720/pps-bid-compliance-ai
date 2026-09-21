@@ -1,0 +1,11 @@
+inherits: config.exp314-v18-only-existing-card-ve-fast-panel-c4.yaml
+experiment:
+  id: exp-315-v18-absence-card-ve-fast-panel-c4
+  base_config: configs/config.exp314-v18-only-existing-card-ve-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.decision_cards_path]
+  derived_data: [decision_cards_v24_v18_absence, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-315-v18-absence-card-ve-fast-panel-c4
+prompt:
+  decision_cards_path: data/derived/decision_cards_v24_v18_absence.json

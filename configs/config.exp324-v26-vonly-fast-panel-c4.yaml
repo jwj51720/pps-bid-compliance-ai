@@ -1,0 +1,11 @@
+# EXP324: change only the final serialization from V/E to V-only.
+inherits: config.exp323-v26-ve-fast-panel-c4.yaml
+experiment:
+  id: exp-324-v26-vonly-fast-panel-c4
+  base_config: configs/config.exp323-v26-ve-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.output_mode]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-324-v26-vonly-fast-panel-c4
+prompt:
+  output_mode: labels_only

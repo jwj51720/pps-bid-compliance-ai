@@ -25,6 +25,13 @@ from src.pipeline import (
     parse_timeline_fact_response,
     parse_v4_fact_first_response,
     parse_v4_specialist_fact_first_response,
+    parse_v5_numeric_relation_response,
+    parse_v6_geography_proof_response,
+    parse_v19_role_proof_response,
+    parse_v23_quantitative_proof_response,
+    parse_v10_product_presence_response,
+    parse_v12_product_target_response,
+    parse_v13_product_scope_response,
     parse_category_fact_first_response,
     parse_v23_proof_judgment_response,
     parse_v24_fact_first_response,
@@ -51,7 +58,7 @@ from src.prompt import (
     format_v24_role_pairs_context,
     normalize_notice_facts,
 )
-from src.schema import ITEMS, TRIAGE_STATES, category_fact_first_judgment_schema, judgment_schema, locator_schema, inventory_schema, triage_schema, v4_fact_first_judgment_schema, v4_specialist_fact_first_judgment_schema, v24_fact_first_judgment_schema
+from src.schema import ITEMS, TRIAGE_STATES, category_fact_first_judgment_schema, judgment_schema, locator_schema, inventory_schema, triage_schema, v4_fact_first_judgment_schema, v4_specialist_fact_first_judgment_schema, v5_numeric_relation_judgment_schema, v6_geography_proof_judgment_schema, v10_product_presence_judgment_schema, v12_product_target_judgment_schema, v13_product_scope_judgment_schema, v19_role_proof_judgment_schema, v23_quantitative_proof_judgment_schema, v24_fact_first_judgment_schema
 from src.law_bundles import MetadataLawBundleRouter
 
 
@@ -235,6 +242,526 @@ def test_v4_specialist_fact_first_rejects_non_v4_active_items() -> None:
         )
 
 
+def test_v5_numeric_relation_is_observable_and_does_not_override_label() -> None:
+    payload = {
+        "v5수치대조": {
+            "적용분기": "공기업준정부기관",
+            "입찰추정가격": 100_000_000,
+            "적용임계값": 710_000_000,
+            "금액관계": "미만",
+            "지역문구역할": "참가자격",
+            "허용사유": "없음",
+        },
+        "판정": {
+            "v5": {"위반여부": 1, "근거문구": "본점 소재지가 서울인 업체"}
+        },
+    }
+    parsed, review = parse_v5_numeric_relation_response(
+        json.dumps(payload, ensure_ascii=False)
+    )
+    assert review["금액관계"] == "미만"
+    assert parsed["v5"]["위반여부"] == 1
+
+    class Client:
+        def complete(self, messages, response_schema):
+            return Completion(
+                content=json.dumps(payload, ensure_ascii=False), model="test",
+                latency_seconds=0.0, usage={}, finish_reason="stop",
+            )
+
+    pipeline = BaselinePipeline(
+        item_table={item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS},
+        client=Client(), max_document_chars=None,
+        prompt_mode="v5_numeric_relation_v1",
+        prompt_profile="complete_fact_subset_v1", active_items=("v5",),
+    )
+    prediction = pipeline.predict(_record("본점 소재지가 서울인 업체"))
+    assert prediction.judgment["v5"]["위반여부"] == 1
+    assert prediction.v5_numeric_reviews[0]["금액관계"] == "미만"
+    system, user = (
+        message["content"] for message in pipeline.messages_for_context(
+            _record("마지막 원문 문장"), None
+        )
+    )
+    assert "`v5수치대조`" in system
+    assert user.index("마지막 원문 문장") < user.index("[v5 출력 전 수치·역할 검증]")
+    assert pipeline.response_schema == v5_numeric_relation_judgment_schema()
+
+
+def test_v5_numeric_relation_rejects_non_v5_or_labels_only() -> None:
+    item_table = {
+        item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS
+    }
+    with pytest.raises(ValueError, match="requires v5-only V/E"):
+        BaselinePipeline(
+            item_table=item_table, client=MockClient(), max_document_chars=None,
+            prompt_mode="v5_numeric_relation_v1",
+            prompt_profile="complete_fact_subset_v1", active_items=("v4", "v5"),
+        )
+    with pytest.raises(ValueError, match="requires v5-only V/E"):
+        BaselinePipeline(
+            item_table=item_table, client=MockClient(), max_document_chars=None,
+            prompt_mode="v5_numeric_relation_v1", output_mode="labels_only",
+            prompt_profile="complete_fact_subset_v1", active_items=("v5",),
+        )
+
+
+def test_v6_geography_proof_is_observable_and_does_not_override_label() -> None:
+    excerpt = "본점 소재지를 경기도 [지역:r1|단위=기초|광역=경기도] 또는 제주도에 둔 업체"
+    payload = {
+        "v6지역대조": {
+            "금액구간": "고시금액미만",
+            "지역참가자격원문": excerpt,
+            "지역문구역할": "참가자격",
+            "기초지역참가제한": "포함",
+            "계약절차": "제한경쟁",
+            "허용요건": "불충족",
+            "카드대조": "1조건충족",
+        },
+        "판정": {"v6": {"위반여부": 0, "근거문구": None}},
+    }
+    parsed, review = parse_v6_geography_proof_response(
+        json.dumps(payload, ensure_ascii=False)
+    )
+    assert review["기초지역참가제한"] == "포함"
+    assert parsed["v6"]["위반여부"] == 0
+
+    class Client:
+        def complete(self, messages, response_schema):
+            return Completion(
+                content=json.dumps(payload, ensure_ascii=False), model="test",
+                latency_seconds=0.0, usage={}, finish_reason="stop",
+            )
+
+    pipeline = BaselinePipeline(
+        item_table={item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS},
+        client=Client(), max_document_chars=None,
+        prompt_mode="v6_geography_proof_v1",
+        prompt_profile="complete_fact_subset_v1", active_items=("v6",),
+    )
+    prediction = pipeline.predict(_record(excerpt))
+    assert prediction.judgment["v6"]["위반여부"] == 0
+    assert prediction.v6_geography_reviews[0]["원문검증됨"]
+    system, user = (
+        message["content"] for message in pipeline.messages_for_context(
+            _record("마지막 원문 문장"), None
+        )
+    )
+    assert "`v6지역대조`" in system
+    assert user.index("마지막 원문 문장") < user.index("[v6 출력 전 지역관계 검증]")
+    assert pipeline.response_schema == v6_geography_proof_judgment_schema()
+
+
+def test_v6_geography_proof_rejects_non_v6_or_labels_only() -> None:
+    item_table = {
+        item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS
+    }
+    with pytest.raises(ValueError, match="requires v6-only V/E"):
+        BaselinePipeline(
+            item_table=item_table, client=MockClient(), max_document_chars=None,
+            prompt_mode="v6_geography_proof_v1",
+            prompt_profile="complete_fact_subset_v1", active_items=("v5", "v6"),
+        )
+    with pytest.raises(ValueError, match="requires v6-only V/E"):
+        BaselinePipeline(
+            item_table=item_table, client=MockClient(), max_document_chars=None,
+            prompt_mode="v6_geography_proof_v1", output_mode="labels_only",
+            prompt_profile="complete_fact_subset_v1", active_items=("v6",),
+        )
+
+
+def test_v6_geography_proof_mock_is_schema_valid() -> None:
+    schema = v6_geography_proof_judgment_schema()
+    completion = MockClient().complete([], schema)
+    parsed, review = parse_v6_geography_proof_response(completion.content)
+
+    assert review["카드대조"] == "판단불가"
+    assert parsed["v6"]["위반여부"] == 0
+
+
+@pytest.mark.parametrize("output_mode", ["labels_and_evidence", "labels_only"])
+def test_v23_quantitative_proof_is_observable_and_model_owned(output_mode: str) -> None:
+    announcement = "공고일: 2026. 1. 1. 제안서 제출마감: 2026. 1. 8."
+    decision = (
+        {"v23": 0}
+        if output_mode == "labels_only"
+        else {"v23": {"위반여부": 0, "근거문구": None}}
+    )
+    payload = {
+        "v23기간대조": {
+            "적용계약법": "지방계약", "계약방식": "협상",
+            "입찰추정가격": 90000000, "금액구간": "1억미만",
+            "적용최소일수": 10, "공고일근거": "공고일: 2026. 1. 1.",
+            "종료일근거": "제안서 제출마감: 2026. 1. 8.",
+            "종료일역할": "제안서마감", "계산일수": 7,
+            "긴급재공고": "해당없음", "카드대조": "1조건충족",
+        },
+        "판정": decision,
+    }
+    parsed, review = parse_v23_quantitative_proof_response(
+        json.dumps(payload, ensure_ascii=False), output_mode
+    )
+    assert review["계산일수"] == 7
+    assert parsed["v23"]["위반여부"] == 0
+
+    class Client:
+        def complete(self, messages, response_schema):
+            return Completion(
+                content=json.dumps(payload, ensure_ascii=False), model="test",
+                latency_seconds=0.0, usage={}, finish_reason="stop",
+            )
+
+    pipeline = BaselinePipeline(
+        item_table={item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS},
+        client=Client(), max_document_chars=None,
+        prompt_mode="v23_quantitative_proof_v1", output_mode=output_mode,
+        prompt_profile="complete_fact_subset_v1", active_items=("v23",),
+    )
+    prediction = pipeline.predict(_record(announcement))
+    review = prediction.v23_quantitative_reviews[0]
+    assert review["공고일근거_원문검증됨"]
+    assert review["종료일근거_원문검증됨"]
+    system, user = (
+        message["content"] for message in pipeline.messages_for_context(
+            _record(announcement), None
+        )
+    )
+    assert "`v23기간대조`" in system
+    assert user.index(announcement) < user.index("[v23 출력 전 기간관계 검증]")
+    assert pipeline.response_schema == v23_quantitative_proof_judgment_schema(output_mode)
+
+
+def test_v23_quantitative_proof_requires_v23_only() -> None:
+    item_table = {
+        item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS
+    }
+    with pytest.raises(ValueError, match="requires v23-only"):
+        BaselinePipeline(
+            item_table=item_table, client=MockClient(), max_document_chars=None,
+            prompt_mode="v23_quantitative_proof_v1",
+            prompt_profile="complete_fact_subset_v1", active_items=("v22", "v23"),
+        )
+
+
+@pytest.mark.parametrize("output_mode", ["labels_and_evidence", "labels_only"])
+def test_v23_quantitative_proof_mock_is_schema_valid(output_mode: str) -> None:
+    schema = v23_quantitative_proof_judgment_schema(output_mode)
+    completion = MockClient().complete([], schema)
+    parsed, review = parse_v23_quantitative_proof_response(completion.content, output_mode)
+
+    assert review["카드대조"] == "판단불가"
+    assert parsed["v23"]["위반여부"] == 0
+
+
+@pytest.mark.parametrize("output_mode", ["labels_and_evidence", "labels_only"])
+def test_v19_role_proof_is_observable_and_model_owned(output_mode: str) -> None:
+    excerpt = "공급업체는 제조사의 A/S확약서를 입찰 전일까지 보유하여야 합니다."
+    decision = (
+        {"v19": 1}
+        if output_mode == "labels_only"
+        else {"v19": {"위반여부": 1, "근거문구": excerpt}}
+    )
+    payload = {
+        "v19역할대조": {
+            "후보원문": excerpt,
+            "서류종류": "물품공급·기술지원확약서",
+            "요구행위": "발급·보유",
+            "기준시점": "입찰·제안전",
+            "입찰효과": "필수제출",
+            "카드대조": "1조건충족",
+        },
+        "판정": decision,
+    }
+    parsed, review = parse_v19_role_proof_response(
+        json.dumps(payload, ensure_ascii=False), output_mode
+    )
+    assert parsed["v19"]["위반여부"] == 1
+    assert review["기준시점"] == "입찰·제안전"
+
+    class Client:
+        def complete(self, messages, response_schema):
+            return Completion(
+                content=json.dumps(payload, ensure_ascii=False), model="test",
+                latency_seconds=0.0, usage={}, finish_reason="stop",
+            )
+
+    pipeline = BaselinePipeline(
+        item_table={item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS},
+        client=Client(), max_document_chars=None,
+        prompt_mode="v19_role_proof_v1", output_mode=output_mode,
+        prompt_profile="complete_fact_subset_v1", active_items=("v19",),
+    )
+    prediction = pipeline.predict(_record(excerpt))
+    review = prediction.v19_role_reviews[0]
+    assert review["원문검증됨"]
+    assert prediction.judgment["v19"]["위반여부"] == 1
+    assert prediction.judgment["v19"]["근거문구"] == excerpt
+    system, user = (
+        message["content"] for message in pipeline.messages_for_context(
+            _record(excerpt), None
+        )
+    )
+    assert "`v19역할대조`" in system
+    assert user.index(excerpt) < user.index("[v19 출력 전 역할·시점 검증]")
+    assert pipeline.response_schema == v19_role_proof_judgment_schema(output_mode)
+
+
+def test_v19_role_proof_requires_v19_only() -> None:
+    item_table = {
+        item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS
+    }
+    with pytest.raises(ValueError, match="requires v19-only"):
+        BaselinePipeline(
+            item_table=item_table, client=MockClient(), max_document_chars=None,
+            prompt_mode="v19_role_proof_v1",
+            prompt_profile="complete_fact_subset_v1", active_items=("v18", "v19"),
+        )
+
+
+@pytest.mark.parametrize("output_mode", ["labels_and_evidence", "labels_only"])
+def test_v19_role_proof_mock_is_schema_valid(output_mode: str) -> None:
+    schema = v19_role_proof_judgment_schema(output_mode)
+    completion = MockClient().complete([], schema)
+    parsed, review = parse_v19_role_proof_response(completion.content, output_mode)
+
+    assert review["카드대조"] == "판단불가"
+    assert parsed["v19"]["위반여부"] == 0
+
+
+def test_v10_product_review_is_observable_and_does_not_override_label() -> None:
+    payload = {
+        "v10제품검토": {
+            "실제구매대상": "행사대행 용역",
+            "고시후보세부품명": "기타행사기획및대행서비스",
+            "적용조건상태": "충족",
+            "경쟁제품적용": "적용",
+            "직접생산요구": "없음",
+            "직접생산요구원문": None,
+        },
+        "판정": {"v10": 0},
+    }
+    parsed, review = parse_v10_product_presence_response(
+        json.dumps(payload, ensure_ascii=False)
+    )
+    assert review["경쟁제품적용"] == "적용"
+    assert review["직접생산요구"] == "없음"
+    assert parsed["v10"]["위반여부"] == 0
+
+    class Client:
+        def complete(self, messages, response_schema):
+            return Completion(
+                content=json.dumps(payload, ensure_ascii=False), model="test",
+                latency_seconds=0.0, usage={}, finish_reason="stop",
+            )
+
+    pipeline = BaselinePipeline(
+        item_table={item: {"항목명": item, "부재탐지": item == "v10", "비고": ""} for item in ITEMS},
+        client=Client(), max_document_chars=None,
+        prompt_mode="v10_product_presence_review_v1", output_mode="labels_only",
+        prompt_profile="complete_fact_subset_v1", active_items=("v10",),
+    )
+    prediction = pipeline.predict(_record("직접생산 요구가 없는 마지막 원문"))
+    assert prediction.judgment["v10"]["위반여부"] == 0
+    assert prediction.v10_product_reviews[0]["경쟁제품적용"] == "적용"
+    system, user = (
+        message["content"] for message in pipeline.messages_for_context(
+            _record("마지막 원문 문장"), None
+        )
+    )
+    assert "`v10제품검토`" in system
+    assert "제공되지 않은 전체 목록을 추정하지 않는다" in system
+    assert "exact-code 확인 결과 또는 대회 제공 전체 목록" not in system
+    assert user.index("마지막 원문 문장") < user.index("[v10 출력 전 제품 적용·부재 검증]")
+    assert pipeline.response_schema == v10_product_presence_judgment_schema()
+
+
+def test_v10_product_review_full_catalog_prompt_names_catalog() -> None:
+    pipeline = BaselinePipeline(
+        item_table={
+            item: {"항목명": item, "부재탐지": item == "v10", "비고": ""}
+            for item in ITEMS
+        },
+        client=MockClient(), max_document_chars=None,
+        prompt_mode="v10_product_presence_review_v1", output_mode="labels_only",
+        prompt_profile="complete_fact_subset_v1", active_items=("v10",),
+        competition_product_context_mode="full_catalog_v1",
+    )
+
+    assert "exact-code 확인 결과 또는 대회 제공 전체 목록" in pipeline.system_prompt
+    assert "제공되지 않은 전체 목록을 추정하지 않는다" not in pipeline.system_prompt
+
+
+def test_v10_product_review_requires_v10_only_vonly() -> None:
+    item_table = {
+        item: {"항목명": item, "부재탐지": item == "v10", "비고": ""}
+        for item in ITEMS
+    }
+    with pytest.raises(ValueError, match="requires v10-only V-only"):
+        BaselinePipeline(
+            item_table=item_table, client=MockClient(), max_document_chars=None,
+            prompt_mode="v10_product_presence_review_v1",
+            prompt_profile="complete_fact_subset_v1", active_items=("v10",),
+        )
+
+
+@pytest.mark.parametrize("output_mode", ["labels_and_evidence", "labels_only"])
+def test_v12_product_target_review_is_grounded_and_model_owned(output_mode: str) -> None:
+    target = "공 고 명: 위탁연구과제 용역"
+    requirement = "직접생산확인증명서를 소지한 업체여야 합니다."
+    decision = (
+        0 if output_mode == "labels_only"
+        else {"위반여부": 0, "근거문구": None}
+    )
+    payload = {
+        "v12제품대상검토": {
+            "실제구매대상원문": target,
+            "고시후보세부품명": "기타행사기획및대행서비스",
+            "고시후보출처": "공고자료",
+            "구매대상관계": "다른대상",
+            "적용조건상태": "충족",
+            "경쟁제품적용": "비적용",
+            "직접생산요구원문": requirement,
+            "직접생산요구역할": "참가자격",
+            "허용사유": "없음",
+            "카드대조": "1조건충족",
+        },
+        "판정": {"v12": decision},
+    }
+    parsed, review = parse_v12_product_target_response(
+        json.dumps(payload, ensure_ascii=False), output_mode
+    )
+    assert review["구매대상관계"] == "다른대상"
+    assert parsed["v12"]["위반여부"] == 0
+
+    class Client:
+        def complete(self, messages, response_schema):
+            return Completion(
+                content=json.dumps(payload, ensure_ascii=False), model="test",
+                latency_seconds=0.0, usage={}, finish_reason="stop",
+            )
+
+    pipeline = BaselinePipeline(
+        item_table={item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS},
+        client=Client(), max_document_chars=None,
+        prompt_mode="v12_product_target_review_v1",
+        prompt_profile="complete_fact_subset_v1", active_items=("v12",),
+        output_mode=output_mode,
+    )
+    prediction = pipeline.predict(_record(target + "\n" + requirement + "\n마지막 원문"))
+    assert prediction.judgment["v12"]["위반여부"] == 0
+    assert prediction.v12_product_reviews[0]["실제구매대상원문_원문검증됨"] is True
+    assert prediction.v12_product_reviews[0]["직접생산요구원문_원문검증됨"] is True
+    system, user = (
+        message["content"] for message in pipeline.messages_for_context(
+            _record(target + "\n" + requirement + "\n마지막 원문"), None
+        )
+    )
+    assert "`v12제품대상검토`" in system
+    assert user.index("마지막 원문") < user.index("[v12 출력 전 제품·대상 관계 검증]")
+    assert pipeline.response_schema == v12_product_target_judgment_schema(output_mode)
+
+
+def test_v12_product_target_review_requires_v12_only() -> None:
+    item_table = {
+        item: {"항목명": item, "부재탐지": False, "비고": ""}
+        for item in ITEMS
+    }
+    with pytest.raises(ValueError, match="requires v12-only"):
+        BaselinePipeline(
+            item_table=item_table, client=MockClient(), max_document_chars=None,
+            prompt_mode="v12_product_target_review_v1",
+            prompt_profile="complete_fact_subset_v1", active_items=("v11", "v12"),
+        )
+
+
+@pytest.mark.parametrize("output_mode", ["labels_and_evidence", "labels_only"])
+def test_v12_product_target_mock_is_schema_valid(output_mode: str) -> None:
+    schema = v12_product_target_judgment_schema(output_mode)
+    completion = MockClient().complete([], schema)
+    parsed, review = parse_v12_product_target_response(completion.content, output_mode)
+
+    assert parsed["v12"]["위반여부"] == 0
+    assert review["카드대조"] == "판단불가"
+
+
+def test_v13_product_scope_review_is_observable_and_model_owned() -> None:
+    excerpt = "소기업·소상공인 확인서를 소지한 업체만 참가할 수 있습니다."
+    payload = {
+        "v13제품기업검토": {
+            "실제구매대상": "행사대행 용역",
+            "고시후보세부품명": "기타행사기획및대행서비스",
+            "적용조건상태": "충족",
+            "경쟁제품적용": "적용",
+            "기업제한원문": excerpt,
+            "기업제한역할": "참가자격",
+            "일반중기업참가": "불가",
+            "허용사유": "없음",
+            "카드대조": "1조건충족",
+        },
+        "판정": {"v13": {"위반여부": 0, "근거문구": None}},
+    }
+    parsed, review = parse_v13_product_scope_response(
+        json.dumps(payload, ensure_ascii=False)
+    )
+    assert review["카드대조"] == "1조건충족"
+    assert parsed["v13"]["위반여부"] == 0
+
+    class Client:
+        def complete(self, messages, response_schema):
+            return Completion(
+                content=json.dumps(payload, ensure_ascii=False), model="test",
+                latency_seconds=0.0, usage={}, finish_reason="stop",
+            )
+
+    pipeline = BaselinePipeline(
+        item_table={item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS},
+        client=Client(), max_document_chars=None,
+        prompt_mode="v13_product_scope_review_v1",
+        prompt_profile="complete_fact_subset_v1", active_items=("v13",),
+        output_mode="labels_and_evidence",
+    )
+    prediction = pipeline.predict(_record(excerpt + "\n마지막 원문 문장"))
+    assert prediction.judgment["v13"]["위반여부"] == 0
+    assert prediction.v13_product_reviews[0]["원문검증됨"] is True
+    system, user = (
+        message["content"] for message in pipeline.messages_for_context(
+            _record(excerpt + "\n마지막 원문 문장"), None
+        )
+    )
+    assert "`v13제품기업검토`" in system
+    assert user.index("마지막 원문 문장") < user.index("[v13 출력 전 제품 적용·기업범위 검증]")
+    assert pipeline.response_schema == v13_product_scope_judgment_schema()
+
+
+def test_v13_product_scope_review_requires_v13_only_ve() -> None:
+    item_table = {
+        item: {"항목명": item, "부재탐지": False, "비고": ""}
+        for item in ITEMS
+    }
+    with pytest.raises(ValueError, match="requires v13-only V/E"):
+        BaselinePipeline(
+            item_table=item_table, client=MockClient(), max_document_chars=None,
+            prompt_mode="v13_product_scope_review_v1", output_mode="labels_only",
+            prompt_profile="complete_fact_subset_v1", active_items=("v13",),
+        )
+    with pytest.raises(ValueError, match="requires v13-only V/E"):
+        BaselinePipeline(
+            item_table=item_table, client=MockClient(), max_document_chars=None,
+            prompt_mode="v13_product_scope_review_v1",
+            prompt_profile="complete_fact_subset_v1", active_items=("v12", "v13"),
+        )
+
+
+def test_v13_product_scope_mock_is_schema_valid() -> None:
+    schema = v13_product_scope_judgment_schema()
+    completion = MockClient().complete([], schema)
+
+    parsed, review = parse_v13_product_scope_response(completion.content)
+
+    assert parsed["v13"]["위반여부"] == 0
+    assert review["카드대조"] == "판단불가"
+
+
 def test_category_fact_first_schema_parser_and_prompt_order() -> None:
     categories = (
         "참가자격_실적_지역", "제품_기업_직접생산", "규격_모델_기술요구",
@@ -395,6 +922,32 @@ def test_decision_protocol_preserves_ve_schema_and_follows_complete_source() -> 
     assert "v4: 특정 발주기관·실적종류 제한" in user
     assert "v7: 참가자의 허용 지역 집합" in user
     assert "v22: 행사가 입찰 전 설명회인지" in user
+    assert pipeline.response_schema == judgment_schema()
+
+
+def test_exact_card_recap_repeats_same_catalog_after_complete_source() -> None:
+    record = _record("마지막 원문 문장")
+    cards = {
+        item: {"prompt_text": f"{item} exact 적용범위와 1/0 조건"}
+        for item in ITEMS
+    }
+    pipeline = BaselinePipeline(
+        item_table={item: {"항목명": item, "부재탐지": False, "비고": ""} for item in ITEMS},
+        client=MockClient(), max_document_chars=None,
+        prompt_mode="exact_card_recap_after_source_v1",
+        prompt_profile="complete_fact_v1",
+        decision_cards=cards,
+    )
+    system, user = (
+        message["content"] for message in pipeline.messages_for_context(record, None)
+    )
+
+    assert "[exact 카드 재대조 모드]" in system
+    assert user.index("마지막 원문 문장") < user.index("[판정 직전 exact 카드 재대조]")
+    for item in ITEMS:
+        card = f"{item} exact 적용범위와 1/0 조건"
+        assert system.count(card) == 1
+        assert user.count(card) == 1
     assert pipeline.response_schema == judgment_schema()
 
 
@@ -600,6 +1153,31 @@ def test_vonly_draft_full_final_supports_one_item_without_python_vote() -> None:
     )
 
 
+def test_vonly_draft_full_final_supports_v10_vonly_final_owner() -> None:
+    item_table = {
+        item: {
+            "항목명": item, "부재탐지": item == "v10",
+            "국가계약법": "", "지방계약법": "", "비고": "",
+        }
+        for item in ITEMS
+    }
+    pipeline = BaselinePipeline(
+        item_table=item_table, client=MockClient(), max_document_chars=None,
+        prompt_mode="v10_product_presence_review_v1",
+        context_strategy="single", overflow_split_enabled=True,
+        count_tokens=lambda messages: len(messages),
+        prompt_profile="complete_fact_subset_v1", active_items=("v10",),
+        output_mode="labels_only",
+    )
+
+    prediction = pipeline.predict_with_vonly_draft_then_full_final(_record())
+
+    assert set(prediction.draft.pass_judgments[0]) == {"v10"}
+    assert set(prediction.final.pass_judgments[0]) == {"v10"}
+    assert prediction.final.judgment["v10"]["근거문구"] == ""
+    assert "1차 검토 초안" in prediction.final_messages_by_context[0][1]["content"]
+
+
 def test_vonly_consensus_uses_model_owned_resolver_not_python_vote() -> None:
     item_table = {
         item: {"항목명": item, "부재탐지": False, "국가계약법": "", "지방계약법": "", "비고": ""}
@@ -719,6 +1297,77 @@ def test_item_navigation_keeps_source_candidate_advisory_and_full_final() -> Non
     rendered = "\n".join(message["content"] for message in prediction.final_messages_by_context[0])
     assert "후보없음 (이는 0이 아님)" in rendered
     assert "서울특별시에 본사를 둔 업체로 제한한다" in rendered
+
+
+def test_v6_geography_navigation_is_source_only_and_final_keeps_full_source() -> None:
+    from src.schema import V6_GEOGRAPHY_FACT_FIELDS
+
+    source_clause = "서울특별시 [지역:r1|단위=기초] 또는 제주도에 본점을 둔 업체"
+
+    class GeographyFactClient:
+        def __init__(self):
+            self.calls = []
+
+        def complete(self, messages, response_schema):
+            self.calls.append(messages)
+            if tuple(response_schema.get("required", ())) == V6_GEOGRAPHY_FACT_FIELDS:
+                payload = {field: [] for field in V6_GEOGRAPHY_FACT_FIELDS}
+                payload["참가자격_지역문구"] = [source_clause]
+            else:
+                payload = {
+                    "v6": {"위반여부": 1, "근거문구": source_clause}
+                }
+            return Completion(json.dumps(payload, ensure_ascii=False), "test", 0.0, {})
+
+    item_table = {
+        "v6": {
+            "항목명": "고시금액 미만 지역제한 시,군,구",
+            "부재탐지": False,
+            "국가계약법": "",
+            "지방계약법": "",
+            "비고": "",
+        }
+    }
+    client = GeographyFactClient()
+    record = _record(source_clause)
+    pipeline = BaselinePipeline(
+        item_table=item_table,
+        client=client,
+        max_document_chars=None,
+        context_strategy="single",
+        overflow_split_enabled=True,
+        count_tokens=lambda messages: len(str(messages)),
+        prompt_profile="complete_fact_subset_v1",
+        active_items=("v6",),
+        decision_cards={
+            "v6": {
+                "item_name": "고시금액 미만 지역제한 시,군,구",
+                "prompt_text": "판정 카드 원문",
+            }
+        },
+        organizer_input_semantics_mode="anonymization_v1",
+    )
+
+    prediction = pipeline.predict_with_fact_inventory_then_full_final(
+        record,
+        inventory_categories=V6_GEOGRAPHY_FACT_FIELDS,
+        source_only_inventory=True,
+    )
+
+    assert prediction.inventory_by_category["참가자격_지역문구"] == (
+        ("D0", source_clause),
+    )
+    stage_rendered = "\n".join(message["content"] for message in client.calls[0])
+    assert "[나라장터 입력 메타]" not in stage_rendered
+    assert "판정 카드 원문" not in stage_rendered
+    assert "v6" not in stage_rendered
+    final_rendered = "\n".join(
+        message["content"] for message in prediction.final_messages_by_context[0]
+    )
+    assert "판정 카드 원문" in final_rendered
+    assert source_clause in final_rendered
+    assert "최종 판정 아님" in final_rendered
+    assert prediction.final.judgment["v6"]["위반여부"] == 1
 
 
 def test_fact_inventory_final_parse_retry_keeps_same_source_first_messages() -> None:
@@ -1189,6 +1838,7 @@ def test_fact_inventory_contract_is_source_only_and_non_final() -> None:
     from src.schema import (
         FACT_INVENTORY_CATEGORIES,
         FACT_INVENTORY_CATEGORIES_V2,
+        V6_GEOGRAPHY_FACT_FIELDS,
         fact_inventory_schema,
     )
 
@@ -1214,6 +1864,20 @@ def test_fact_inventory_contract_is_source_only_and_non_final() -> None:
     assert parse_fact_inventory_response(
         json.dumps(v2_payload, ensure_ascii=False), categories=FACT_INVENTORY_CATEGORIES_V2,
     ) == v2_payload
+    v6_payload = {field: [] for field in V6_GEOGRAPHY_FACT_FIELDS}
+    assert tuple(
+        fact_inventory_schema(categories=V6_GEOGRAPHY_FACT_FIELDS)["required"]
+    ) == V6_GEOGRAPHY_FACT_FIELDS
+    assert parse_fact_inventory_response(
+        json.dumps(v6_payload, ensure_ascii=False),
+        categories=V6_GEOGRAPHY_FACT_FIELDS,
+    ) == v6_payload
+    v6_prompt = build_fact_inventory_system_prompt(
+        categories=V6_GEOGRAPHY_FACT_FIELDS
+    )
+    assert "지역 참가자격의 관계" in v6_prompt
+    assert "법령 위반 여부" in v6_prompt
+    assert "판단하지 않는다" in v6_prompt
     messages = append_fact_inventory(
         [{"role": "system", "content": "final"}, {"role": "user", "content": "notice"}],
         {category: () for category in FACT_INVENTORY_CATEGORIES},
@@ -1658,6 +2322,29 @@ def test_competition_product_condition_mode_marks_unconditional_row() -> None:
 
     assert "별도 적용조건 없음" in context
     assert "공고 자료 규격서" in context
+
+
+def test_competition_product_full_catalog_is_readable_and_hides_codes() -> None:
+    context = format_competition_product_context(
+        _record(),
+        {"status": "unknown", "matched_products": []},
+        active_items=("v10",),
+        context_mode="full_catalog_v1",
+        product_catalog={
+            "8014199001": {
+                "세부품명": "기타행사기획및대행서비스",
+                "특이사항": "추정가격 10억원 미만에 한함",
+            },
+            "1111169701": {"세부품명": "잡석", "특이사항": ""},
+        },
+    )
+
+    assert "경쟁제품 전체 목록" in context
+    assert "기타행사기획및대행서비스" in context
+    assert "추정가격 10억원 미만에 한함" in context
+    assert "- 잡석" in context
+    assert "8014199001" not in context
+    assert "unknown" not in context
 
 
 def test_official_prompt_hides_internal_notice_id_and_separates_source_text() -> None:

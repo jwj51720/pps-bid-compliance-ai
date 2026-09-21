@@ -1,0 +1,12 @@
+# EXP282: v20 gate-first card with V-only output on frozen fast20.
+inherits: config.exp277-v20-threshold-vonly-fast-panel-c4.yaml
+experiment:
+  id: exp-282-v20-applicability-gate-vonly-fast-panel-c4
+  base_config: configs/config.exp277-v20-threshold-vonly-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.decision_cards_path]
+  derived_data: [decision_cards_v20_v20_applicability_gate, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-282-v20-applicability-gate-vonly-fast-panel-c4
+prompt:
+  decision_cards_path: data/derived/decision_cards_v20_v20_applicability_gate.json

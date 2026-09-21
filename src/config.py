@@ -158,6 +158,8 @@ def load_config(path: str | Path) -> ExperimentConfig:
     run = _mapping(raw.get("run", {}), "run")
     review_run = _mapping(raw["review_run"], "review_run") if raw.get("review_run") else None
     staged_run = _mapping(raw["staged_run"], "staged_run") if raw.get("staged_run") else None
+    if staged_run is not None and str(staged_run.get("mode", "off")) == "off":
+        staged_run = None
     v8_composite_merge = _mapping(raw.get("v8_composite_merge", {}), "v8_composite_merge")
 
     # Root config lives at the repository root, while historical/experimental
@@ -293,14 +295,28 @@ def load_config(path: str | Path) -> ExperimentConfig:
     if config.prompt_mode not in {
         "baseline", "structured", "guided", "v24_fact_first_v1", "v24_role_pairs_v1",
         "relation_checklist_after_source_v1", "decision_protocol_after_source_v1",
+        "exact_card_recap_after_source_v1",
         "v4_fact_first_relation_v1", "category_fact_first_relation_v1",
         "v4_specialist_fact_first_v1",
+        "v5_numeric_relation_v1",
+        "v6_geography_proof_v1",
+        "v23_quantitative_proof_v1",
+        "v19_role_proof_v1",
+        "v10_product_presence_review_v1",
+        "v12_product_target_review_v1",
+        "v13_product_scope_review_v1",
     }:
         raise ValueError(
             "prompt.mode must be baseline, structured, guided, v24_fact_first_v1, "
             "v24_role_pairs_v1, relation_checklist_after_source_v1, or "
-            "decision_protocol_after_source_v1, v4_fact_first_relation_v1, or "
-            "category_fact_first_relation_v1, or v4_specialist_fact_first_v1"
+            "decision_protocol_after_source_v1, exact_card_recap_after_source_v1, "
+            "v4_fact_first_relation_v1, or "
+            "category_fact_first_relation_v1, v4_specialist_fact_first_v1, or "
+            "v5_numeric_relation_v1, v6_geography_proof_v1, "
+            "v23_quantitative_proof_v1, "
+            "v19_role_proof_v1, "
+            "v10_product_presence_review_v1, v12_product_target_review_v1, or "
+            "v13_product_scope_review_v1"
         )
     if config.prompt_layout not in {"plain", "markdown", "markdown_v2"}:
         raise ValueError("prompt.layout must be plain, markdown, or markdown_v2")
@@ -346,18 +362,20 @@ def load_config(path: str | Path) -> ExperimentConfig:
             "or official_lines_human_v2"
         )
     if config.competition_product_context_mode not in {
-        "names_only_v1", "conditions_and_provenance_v2"
+        "names_only_v1", "conditions_and_provenance_v2", "full_catalog_v1"
     }:
         raise ValueError(
             "prompt.competition_product_context_mode must be names_only_v1 or "
-            "conditions_and_provenance_v2"
+            "conditions_and_provenance_v2 or full_catalog_v1"
         )
     if (
-        config.competition_product_context_mode == "conditions_and_provenance_v2"
+        config.competition_product_context_mode in {
+            "conditions_and_provenance_v2", "full_catalog_v1"
+        }
         and config.competition_products_path is None
     ):
         raise ValueError(
-            "conditions_and_provenance_v2 requires competition_products_path"
+            "the selected competition product context requires competition_products_path"
         )
     if config.organizer_input_semantics_mode not in {"off", "anonymization_v1"}:
         raise ValueError(
@@ -453,18 +471,23 @@ def load_config(path: str | Path) -> ExperimentConfig:
     if config.staged_run is not None:
         if config.review_run is not None:
             raise ValueError("staged_run and review_run are mutually exclusive")
-        if config.staged_run.mode not in {"triage_then_strict_v1", "locator_then_final_v1", "inventory_then_final_v1", "fact_inventory_then_final_v1", "fact_inventory_full_final_v1", "fact_inventory_full_final_v2", "fact_inventory_full_final_v3", "fact_inventory_full_final_v4", "fact_inventory_full_final_timeline_v23", "procedure_inventory_full_final_v1", "fact_inventory_full_final_source_only_v1", "item_inventory_full_final_v1", "fact_inventory_full_final_v23_specialist_v1", "fact_inventory_full_final_v23_proof_specialist_v1", "vonly_draft_full_final_v1", "vonly_consensus_full_source_v1"}:
+        if config.staged_run.mode not in {"triage_then_strict_v1", "locator_then_final_v1", "inventory_then_final_v1", "fact_inventory_then_final_v1", "fact_inventory_full_final_v1", "fact_inventory_full_final_v2", "fact_inventory_full_final_v3", "fact_inventory_full_final_v4", "fact_inventory_full_final_timeline_v23", "procedure_inventory_full_final_v1", "fact_inventory_full_final_source_only_v1", "item_inventory_full_final_v1", "v6_geography_inventory_full_final_v1", "fact_inventory_full_final_v23_specialist_v1", "fact_inventory_full_final_v23_proof_specialist_v1", "vonly_draft_full_final_v1", "vonly_consensus_full_source_v1"}:
             raise ValueError("staged_run.mode is unsupported")
-        if (config.staged_run.mode not in {"inventory_then_final_v1", "fact_inventory_then_final_v1", "fact_inventory_full_final_v1", "fact_inventory_full_final_v2", "fact_inventory_full_final_v3", "fact_inventory_full_final_v4", "fact_inventory_full_final_timeline_v23", "procedure_inventory_full_final_v1", "fact_inventory_full_final_source_only_v1", "item_inventory_full_final_v1", "fact_inventory_full_final_v23_specialist_v1", "fact_inventory_full_final_v23_proof_specialist_v1", "vonly_draft_full_final_v1", "vonly_consensus_full_source_v1"}
+        if (config.staged_run.mode not in {"inventory_then_final_v1", "fact_inventory_then_final_v1", "fact_inventory_full_final_v1", "fact_inventory_full_final_v2", "fact_inventory_full_final_v3", "fact_inventory_full_final_v4", "fact_inventory_full_final_timeline_v23", "procedure_inventory_full_final_v1", "fact_inventory_full_final_source_only_v1", "item_inventory_full_final_v1", "v6_geography_inventory_full_final_v1", "fact_inventory_full_final_v23_specialist_v1", "fact_inventory_full_final_v23_proof_specialist_v1", "vonly_draft_full_final_v1", "vonly_consensus_full_source_v1"}
                 and (config.context_strategy != "single" or config.overflow_split_enabled)):
             raise ValueError("staged run requires one fixed single context")
-        if (config.staged_run.mode != "vonly_draft_full_final_v1"
+        if (config.staged_run.mode not in {"vonly_draft_full_final_v1", "v6_geography_inventory_full_final_v1"}
                 and config.active_items != tuple(f"v{index}" for index in range(1, 25))):
             raise ValueError("staged run requires all v1..v24 items")
-        if config.staged_run.mode not in {"inventory_then_final_v1", "fact_inventory_then_final_v1", "fact_inventory_full_final_v1", "fact_inventory_full_final_v2", "fact_inventory_full_final_v3", "fact_inventory_full_final_v4", "fact_inventory_full_final_timeline_v23", "procedure_inventory_full_final_v1", "fact_inventory_full_final_source_only_v1", "item_inventory_full_final_v1", "fact_inventory_full_final_v23_specialist_v1", "fact_inventory_full_final_v23_proof_specialist_v1", "vonly_draft_full_final_v1", "vonly_consensus_full_source_v1"} and config.prompt_profile != "official_baseline_v1":
+        if config.staged_run.mode == "v6_geography_inventory_full_final_v1" and config.active_items != ("v6",):
+            raise ValueError("v6 geography staged run requires v6-only active items")
+        if config.staged_run.mode not in {"inventory_then_final_v1", "fact_inventory_then_final_v1", "fact_inventory_full_final_v1", "fact_inventory_full_final_v2", "fact_inventory_full_final_v3", "fact_inventory_full_final_v4", "fact_inventory_full_final_timeline_v23", "procedure_inventory_full_final_v1", "fact_inventory_full_final_source_only_v1", "item_inventory_full_final_v1", "v6_geography_inventory_full_final_v1", "fact_inventory_full_final_v23_specialist_v1", "fact_inventory_full_final_v23_proof_specialist_v1", "vonly_draft_full_final_v1", "vonly_consensus_full_source_v1"} and config.prompt_profile != "official_baseline_v1":
             raise ValueError("staged run requires the official full-item prompt profile")
         if (config.output_mode != "labels_and_evidence"
-                and config.staged_run.mode != "vonly_consensus_full_source_v1"):
+                and config.staged_run.mode not in {
+                    "vonly_consensus_full_source_v1",
+                    "vonly_draft_full_final_v1",
+                }):
             raise ValueError("staged run final stage requires V/E output")
         if config.decision_cards_path is None:
             raise ValueError("staged run requires versioned decision cards")

@@ -1,0 +1,10 @@
+inherits: config.exp315-v18-absence-card-ve-fast-panel-c4.yaml
+experiment:
+  id: exp-315-v18-synthetic-overflow-review
+  base_config: configs/config.exp315-v18-absence-card-ve-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.max_model_len]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp315-synthetic-overflow-review
+prompt:
+  max_model_len: 8500

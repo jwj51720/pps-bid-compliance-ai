@@ -1,0 +1,12 @@
+# EXP323: V26 semantic-complete input, one-stage V/E control.
+inherits: config.exp322-semantic-complete-card-fast-panel-c4.yaml
+experiment:
+  id: exp-323-v26-ve-fast-panel-c4
+  base_config: configs/config.exp322-semantic-complete-card-fast-panel-c4.yaml
+  allowed_policy_changes: [postprocess.frozen_rule_set]
+  derived_data: [decision_cards_v26_semantic_complete, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-323-v26-ve-fast-panel-c4
+postprocess:
+  frozen_rule_set: null

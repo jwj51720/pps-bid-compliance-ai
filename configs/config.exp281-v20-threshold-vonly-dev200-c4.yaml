@@ -1,0 +1,12 @@
+# EXP281: policy-identical dev200 confirmation for EXP280.
+inherits: config.exp280-v20-threshold-vonly-holdout-c4.yaml
+experiment:
+  id: exp-281-v20-threshold-vonly-dev200-c4
+  base_config: configs/config.exp280-v20-threshold-vonly-holdout-c4.yaml
+  allowed_policy_changes: []
+  derived_data: [decision_cards_v19_v20_threshold, competition_products_v1]
+  lifecycle: diagnostic
+data:
+  fast_panel_ids_path: null
+output:
+  dir: outputs/exp-281-v20-threshold-vonly-dev200-c4

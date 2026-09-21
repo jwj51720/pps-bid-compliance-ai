@@ -1,0 +1,12 @@
+# EXP331: source-correct v5 local threshold selector; card-only V/E ablation.
+inherits: config.exp330-v27-v23-interval-card-fast-panel-c4.yaml
+experiment:
+  id: exp-331-v28-v5-local-threshold-fast-panel-c4
+  base_config: configs/config.exp330-v27-v23-interval-card-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.decision_cards_path]
+  derived_data: [decision_cards_v28_v5_local_threshold_selector, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-331-v28-v5-local-threshold-fast-panel-c4
+prompt:
+  decision_cards_path: data/derived/decision_cards_v28_v5_local_threshold_selector.json

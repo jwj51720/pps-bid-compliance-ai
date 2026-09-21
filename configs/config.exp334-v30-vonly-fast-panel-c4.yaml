@@ -1,0 +1,12 @@
+# EXP334: change only the v30 final serialization from V/E to V-only.
+inherits: config.exp333-v30-full-source-concordance-fast-panel-c4.yaml
+experiment:
+  id: exp-334-v30-vonly-fast-panel-c4
+  base_config: configs/config.exp333-v30-full-source-concordance-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.output_mode]
+  derived_data: [decision_cards_v30_full_source_concordance, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-334-v30-vonly-fast-panel-c4
+prompt:
+  output_mode: labels_only

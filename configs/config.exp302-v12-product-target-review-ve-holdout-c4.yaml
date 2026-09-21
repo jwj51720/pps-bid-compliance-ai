@@ -1,0 +1,12 @@
+# EXP302: policy-identical holdout for relation-review V/E.
+inherits: config.exp299-v12-product-target-review-ve-fast-panel-c4.yaml
+experiment:
+  id: exp-302-v12-product-target-review-ve-holdout-c4
+  base_config: configs/config.exp299-v12-product-target-review-ve-fast-panel-c4.yaml
+  allowed_policy_changes: []
+  derived_data: [decision_cards_v22_v12_product_target, competition_products_v1, dev_prompt_holdout_v1]
+  lifecycle: diagnostic
+data:
+  fast_panel_ids_path: configs/dev_prompt_holdout_v1.json
+output:
+  dir: outputs/exp-302-v12-product-target-review-ve-holdout-c4

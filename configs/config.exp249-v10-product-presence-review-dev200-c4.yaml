@@ -1,0 +1,12 @@
+# EXP249: policy-identical dev200 extension of EXP247/248.
+inherits: config.exp247-v10-product-presence-review-fast-panel-c4.yaml
+experiment:
+  id: exp-249-v10-product-presence-review-dev200-c4
+  base_config: configs/config.exp247-v10-product-presence-review-fast-panel-c4.yaml
+  allowed_policy_changes: []
+  derived_data: [decision_cards_v10_v6_v7_scope, competition_products_v1]
+  lifecycle: diagnostic
+data:
+  fast_panel_ids_path: null
+output:
+  dir: outputs/exp-249-v10-product-presence-review-dev200-c4

@@ -192,6 +192,46 @@ class MockClient:
             }
             content = json.dumps(payload, ensure_ascii=False)
             return Completion(content=content, model=self.model, latency_seconds=0.0, usage={})
+        if "v23기간대조" in properties and "판정" in properties:
+            decision_schema = properties["판정"]["properties"]["v23"]
+            decision = (
+                0
+                if decision_schema.get("type") == "integer"
+                else {"위반여부": 0, "근거문구": None}
+            )
+            payload = {
+                "v23기간대조": {
+                    "적용계약법": "불명", "계약방식": "불명",
+                    "입찰추정가격": None, "금액구간": "불명",
+                    "적용최소일수": None, "공고일근거": None,
+                    "종료일근거": None, "종료일역할": "불명",
+                    "계산일수": None, "긴급재공고": "불명",
+                    "카드대조": "판단불가",
+                },
+                "판정": {"v23": decision},
+            }
+            content = json.dumps(payload, ensure_ascii=False)
+            return Completion(content=content, model=self.model, latency_seconds=0.0, usage={})
+        if "v19역할대조" in properties and "판정" in properties:
+            decision_schema = properties["판정"]["properties"]["v19"]
+            decision = (
+                0
+                if decision_schema.get("type") == "integer"
+                else {"위반여부": 0, "근거문구": None}
+            )
+            payload = {
+                "v19역할대조": {
+                    "후보원문": None,
+                    "서류종류": "불명",
+                    "요구행위": "불명",
+                    "기준시점": "불명",
+                    "입찰효과": "불명",
+                    "카드대조": "판단불가",
+                },
+                "판정": {"v19": decision},
+            }
+            content = json.dumps(payload, ensure_ascii=False)
+            return Completion(content=content, model=self.model, latency_seconds=0.0, usage={})
         if "v24대조" in properties and "판정" in properties:
             label_properties = properties["판정"]["properties"]
             payload = {
@@ -200,6 +240,61 @@ class MockClient:
                     item: {"위반여부": 0, "근거문구": None}
                     for item in label_properties
                 },
+            }
+            content = json.dumps(payload, ensure_ascii=False)
+            return Completion(content=content, model=self.model, latency_seconds=0.0, usage={})
+        if "v10제품검토" in properties and "판정" in properties:
+            payload = {
+                "v10제품검토": {
+                    "실제구매대상": None,
+                    "고시후보세부품명": None,
+                    "적용조건상태": "불명",
+                    "경쟁제품적용": "불명",
+                    "직접생산요구": "불명",
+                    "직접생산요구원문": None,
+                },
+                "판정": {"v10": 0},
+            }
+            content = json.dumps(payload, ensure_ascii=False)
+            return Completion(content=content, model=self.model, latency_seconds=0.0, usage={})
+        if "v12제품대상검토" in properties and "판정" in properties:
+            decision_schema = properties["판정"]["properties"]["v12"]
+            decision = (
+                0
+                if decision_schema.get("type") == "integer"
+                else {"위반여부": 0, "근거문구": None}
+            )
+            payload = {
+                "v12제품대상검토": {
+                    "실제구매대상원문": None,
+                    "고시후보세부품명": None,
+                    "고시후보출처": "불명",
+                    "구매대상관계": "불명",
+                    "적용조건상태": "불명",
+                    "경쟁제품적용": "불명",
+                    "직접생산요구원문": None,
+                    "직접생산요구역할": "불명",
+                    "허용사유": "불명",
+                    "카드대조": "판단불가",
+                },
+                "판정": {"v12": decision},
+            }
+            content = json.dumps(payload, ensure_ascii=False)
+            return Completion(content=content, model=self.model, latency_seconds=0.0, usage={})
+        if "v13제품기업검토" in properties and "판정" in properties:
+            payload = {
+                "v13제품기업검토": {
+                    "실제구매대상": None,
+                    "고시후보세부품명": None,
+                    "적용조건상태": "불명",
+                    "경쟁제품적용": "불명",
+                    "기업제한원문": None,
+                    "기업제한역할": "불명",
+                    "일반중기업참가": "불명",
+                    "허용사유": "불명",
+                    "카드대조": "판단불가",
+                },
+                "판정": {"v13": {"위반여부": 0, "근거문구": None}},
             }
             content = json.dumps(payload, ensure_ascii=False)
             return Completion(content=content, model=self.model, latency_seconds=0.0, usage={})
@@ -250,6 +345,35 @@ class MockClient:
                     item: {"위반여부": 0, "근거문구": None}
                     for item in label_properties
                 },
+            }
+            content = json.dumps(payload, ensure_ascii=False)
+            return Completion(content=content, model=self.model, latency_seconds=0.0, usage={})
+        if "v5수치대조" in properties and "판정" in properties:
+            payload = {
+                "v5수치대조": {
+                    "적용분기": "불명",
+                    "입찰추정가격": None,
+                    "적용임계값": None,
+                    "금액관계": "불명",
+                    "지역문구역할": "불명",
+                    "허용사유": "불명",
+                },
+                "판정": {"v5": {"위반여부": 0, "근거문구": None}},
+            }
+            content = json.dumps(payload, ensure_ascii=False)
+            return Completion(content=content, model=self.model, latency_seconds=0.0, usage={})
+        if "v6지역대조" in properties and "판정" in properties:
+            payload = {
+                "v6지역대조": {
+                    "금액구간": "불명",
+                    "지역참가자격원문": None,
+                    "지역문구역할": "불명",
+                    "기초지역참가제한": "불명",
+                    "계약절차": "불명",
+                    "허용요건": "불명",
+                    "카드대조": "판단불가",
+                },
+                "판정": {"v6": {"위반여부": 0, "근거문구": None}},
             }
             content = json.dumps(payload, ensure_ascii=False)
             return Completion(content=content, model=self.model, latency_seconds=0.0, usage={})

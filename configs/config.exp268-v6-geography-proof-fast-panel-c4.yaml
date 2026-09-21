@@ -1,0 +1,12 @@
+# EXP268: one-call v6 proof fields followed by model-owned v6/e6.
+inherits: config.exp265-v6-threshold-ve-fast-panel-c4.yaml
+experiment:
+  id: exp-268-v6-geography-proof-fast-panel-c4
+  base_config: configs/config.exp265-v6-threshold-ve-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.mode]
+  derived_data: [decision_cards_v17_v6_threshold, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: candidate
+output:
+  dir: outputs/exp-268-v6-geography-proof-fast-panel-c4
+prompt:
+  mode: v6_geography_proof_v1

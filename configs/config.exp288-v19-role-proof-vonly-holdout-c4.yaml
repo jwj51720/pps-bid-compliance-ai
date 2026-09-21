@@ -1,0 +1,12 @@
+# EXP288: conditional policy-identical V-only holdout for EXP286.
+inherits: config.exp286-v19-role-proof-vonly-fast-panel-c4.yaml
+experiment:
+  id: exp-288-v19-role-proof-vonly-holdout-c4
+  base_config: configs/config.exp286-v19-role-proof-vonly-fast-panel-c4.yaml
+  allowed_policy_changes: []
+  derived_data: [decision_cards_v10_v6_v7_scope, competition_products_v1, dev_prompt_holdout_v1]
+  lifecycle: diagnostic
+data:
+  fast_panel_ids_path: configs/dev_prompt_holdout_v1.json
+output:
+  dir: outputs/exp-288-v19-role-proof-vonly-holdout-c4

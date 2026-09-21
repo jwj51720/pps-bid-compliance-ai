@@ -1,0 +1,11 @@
+inherits: config.exp315-v18-absence-card-ve-fast-panel-c4.yaml
+experiment:
+  id: exp-318-v18-absence-card-ve-holdout-c4
+  base_config: configs/config.exp315-v18-absence-card-ve-fast-panel-c4.yaml
+  allowed_policy_changes: []
+  derived_data: [decision_cards_v24_v18_absence, competition_products_v1, dev_prompt_holdout_v1]
+  lifecycle: diagnostic
+data:
+  fast_panel_ids_path: configs/dev_prompt_holdout_v1.json
+output:
+  dir: outputs/exp-318-v18-absence-card-ve-holdout-c4

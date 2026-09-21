@@ -1,0 +1,12 @@
+# EXP311: policy-identical holdout for corrected-card V-only.
+inherits: config.exp308-v7-threshold-card-vonly-fast-panel-c4.yaml
+experiment:
+  id: exp-311-v7-threshold-card-vonly-holdout-c4
+  base_config: configs/config.exp308-v7-threshold-card-vonly-fast-panel-c4.yaml
+  allowed_policy_changes: []
+  derived_data: [decision_cards_v23_v7_threshold, competition_products_v1, dev_prompt_holdout_v1]
+  lifecycle: diagnostic
+data:
+  fast_panel_ids_path: configs/dev_prompt_holdout_v1.json
+output:
+  dir: outputs/exp-311-v7-threshold-card-vonly-holdout-c4

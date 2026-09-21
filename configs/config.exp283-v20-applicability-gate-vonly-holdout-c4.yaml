@@ -1,0 +1,12 @@
+# EXP283: policy-identical independent holdout for EXP282.
+inherits: config.exp282-v20-applicability-gate-vonly-fast-panel-c4.yaml
+experiment:
+  id: exp-283-v20-applicability-gate-vonly-holdout-c4
+  base_config: configs/config.exp282-v20-applicability-gate-vonly-fast-panel-c4.yaml
+  allowed_policy_changes: []
+  derived_data: [decision_cards_v20_v20_applicability_gate, competition_products_v1, dev_prompt_holdout_v1]
+  lifecycle: diagnostic
+data:
+  fast_panel_ids_path: configs/dev_prompt_holdout_v1.json
+output:
+  dir: outputs/exp-283-v20-applicability-gate-vonly-holdout-c4

@@ -1,0 +1,12 @@
+# EXP250: isolate structured v10 V-only review from the full product catalog.
+inherits: config.exp247-v10-product-presence-review-fast-panel-c4.yaml
+experiment:
+  id: exp-250-v10-product-presence-exact-code-fast-panel-c4
+  base_config: configs/config.exp247-v10-product-presence-review-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.competition_product_context_mode]
+  derived_data: [decision_cards_v10_v6_v7_scope, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-250-v10-product-presence-exact-code-fast-panel-c4
+prompt:
+  competition_product_context_mode: conditions_and_provenance_v2

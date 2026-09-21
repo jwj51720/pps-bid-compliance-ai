@@ -1,0 +1,12 @@
+# EXP336: two v30 full-source V-only drafts plus a V-only model-owned resolver.
+inherits: config.exp334-v30-vonly-fast-panel-c4.yaml
+experiment:
+  id: exp-336-v30-vonly-consensus-fast-panel-c4
+  base_config: configs/config.exp334-v30-vonly-fast-panel-c4.yaml
+  allowed_policy_changes: [staged_run, staged_run.mode]
+  derived_data: [decision_cards_v30_full_source_concordance, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-336-v30-vonly-consensus-fast-panel-c4
+staged_run:
+  mode: vonly_consensus_full_source_v1

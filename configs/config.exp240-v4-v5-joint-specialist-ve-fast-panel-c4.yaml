@@ -1,0 +1,13 @@
+# EXP240: combine the validated v4 and v5 specialists in one V/E call.
+inherits: config.exp219-v4-only-scope-fast-panel-c4.yaml
+experiment:
+  id: exp-240-v4-v5-joint-specialist-ve-fast-panel-c4
+  base_config: configs/config.exp219-v4-only-scope-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.active_items, prompt.decision_cards_path]
+  derived_data: [decision_cards_v15_v4_v5_scope_threshold, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: candidate
+output:
+  dir: outputs/exp-240-v4-v5-joint-specialist-ve-fast-panel-c4
+prompt:
+  active_items: [v4, v5]
+  decision_cards_path: data/derived/decision_cards_v15_v4_v5_scope_threshold.json

@@ -1,0 +1,11 @@
+# EXP327: V26 complete cards plus the validated one-stage after-source checklist.
+inherits: config.exp323-v26-ve-fast-panel-c4.yaml
+experiment:
+  id: exp-327-v26-relation-checklist-ve-fast-panel-c4
+  base_config: configs/config.exp323-v26-ve-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.mode]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-327-v26-relation-checklist-ve-fast-panel-c4
+prompt:
+  mode: relation_checklist_after_source_v1

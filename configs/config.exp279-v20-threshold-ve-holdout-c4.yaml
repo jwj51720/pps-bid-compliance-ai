@@ -1,0 +1,12 @@
+# EXP279: policy-identical holdout for EXP276 corrected-card V/E.
+inherits: config.exp276-v20-threshold-ve-fast-panel-c4.yaml
+experiment:
+  id: exp-279-v20-threshold-ve-holdout-c4
+  base_config: configs/config.exp276-v20-threshold-ve-fast-panel-c4.yaml
+  allowed_policy_changes: []
+  derived_data: [decision_cards_v19_v20_threshold, competition_products_v1, dev_prompt_holdout_v1]
+  lifecycle: diagnostic
+data:
+  fast_panel_ids_path: configs/dev_prompt_holdout_v1.json
+output:
+  dir: outputs/exp-279-v20-threshold-ve-holdout-c4
