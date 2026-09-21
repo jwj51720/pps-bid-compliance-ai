@@ -6,6 +6,7 @@ from src.pps_ai.decisions.v4_requirements import (
     build_v4_schema,
     build_v4_task,
     decide_v4,
+    reduce_v4_observations,
 )
 from src.pps_ai.views.v4_requirements import build_v4_requirement_view
 
@@ -108,3 +109,23 @@ def test_negative_quote_is_rejected_to_keep_evidence_contract_unambiguous() -> N
     response = _response(view, [_value(r="E", q="평가 실적")])
     _, _, diagnostic = decide_v4(response, view["candidates"], 0, "")
     assert diagnostic["reason"] == "negative_quote_must_be_null"
+
+
+def test_multiple_pack_rows_reduce_only_with_complete_candidate_coverage() -> None:
+    record = _record(["평가 실적", "공공기관 발주 실적이 참가자격이다"])
+    view = build_v4_requirement_view(record)
+    candidates = view["candidates"]
+    rows = [
+        {"source_id": "R001", **_value(r="E")},
+        {
+            "source_id": "R002",
+            **_value(r="Q", m="Y", x="I", a="N", n="N", q="공공기관 발주 실적"),
+        },
+    ]
+    value, evidence, diagnostic = reduce_v4_observations(rows, candidates, 0, "")
+    assert (value, evidence) == (1, "공공기관 발주 실적")
+    assert diagnostic["decision"] == "POSITIVE_PROOF"
+
+    value, evidence, diagnostic = reduce_v4_observations(rows[:1], candidates, 0, "")
+    assert (value, evidence) == (0, "")
+    assert diagnostic["reason"] == "merged_candidate_key_mismatch"
