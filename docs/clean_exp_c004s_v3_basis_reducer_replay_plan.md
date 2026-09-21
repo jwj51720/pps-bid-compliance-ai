@@ -50,3 +50,8 @@ metadata로 계산했으며 notice ID나 금액을 reducer rule에 넣지 않는
 예상 dev200 v3는 TP 8 / FP 1 / FN 0 / F1 `0.941176`, 예상 Macro는 약 `0.803738`이다.
 이 replay는 FP 137의 FORM role 오류를 고치지 않으며 두 결함을 섞지 않는다.
 
+## 결과
+
+예상과 정확히 일치했다. 0-call replay에서 059의 v3/e3만 변경됐고 dev200 v3 F1 `.941176`,
+Macro `.803738`이 됐다. fast/holdout은 유지됐고 forbidden changes는 0이다. 상세는
+`docs/clean_exp_c004s_v3_basis_reducer_replay_result.md`에 기록한다.

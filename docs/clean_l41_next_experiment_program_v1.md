@@ -235,6 +235,10 @@ F1은 `.363636 → .875000`, Macro는 `.779674 → .800980`이 됐다. Invalid r
 C004RR exact-task recovery로 0건이 됐다. 남은 FN 059의 SINGLE_CONTRACT gate source 감사와
 FP 137의 FORM role 검증은 서로 분리한다.
 
+EXP-C004S 결과: organizer source에 없는 SINGLE_CONTRACT gate를 제거한 0-call replay가 059
+한 건만 회수했다. Dev200 v3는 TP 8 / FP 1 / FN 0 / F1 `.941176`, Macro는 `.803738`이다.
+남은 v3 작업은 FP 137 FORM role 하나이며, 다음 큰 기대기여는 v19/v9 쪽으로 이동한다.
+
 ### v19
 
 문서 전체에서 requirement instance를 복수 추출한다. issuer/content/deadline/mandatory가 같은
