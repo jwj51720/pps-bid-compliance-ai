@@ -1,3 +1,14 @@
+# 2026-09-21 active architecture
+
+- 과거 `src/`, `scripts/`, `tests/`, `submission/`은 전부
+  `legacy/pipeline_v1_20260921/` 아래의 참고 archive다.
+- active code는 `src/pps_ai`만 import한다. legacy import, `sys.path` 연결, compatibility shim을
+  금지한다.
+- 현재 clean baseline은 hash-pinned L41 + explicit item owner 구조이며 OpenRouter dev200
+  Macro positive-F1 0.779674를 기록했다.
+- 기존 root `config.yaml`과 EXP171 submission은 역사적 상태다. clean submission adapter를
+  staged mock하기 전에는 canonical 제출 후보가 없다.
+
 # 명령
 1. 커밋하라: 커밋을 할 때는 현재 변경사항을 확인하고 책임 분리에 맞게 순차적으로 나눠서 커밋한다.
 * 이때 memo.md가 업데이트 되었거나 docs 내부의 어떤 것이 업데이트 되었다면, 우리가 합의한 내용 혹은 합의할 내용이 신규되었거나 변경된 것일 수 있으므로 그 변경사항에 맞게 AGENTS.md에도 반영할 내용은 반영한다.
@@ -29,7 +40,11 @@
 
 ## Canonical 모델 입력 형태
 
-card를 사용하는 후보 prompt는 아래 순서를 기본 형태로 쓴다. 이는 RAG가 아니다. 법령·고시·예외의 offline 검토 결과를 card에 압축해 둔 **카드 중심 판정 작업지시**다. 현재 제출 후보는 EXP171 source-first/full-final로 card v6·친화적 metadata/경쟁제품 사실·원문을 final Gemma에 함께 제공한다. `config.yaml`과 `submission/runtime_config.json`은 이 정책과 같은 staged mode를 함께 정한다. organizer-format single-call baseline과 EXP135 2-way partition은 historical control로 보존한다.
+아래는 legacy card 계열의 역사적 모델 입력 형태다. 이는 RAG가 아니다. 법령·고시·예외의
+offline 검토 결과를 card에 압축해 둔 **카드 중심 판정 작업지시**였다. EXP171은
+source-first/full-final로 card v6·친화적 metadata/경쟁제품 사실·원문을 final Gemma에 함께
+제공했다. 현재 active clean baseline의 입력 계약은
+`docs/clean_reference_l41_semantic_contract_20260921.md`를 따른다.
 
 ```text
 1. 기본 역할·판정 원칙

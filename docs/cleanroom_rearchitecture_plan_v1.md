@@ -1,7 +1,8 @@
 # PPS 판정 파이프라인 clean-room 재설계 계획 v1
 
 작성일: 2026-09-21
-상태: 설계안. 아직 기존 `src/` 이동이나 신규 구현을 시작하지 않음.
+상태: B2 frozen-reference baseline 구현 및 dev200 완료. 결과는
+`docs/clean_reference_l41_dev200_result.md` 참조.
 
 ## 1. 목적
 

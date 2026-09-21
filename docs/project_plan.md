@@ -1,3 +1,14 @@
+# 2026-09-21 clean-room 전환
+
+이 문서 아래의 초기 flat-`src`/EXP171 설명은 역사적 계획이다. 현재 active import root는
+`src/pps_ai` 하나뿐이다. 과거 `src`, `scripts`, `tests`, `submission`은
+`legacy/pipeline_v1_20260921/`로 이동했으며 참고용으로만 읽고 import하거나 실행하지 않는다.
+실행 가능한 새 기준선은 `experiments/manifests/reference_l41_openrouter_dev200_v1.json`이고,
+결과는 `docs/clean_reference_l41_dev200_result.md`에 기록했다. clean submission adapter가 아직
+없으므로 root `config.yaml`은 현재 canonical submission을 뜻하지 않는다.
+
+---
+
 맞습니다. 이전 구조는 아직 결정되지 않은 전략까지 폴더로 확정해버린 면이 있었습니다.
 
 이번에는 문서를 전체적으로 다시 정리해서, 초기에 필요한 구조만 남겼습니다. 핵심은 아래처럼 훨씬 단순합니다.
@@ -35,8 +46,8 @@ src/
 
 ## 문서 입력 전략 옵션
 
-최종 정책은 `config.yaml`의 `prompt.context_strategy`와 제출용
-`submission/runtime_config.json`이 함께 정한다. 2026-09-10 현재 제출 후보는 EXP171
+역사적으로 최종 정책은 `config.yaml`의 `prompt.context_strategy`와 제출용
+`submission/runtime_config.json`이 함께 정했다. 2026-09-10 당시 제출 후보는 EXP171
 source-first/full-final(`submit-exp171-source-first-full-final-v1`)이다. 1차는 모든
 admitted source에서 source-only fact inventory를 만들고, 2차는 카드·필요 metadata/CSV
 사실·inventory·원문을 다시 보고 V/E를 최종 판정한다. source overflow는 exact tokenizer
@@ -59,7 +70,7 @@ history로 보존한다. EXP135의 2-way v-item partition은 dev에서 개선됐
 non-absence는 원칙적으로 OR이며, 문서 간에 실적제한과 지역제한이라는 두 사실을 함께
 확인해야 하는 v8만 최소 상태 관찰을 결합하는 별도 ablation으로 둔다.
 
-어느 선택이든 `src.pipeline.BaselinePipeline`이 두 환경의 공통 구현이며, 패키징은
+당시에는 어느 선택이든 `src.pipeline.BaselinePipeline`이 두 환경의 공통 구현이었으며, 패키징은
 canonical config와 submission runtime의 관련 필드가 일치하지 않으면 실패한다.
 
 제가 보기에도 이번 방향이 더 적절합니다.
