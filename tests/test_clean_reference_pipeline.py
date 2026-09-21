@@ -110,6 +110,17 @@ def test_openrouter_retries_in_flight_budget_402(monkeypatch: pytest.MonkeyPatch
     assert result["finish_reason"] == "stop"
 
 
+def test_openrouter_uses_enforced_completion_limit_field() -> None:
+    config = load_experiment_config(MANIFEST, ROOT)
+    runtime = OpenRouterRuntime(config.provider, "not-a-real-key")
+    payload = runtime.request_payload({
+        "arm": "B", "messages": [],
+        "schema": {"type": "object", "properties": {}},
+    })
+    assert payload["max_completion_tokens"] == 1536
+    assert "max_tokens" not in payload
+
+
 def test_response_recovery_rejects_length_and_malformed() -> None:
     assert response_is_usable({
         "finish_reason": "stop", "invalid": False, "content": '{"v24": {}}',

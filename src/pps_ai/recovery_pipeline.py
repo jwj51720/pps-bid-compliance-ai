@@ -43,9 +43,14 @@ class CleanResponseRecoveryPipeline:
         self.target_arm = str(recovery["target_arm"])
         self.max_replays = int(recovery["invalid_structured_response_retry"])
         self.expected_targets = int(recovery["expected_invalid_targets"])
+        self.attempt_number = int(recovery.get("attempt_number", 1))
+        self.prior_attempt_dirs = tuple(
+            (root / str(path)).resolve()
+            for path in recovery.get("prior_attempt_dirs", [])
+        )
         if self.target_arm not in {"r10", "B", "C24"}:
             raise ValueError("unsupported recovery target arm")
-        if self.max_replays != 1:
+        if self.max_replays != 1 or self.attempt_number < 1:
             raise ValueError("EXP-C001 permits exactly one structured replay")
         required = (
             self.base_output_dir / "preflight.json",
@@ -66,6 +71,16 @@ class CleanResponseRecoveryPipeline:
             if not path.is_file():
                 raise FileNotFoundError(f"missing baseline response: {path}")
             responses[arm, notice_id] = json.loads(path.read_text(encoding="utf-8"))
+        for prior_dir in self.prior_attempt_dirs:
+            if not prior_dir.is_dir():
+                raise FileNotFoundError(f"missing prior attempt directory: {prior_dir}")
+            for path in prior_dir.glob("*/*/attempt_*.json"):
+                key = (path.parent.parent.name, path.parent.name)
+                if key not in responses:
+                    raise ValueError(f"prior attempt has foreign task: {path}")
+                candidate = json.loads(path.read_text(encoding="utf-8"))
+                if response_is_usable(candidate):
+                    responses[key] = candidate
         return responses
 
     def _verify_task_identity(self, preflight: dict[str, Any]) -> None:
@@ -109,6 +124,8 @@ class CleanResponseRecoveryPipeline:
             "target_count": len(targets),
             "normal_responses_not_selected": len(tasks) - len(targets),
             "max_replays": self.max_replays,
+            "attempt_number": self.attempt_number,
+            "prior_attempt_dirs": [str(path) for path in self.prior_attempt_dirs],
             "status": "PASS",
         }
         atomic_json(self.config.output_dir / "recovery_preflight.json", report)
@@ -123,7 +140,7 @@ class CleanResponseRecoveryPipeline:
         attempt_root = output_dir / "response_attempts"
         pending: list[tuple[str, str]] = []
         for arm, notice_id in targets:
-            path = attempt_path(attempt_root, arm, notice_id, 1)
+            path = attempt_path(attempt_root, arm, notice_id, self.attempt_number)
             if path.is_file():
                 responses[arm, notice_id] = json.loads(path.read_text(encoding="utf-8"))
             else:
@@ -133,7 +150,9 @@ class CleanResponseRecoveryPipeline:
 
         def replay(key: tuple[str, str]) -> tuple[tuple[str, str], dict[str, Any]]:
             response = runtime.complete(tasks[key])
-            write_attempt(attempt_root, key[0], key[1], 1, response)
+            write_attempt(
+                attempt_root, key[0], key[1], self.attempt_number, response,
+            )
             return key, response
 
         if pending:
@@ -186,6 +205,8 @@ class CleanResponseRecoveryPipeline:
             "base_output_dir": str(self.base_output_dir),
             "base_submission_sha256": _sha256(self.base_output_dir / "submission.csv"),
             "target_arm": self.target_arm,
+            "attempt_number": self.attempt_number,
+            "prior_attempt_dirs": [str(path) for path in self.prior_attempt_dirs],
             "targets": [notice_id for _, notice_id in targets],
             "target_count": len(targets),
             "resumed_attempts": len(targets) - len(pending),

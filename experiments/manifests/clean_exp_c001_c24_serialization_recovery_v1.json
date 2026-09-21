@@ -1,6 +1,7 @@
 {
   "schema_version": "clean-experiment-v1",
   "experiment_id": "clean-exp-c001-c24-serialization-recovery-v1",
+  "lifecycle": "audit_only_incomplete",
   "pipeline_id": "clean-c24-serialization-recovery-v1",
   "base_config": null,
   "base_manifest": "experiments/manifests/reference_l41_openrouter_dev200_v1.json",

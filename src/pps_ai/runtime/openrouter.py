@@ -29,12 +29,13 @@ class OpenRouterRuntime:
                 time.sleep(delay)
             self._last_started = time.monotonic()
 
-    def complete(self, task: dict[str, Any]) -> dict[str, Any]:
-        payload = {
+    def request_payload(self, task: dict[str, Any]) -> dict[str, Any]:
+        """Build the exact provider request without mutating semantic inputs."""
+        return {
             "model": self.config.model,
             "messages": task["messages"],
             "temperature": self.config.temperature,
-            "max_tokens": self.config.max_tokens,
+            "max_completion_tokens": self.config.max_tokens,
             "seed": self.config.seed,
             "stream": False,
             "provider": {
@@ -50,6 +51,9 @@ class OpenRouterRuntime:
                 },
             },
         }
+
+    def complete(self, task: dict[str, Any]) -> dict[str, Any]:
+        payload = self.request_payload(task)
         last_error = "unknown"
         for attempt in range(self.config.request_retries + 1):
             started = time.monotonic()
