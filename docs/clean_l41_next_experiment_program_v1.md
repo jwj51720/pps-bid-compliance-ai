@@ -71,6 +71,11 @@ M = (Σ F1_i) / 24
 
 ## 3. EXP-C001: C24 serialization-only recovery
 
+결과: **INCOMPLETE**. 9건 중 5건만 복구됐고 4건은 재실패했다. 또한 provider가 deprecated
+`max_tokens=1536`을 무시해 8,192 completion tokens를 생성한 사실을 확인했다. 상세 결과는
+`docs/clean_exp_c001_c24_serialization_recovery_result.md`에 기록한다. canonical baseline에는
+반영하지 않는다.
+
 ### 가설
 
 C24의 9개 `finish_reason=length`는 법률판정 실패가 아니라 JSON value 앞 whitespace가 1,536
