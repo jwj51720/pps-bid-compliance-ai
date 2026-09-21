@@ -277,12 +277,13 @@ result.md
 
 ## 8. 즉시 실행 순서
 
-1. 이 계획을 커밋한다.
-2. 새 active code에 append-only response attempt ledger와 invalid-response retry를 구현한다.
-3. EXP-C001 manifest, tests, 9건 exact replay를 실행하고 결과를 커밋한다.
-4. v24 error ledger를 네 축별로 생성하되 label은 평가에만 사용하고 extractor rule 생성에는
-   직접 사용하지 않는다.
-5. EXP-C002의 native view/schema/reducer를 구현하고 mock/rendered audit를 통과시킨다.
-6. fast20, holdout20 gate를 통과한 경우에만 dev200을 실행한다.
+1. EXP-C004의 오류 panel과 organizer truth condition을 확정한다.
+2. `docs/clean_exp_c004_v3_monetary_relation_plan.md`의 source view/parser/reducer를 clean native
+   module로 구현한다.
+3. dev200 label-blind coverage, rendered-input/semantic-contract, mock과 active preflight를 완료한다.
+4. fast20 gate를 통과한 경우에만 holdout20, 그 뒤에만 dev200을 실행한다.
+
+EXP-C004는 금액 관계만 확정하며 규모·양 조건은 불명 시 baseline으로 fallback한다. v3를 r10에서
+제거하는 C003과 결합하지 않는다.
 
 실패한 단계는 그대로 기록하고 다음 단계로 자동 진행하지 않는다.
