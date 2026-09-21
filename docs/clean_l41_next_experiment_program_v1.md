@@ -204,6 +204,10 @@ Macro는 약 `0.790480`이다.
 
 ## 5. EXP-C003: r10 dead-output removal
 
+우선순위 갱신: C002R 계열에서 v24 operational truth 자체가 불명확함을 확인했으므로 추가 v24
+유료 호출은 중단한다. 로컬 품질 개선의 다음 owner 실험은 아래 v3 relation을 EXP-C004로 먼저
+설계한다. C003은 runtime/attention ablation으로 보존하며 C004와 결합하지 않는다.
+
 ### 가설
 
 r10이 출력하는 v19·v20·v24는 final owner가 각각 B19·Python·C24라 사용되지 않는다. 세 출력을

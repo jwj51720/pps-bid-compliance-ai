@@ -2,6 +2,10 @@
 
 작성일: 2026-09-21
 
+결과: **one-record probe 실패**. whitespace loop는 제거돼 `finish_reason=stop`, completion 416이었지만
+exact duplicate와 unit/role semantic 오류로 local contract가 fallback했다. fast20 전체는 실행하지
+않았다. 상세 결과는 `docs/clean_exp_c002rb_v24_serialization_probe_result.md`에 기록한다.
+
 ## 목적
 
 C002R fast20의 유일한 fallback은 response가 첫 `value_won` 앞에서 whitespace를 반복해
