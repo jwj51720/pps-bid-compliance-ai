@@ -79,3 +79,10 @@ observation을 candidate-complete array로 되돌린 뒤 동일 reducer에 전�
   - schema는 모든 candidate key를 `required`로 선언하고 extra key를 금지한다.
 
 따라서 2건 유료 serialization probe를 실행할 수 있다.
+
+## 결과
+
+2건 모두 PASS했다. required candidate keys가 정확히 한 번씩 반환됐고 local valid 2/2,
+C004 final v3/e3 동일 2/2였다. 상세는
+`docs/clean_exp_c004r_v3_keyed_serialization_probe_result.md`에 기록한다. 다음은 별도 full-fast
+manifest로 10건 전체를 재실행한다.
