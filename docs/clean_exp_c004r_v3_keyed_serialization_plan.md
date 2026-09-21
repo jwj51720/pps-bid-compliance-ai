@@ -113,3 +113,11 @@ PASS했다. 동일 manifest의 holdout20은 41/41 documents inspected, 후보 �
 tokens max 1,883, mock PASS이며 rendered positive/attachment/largest를 읽었다. 상세는
 `docs/clean_exp_c004r_v3_keyed_fast20_result.md`에 기록한다. Independent holdout20 3호출을
 실행할 수 있다.
+
+## Holdout 결과와 dev200 승인
+
+Holdout20은 v3 TP 1 / FP 0 / FN 0 / F1 1.0, invalid response 0, 다른 23개 변화 0으로
+PASS했다. Dev200 keyed preflight는 374/374 documents inspected, 후보 공고 61건/후보 100개,
+specialist 61 calls, token max 3,720, 200-row mock PASS다. 상세는
+`docs/clean_exp_c004r_v3_keyed_holdout20_result.md`에 기록한다. 동일 manifest로 dev200을
+실행할 수 있다.
