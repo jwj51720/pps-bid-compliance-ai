@@ -131,15 +131,15 @@ def _chunks() -> dict[str, Chunk]:
 
     for number in ("12", "21", "43"):
         add(_chunk_article(f"national_decree_{number}", "국가계약법 시행령", national_decree, number))
-    for number in ("17", "25"):
+    for number in ("17", "24", "25"):
         add(_chunk_article(f"national_rule_{number}", "국가계약법 시행규칙", national_rule, number))
     for number in ("13", "20", "35", "43"):
         add(_chunk_article(f"local_decree_{number}", "지방계약법 시행령", local_decree, number))
     for number in ("17", "24", "25"):
         add(_chunk_article(f"local_rule_{number}", "지방계약법 시행규칙", local_rule, number))
-    for number in ("7", "9"):
+    for number in ("7", "7조의2", "9"):
         add(_chunk_article(f"sme_law_{number}", "중소기업제품 구매촉진 및 판로지원에 관한 법률", sme_law, number))
-    for number in ("2", "2조의2", "2조의3"):
+    for number in ("2", "2조의2", "2조의3", "7", "10"):
         add(_chunk_article(f"sme_decree_{number}", "중소기업제품 구매촉진 및 판로지원에 관한 법률 시행령", sme_decree, number))
     add(_chunk_article("sw_law_48", "소프트웨어 진흥법", "소프트웨어 진흥법.txt", "48"))
     add(
@@ -177,13 +177,16 @@ def _chunks() -> dict[str, Chunk]:
 
 
 COMMON = (
-    "sme_law_7", "sme_law_9", "sme_decree_2", "sme_decree_2조의2",
-    "sme_decree_2조의3", "sw_law_48", "price_notice",
+    "sme_law_7", "sme_law_7조의2", "sme_law_9", "sme_decree_2",
+    "sme_decree_2조의2", "sme_decree_2조의3", "sme_decree_7",
+    "sme_decree_10",
+    "sw_law_48", "price_notice",
     "sw_guideline_articles_2_3", "sw_guideline_appendix_1",
 )
 NATIONAL = (
     "national_decree_12", "national_decree_21", "national_decree_43",
-    "national_rule_17", "national_rule_25", "government_guide_chapter_2",
+    "national_rule_17", "national_rule_24", "national_rule_25",
+    "government_guide_chapter_2",
     "national_joint_article_9",
 )
 LOCAL = (
@@ -205,24 +208,24 @@ BUNDLE_KEYS = {
 # intentionally the same audited mapping rendered in docs/legal_reference_mapping.md.
 ITEM_KEYS = {
     "national": {
-        "v1": ("national_decree_12", "national_decree_21"), "v2": ("national_decree_21", "national_rule_25"),
+        "v1": ("national_decree_12", "national_decree_21"), "v2": ("national_decree_21", "national_rule_25", "price_notice"),
         "v3": ("national_decree_21", "national_rule_25", "government_guide_chapter_2"), "v4": ("government_guide_chapter_2",),
-        "v5": ("national_decree_21", "price_notice"), "v6": ("national_rule_25",), "v7": ("national_rule_25",), "v8": ("national_rule_25",),
-        "v9": ("government_guide_chapter_2",), "v10": ("sme_law_9",), "v11": ("national_decree_21", "sme_law_7"),
-        "v12": ("national_decree_21",), "v13": ("national_decree_21", "sme_law_7"),
-        "v14": ("national_decree_21", "sme_decree_2조의2", "sme_decree_2조의3"), "v15": ("national_decree_21", "sme_decree_2조의2", "sme_decree_2조의3"),
-        "v16": ("national_decree_21", "sme_decree_2조의2", "sme_decree_2조의3"), "v17": ("national_decree_21", "sme_decree_2조의2", "sme_decree_2조의3"),
-        "v18": ("national_decree_21", "sme_decree_2조의2", "sme_decree_2조의3"), "v19": ("national_decree_12", "national_rule_17", "government_guide_chapter_2"),
+        "v5": ("national_decree_21", "national_rule_24", "price_notice"), "v6": ("national_decree_21", "national_rule_24", "national_rule_25", "price_notice"), "v7": ("national_decree_21", "national_rule_24", "national_rule_25", "price_notice"), "v8": ("national_rule_25",),
+        "v9": ("government_guide_chapter_2",), "v10": ("sme_law_9", "sme_decree_10"), "v11": ("national_decree_21", "sme_law_7", "sme_decree_7"),
+        "v12": ("national_decree_21", "sme_law_9", "sme_decree_10"), "v13": ("national_decree_21", "sme_law_7조의2"),
+        "v14": ("national_decree_21", "sme_decree_2조의2", "sme_decree_2조의3", "price_notice"), "v15": ("national_decree_21", "sme_decree_2조의2", "sme_decree_2조의3", "price_notice"),
+        "v16": ("national_decree_21", "sme_decree_2조의2", "sme_decree_2조의3", "price_notice"), "v17": ("national_decree_21", "sme_decree_2조의2", "sme_decree_2조의3", "price_notice"),
+        "v18": ("national_decree_21", "sme_decree_2조의2", "sme_decree_2조의3", "price_notice"), "v19": ("national_decree_12", "national_rule_17", "government_guide_chapter_2"),
         "v20": ("sw_law_48", "sw_guideline_articles_2_3", "sw_guideline_appendix_1"), "v21": ("national_joint_article_9",), "v22": ("national_decree_43",), "v23": (), "v24": (),
     },
     "local": {
-        "v1": ("local_decree_13", "local_decree_20"), "v2": ("local_decree_20", "local_rule_25", "local_guide_c1_item_7"),
+        "v1": ("local_decree_13", "local_decree_20"), "v2": ("local_decree_20", "local_rule_25", "local_guide_c1_item_7", "price_notice"),
         "v3": ("local_decree_20", "local_rule_25"), "v4": ("local_guide_c1_item_7",), "v5": ("local_decree_20", "local_rule_24", "price_notice"),
-        "v6": ("local_rule_25", "local_guide_small_contract"), "v7": ("local_rule_25", "local_guide_small_contract"), "v8": ("local_rule_25", "local_guide_small_contract"),
-        "v9": ("local_guide_c1_item_7",), "v10": ("sme_law_9",), "v11": ("local_decree_20", "sme_law_7"), "v12": ("local_decree_20",), "v13": ("local_decree_20", "sme_law_7"),
-        "v14": ("local_decree_20", "sme_decree_2조의2", "sme_decree_2조의3"), "v15": ("local_decree_20", "sme_decree_2조의2", "sme_decree_2조의3"),
-        "v16": ("local_decree_20", "sme_decree_2조의2", "sme_decree_2조의3"), "v17": ("local_decree_20", "sme_decree_2조의2", "sme_decree_2조의3"),
-        "v18": ("local_decree_20", "sme_decree_2조의2", "sme_decree_2조의3"), "v19": ("local_decree_13", "local_rule_17", "local_guide_c1_item_7"),
+        "v6": ("local_decree_20", "local_rule_24", "local_rule_25", "local_guide_small_contract", "price_notice"), "v7": ("local_decree_20", "local_rule_24", "local_rule_25", "local_guide_small_contract", "price_notice"), "v8": ("local_rule_25", "local_guide_small_contract"),
+        "v9": ("local_guide_c1_item_7",), "v10": ("sme_law_9", "sme_decree_10"), "v11": ("local_decree_20", "sme_law_7", "sme_decree_7"), "v12": ("local_decree_20", "sme_law_9", "sme_decree_10"), "v13": ("local_decree_20", "sme_law_7조의2"),
+        "v14": ("local_decree_20", "sme_decree_2조의2", "sme_decree_2조의3", "price_notice"), "v15": ("local_decree_20", "sme_decree_2조의2", "sme_decree_2조의3", "price_notice"),
+        "v16": ("local_decree_20", "sme_decree_2조의2", "sme_decree_2조의3", "price_notice"), "v17": ("local_decree_20", "sme_decree_2조의2", "sme_decree_2조의3", "price_notice"),
+        "v18": ("local_decree_20", "sme_decree_2조의2", "sme_decree_2조의3", "price_notice"), "v19": ("local_decree_13", "local_rule_17", "local_guide_c1_item_7"),
         "v20": ("sw_law_48", "sw_guideline_articles_2_3", "sw_guideline_appendix_1"), "v21": ("local_guide_joint",), "v22": ("local_decree_43",), "v23": ("local_decree_35", "local_award_ch7_s3"), "v24": (),
     },
 }

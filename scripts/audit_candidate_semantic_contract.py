@@ -28,7 +28,9 @@ from scripts.audit_semantic_input_matrix import (  # noqa: E402
 )
 from scripts.inspect_prompt import build_pipeline_for_preview  # noqa: E402
 from scripts.inspect_grouped_prompt import build_grouped_previews  # noqa: E402
+from scripts.profile_context_admission import _token_counter  # noqa: E402
 from src.config import load_config  # noqa: E402
+from src.context_budget import pack_contexts_to_token_budget  # noqa: E402
 from src.data import load_decision_cards, load_item_table, load_records  # noqa: E402
 from src.prompt import (  # noqa: E402
     _render_card_text,
@@ -55,6 +57,7 @@ from src.schema import (  # noqa: E402
     ITEMS,
     PROCEDURE_FACT_FIELDS,
     TIMELINE_FACT_ROLES,
+    V6_GEOGRAPHY_FACT_FIELDS,
 )
 
 
@@ -78,23 +81,24 @@ def rendered_document_types(message: str) -> set[str]:
     }
 
 
-def final_messages_for_record(pipeline: Any, record: dict[str, Any], staged_mode: str | None) -> list[dict[str, str]]:
-    """Build the final-stage messages without pretending a first-stage result exists."""
+def final_messages_for_record(
+    pipeline: Any, record: dict[str, Any], staged_mode: str | None
+) -> list[list[dict[str, str]]]:
+    """Build every tokenizer-admitted final message without provider output."""
     pipeline, _ = pipeline.effective_pipeline_for_record(record)
     contexts = pipeline.contexts_for_record(record)
-    if len(contexts) != 1:
-        raise ValueError(
-            f"candidate semantic audit requires one final context; {record['id']} yielded {len(contexts)}"
-        )
-    messages = pipeline.messages_for_context(record, contexts[0])
+    message_sets = [pipeline.messages_for_context(record, context) for context in contexts]
     if staged_mode == "locator_then_final_v1":
         locator_items = tuple(item for item in pipeline.active_items if item not in ABSENCE_ITEMS)
         # Missing locator text is deliberately non-authoritative.  This is the
         # safest exact preview of the final-stage prompt independent of model output.
-        messages = append_locator_navigation(
-            messages, {item: "" for item in locator_items}, locator_items
-        )
-    return messages
+        message_sets = [
+            append_locator_navigation(
+                messages, {item: "" for item in locator_items}, locator_items
+            )
+            for messages in message_sets
+        ]
+    return message_sets
 
 
 def _span(text: str, needle: str) -> dict[str, int] | None:
@@ -119,7 +123,14 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
     records = load_records(config.data.input_path)
     by_id = {record["id"]: record for record in records}
     grouped = bool(config.raw.get("grouped_run"))
-    pipeline = None if grouped else build_pipeline_for_preview(config)
+    pipeline = None
+    if not grouped:
+        from transformers import AutoTokenizer
+
+        tokenizer = AutoTokenizer.from_pretrained(
+            config.llm.tokenizer_source or config.llm.model
+        )
+        pipeline = build_pipeline_for_preview(config, count_tokens=_token_counter(tokenizer))
     active_items = tuple(config.active_items or ITEMS)
     staged_mode = config.staged_run.mode if config.staged_run else None
     policy_failures: list[str] = []
@@ -140,6 +151,7 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
     rendered_dir = output_dir / "rendered_inputs"
     rendered_dir.mkdir(exist_ok=True)
     sample_messages: dict[str, list[dict[str, str]]] = {}
+    sample_final_message_sets: dict[str, list[list[dict[str, str]]]] = {}
     sample_active_items: dict[str, tuple[str, ...]] = {}
     sample_gated_items: dict[str, dict[str, str]] = {}
     source_stage_messages: dict[str, list[list[dict[str, str]]]] = {}
@@ -179,6 +191,7 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                 "fact_inventory_full_final_v23_proof_specialist_v1",
                 "fact_inventory_full_final_source_only_v1",
                 "procedure_inventory_full_final_v1",
+                "v6_geography_inventory_full_final_v1",
             }:
                 visible = pipeline._visible_record(by_id[record_id])
                 source_stage_messages[record_id] = [
@@ -187,7 +200,13 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                             (
                                 build_procedure_fact_system_prompt()
                                 if staged_mode == "procedure_inventory_full_final_v1"
-                                else build_fact_inventory_system_prompt()
+                                else build_fact_inventory_system_prompt(
+                                    categories=(
+                                        V6_GEOGRAPHY_FACT_FIELDS
+                                        if staged_mode == "v6_geography_inventory_full_final_v1"
+                                        else FACT_INVENTORY_CATEGORIES
+                                    )
+                                )
                             ),
                             context.text if hasattr(context, "text") else (
                                 context if context is not None
@@ -198,6 +217,7 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                         if staged_mode in {
                             "procedure_inventory_full_final_v1",
                             "fact_inventory_full_final_source_only_v1",
+                            "v6_geography_inventory_full_final_v1",
                         }
                         else build_messages(
                             visible,
@@ -222,7 +242,7 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                     for context in pipeline.contexts_for_record(by_id[record_id])
                 ]
                 final_context = (
-                    None if staged_mode in {"fact_inventory_full_final_v1", "fact_inventory_full_final_v2", "fact_inventory_full_final_v3", "fact_inventory_full_final_v4", "fact_inventory_full_final_timeline_v23", "fact_inventory_full_final_v23_specialist_v1", "fact_inventory_full_final_v23_proof_specialist_v1", "fact_inventory_full_final_source_only_v1", "procedure_inventory_full_final_v1"}
+                    None if staged_mode in {"fact_inventory_full_final_v1", "fact_inventory_full_final_v2", "fact_inventory_full_final_v3", "fact_inventory_full_final_v4", "fact_inventory_full_final_timeline_v23", "fact_inventory_full_final_v23_specialist_v1", "fact_inventory_full_final_v23_proof_specialist_v1", "fact_inventory_full_final_source_only_v1", "procedure_inventory_full_final_v1", "v6_geography_inventory_full_final_v1"}
                     else build_official_baseline_context(visible, 4000)
                 )
                 messages = (
@@ -238,6 +258,8 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                             for category in (
                                 FACT_INVENTORY_CATEGORIES_V2
                                 if staged_mode == "fact_inventory_full_final_v4"
+                                else V6_GEOGRAPHY_FACT_FIELDS
+                                if staged_mode == "v6_geography_inventory_full_final_v1"
                                 else FACT_INVENTORY_CATEGORIES
                             )
                         },
@@ -249,6 +271,8 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                         categories=(
                             FACT_INVENTORY_CATEGORIES_V2
                             if staged_mode == "fact_inventory_full_final_v4"
+                            else V6_GEOGRAPHY_FACT_FIELDS
+                            if staged_mode == "v6_geography_inventory_full_final_v1"
                             else FACT_INVENTORY_CATEGORIES
                         ),
                     )
@@ -296,11 +320,30 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                     draft_pipeline.messages_for_context(by_id[record_id], context)
                     for context in draft_pipeline.contexts_for_record(by_id[record_id])
                 ]
-                messages = append_untrusted_review_draft(
-                    pipeline.messages_for_context(by_id[record_id], None),
-                    {item: {"위반여부": 0, "근거문구": None} for item in ITEMS},
-                    ITEMS,
+                zero_draft = {
+                    item: {"위반여부": 0, "근거문구": None} for item in ITEMS
+                }
+
+                def draft_final_messages(context):
+                    return append_untrusted_review_draft(
+                        pipeline.messages_for_context(by_id[record_id], context),
+                        zero_draft,
+                        ITEMS,
+                    )
+
+                final_contexts = pack_contexts_to_token_budget(
+                    pipeline._visible_record(by_id[record_id]),
+                    pipeline.system_prompt_for_record(by_id[record_id]),
+                    pipeline.count_tokens,
+                    pipeline.prompt_budget_tokens,
+                    pipeline.notice_anchor_chars,
+                    message_builder=draft_final_messages,
                 )
+                final_message_sets = [
+                    draft_final_messages(context) for context in final_contexts
+                ]
+                messages = final_message_sets[0]
+                sample_final_message_sets[record_id] = final_message_sets
             elif staged_mode == "vonly_consensus_full_source_v1":
                 draft_pipeline = pipeline._labels_only_draft_pipeline()
                 source_stage_messages[record_id] = [
@@ -308,10 +351,27 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                     for context in draft_pipeline.contexts_for_record(by_id[record_id])
                 ]
                 zero_draft = {item: {"위반여부": 0, "근거문구": None} for item in ITEMS}
-                messages = append_untrusted_vonly_drafts(
-                    pipeline.messages_for_context(by_id[record_id], None),
-                    (zero_draft, zero_draft), ITEMS,
+
+                def consensus_final_messages(context):
+                    return append_untrusted_vonly_drafts(
+                        draft_pipeline.messages_for_context(by_id[record_id], context),
+                        (zero_draft, zero_draft),
+                        ITEMS,
+                    )
+
+                final_contexts = pack_contexts_to_token_budget(
+                    draft_pipeline._visible_record(by_id[record_id]),
+                    draft_pipeline.system_prompt_for_record(by_id[record_id]),
+                    draft_pipeline.count_tokens,
+                    draft_pipeline.prompt_budget_tokens,
+                    draft_pipeline.notice_anchor_chars,
+                    message_builder=consensus_final_messages,
                 )
+                final_message_sets = [
+                    consensus_final_messages(context) for context in final_contexts
+                ]
+                messages = final_message_sets[0]
+                sample_final_message_sets[record_id] = final_message_sets
             elif staged_mode == "item_inventory_full_final_v1":
                 item_system = build_item_fact_system_prompt(pipeline._item_table)
                 source_stage_messages[record_id] = [
@@ -331,16 +391,30 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                     {item: () for item in ITEMS},
                 )
             else:
-                messages = final_messages_for_record(pipeline, by_id[record_id], staged_mode)
+                final_message_sets = final_messages_for_record(
+                    pipeline, by_id[record_id], staged_mode
+                )
+                messages = final_message_sets[0]
+                sample_final_message_sets[record_id] = final_message_sets
+            if record_id not in sample_final_message_sets:
+                sample_final_message_sets[record_id] = [messages]
             sample_messages[record_id] = messages
             rendered = (
                 "# Exact rendered final input: " + record_id + "\n\n"
-                "Offline admission preview; no provider call.\n\n"
-                "## System\n\n```text\n" + messages[0]["content"] + "\n```\n\n"
-                "## User\n\n```text\n" + messages[1]["content"] + "\n```\n"
-                + ("\n## Navigation message\n\n```text\n" + messages[2]["content"] + "\n```\n"
-                   if len(messages) > 2 else "")
+                "Offline admission preview; no provider call.\n"
             )
+            final_sets = sample_final_message_sets[record_id]
+            for context_index, context_messages in enumerate(final_sets, 1):
+                suffix = f" — context {context_index}/{len(final_sets)}" if len(final_sets) > 1 else ""
+                rendered += (
+                    f"\n## System{suffix}\n\n```text\n{context_messages[0]['content']}\n```\n"
+                    f"\n## User{suffix}\n\n```text\n{context_messages[1]['content']}\n```\n"
+                )
+                if len(context_messages) > 2:
+                    rendered += (
+                        f"\n## Navigation message{suffix}\n\n```text\n"
+                        f"{context_messages[2]['content']}\n```\n"
+                    )
             if staged_mode in {
                 "fact_inventory_then_final_v1",
                 "fact_inventory_full_final_v1",
@@ -355,6 +429,7 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                 "vonly_draft_full_final_v1",
                 "vonly_consensus_full_source_v1",
                 "item_inventory_full_final_v1",
+                "v6_geography_inventory_full_final_v1",
             }:
                 rendered += "\n## Source fact-collection messages\n"
                 for index, source_messages in enumerate(source_stage_messages[record_id], 1):
@@ -440,6 +515,40 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
             heading in user_messages
             for heading in ("[대회 제공 경쟁제품 고시 확인]", "# 대회 제공 경쟁제품 고시 확인")
         )
+        final_context_checks: dict[str, list[dict[str, Any]]] = {}
+        if not grouped:
+            for record_id in active_review_ids:
+                final_context_checks[record_id] = []
+                for context_index, context_messages in enumerate(
+                    sample_final_message_sets[record_id], 1
+                ):
+                    context_system = context_messages[0]["content"]
+                    context_user = "\n".join(
+                        message["content"] for message in context_messages[1:]
+                    )
+                    final_context_checks[record_id].append({
+                        "context_index": context_index,
+                        "card_present": bool(
+                            rendered_card_text
+                            and _span(context_system, rendered_card_text)
+                        ),
+                        "metadata_fields_present": {
+                            field: metadata_field_span(
+                                context_user, field, config.metadata_style
+                            ) is not None
+                            for field in fields
+                        },
+                        "csv_fact_present": (
+                            not csv_required
+                            or any(
+                                heading in context_user
+                                for heading in (
+                                    "[대회 제공 경쟁제품 고시 확인]",
+                                    "# 대회 제공 경쟁제품 고시 확인",
+                                )
+                            )
+                        ),
+                    })
         exact_types, scope_error = document_types_from_scope(definition["required_notice_scope"])
         fixture_scope: dict[str, Any] = {}
         for record_id in review_ids:
@@ -456,7 +565,11 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                 )
             else:
                 messages_for_item = sample_messages[record_id]
-                rendered_text = "\n".join(message["content"] for message in messages_for_item[1:])
+                rendered_text = "\n".join(
+                    message["content"]
+                    for message_set in sample_final_message_sets[record_id]
+                    for message in message_set[1:]
+                )
                 if staged_mode in {
                     "fact_inventory_then_final_v1",
                     "fact_inventory_full_final_v1",
@@ -471,6 +584,7 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
                     "vonly_draft_full_final_v1",
                     "vonly_consensus_full_source_v1",
                     "item_inventory_full_final_v1",
+                    "v6_geography_inventory_full_final_v1",
                 }:
                     rendered_text = "\n".join(
                         message[1]["content"] for message in source_stage_messages[record_id]
@@ -489,6 +603,24 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
             failures.append("required organizer metadata field is absent from final user message")
         if csv_required and not csv_supplied:
             failures.append("required organizer CSV fact is not supplied")
+        if any(
+            not check["card_present"]
+            for checks in final_context_checks.values()
+            for check in checks
+        ):
+            failures.append("decision card is absent from at least one final context")
+        if any(
+            not all(check["metadata_fields_present"].values())
+            for checks in final_context_checks.values()
+            for check in checks
+        ):
+            failures.append("required metadata is absent from at least one final context")
+        if any(
+            not check["csv_fact_present"]
+            for checks in final_context_checks.values()
+            for check in checks
+        ):
+            failures.append("required organizer CSV fact is absent from at least one final context")
         if scope_error:
             failures.append(scope_error)
         if any(
@@ -503,15 +635,20 @@ def audit(config_path: Path, contract_path: Path, ledger_path: Path, output_dir:
             "csv_fact_supplied": csv_supplied,
             "required_notice_scope": definition["required_notice_scope"],
             "scope_fixture_checks": fixture_scope,
+            "final_context_checks": final_context_checks,
             "ledger_provenance": ledger[item],
             "status": "pass" if not failures else "fail",
             "failures": failures,
         })
 
     report = {
-        "audit_version": 1,
+        "audit_version": 2,
         "config": str(config_path),
-        "execution": "grouped final" if grouped else "single final",
+        "execution": "grouped final" if grouped else "exact-tokenizer adaptive final",
+        "final_context_counts": {
+            record_id: len(message_sets)
+            for record_id, message_sets in sample_final_message_sets.items()
+        },
         "staged_mode": staged_mode,
         "active_items": list(active_items),
         "active_items_by_fixture": {
