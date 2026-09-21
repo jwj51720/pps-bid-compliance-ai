@@ -6,6 +6,11 @@ from src.pps_ai.decisions.v24_multi_observation import decide_v24_multi
 from src.pps_ai.decisions.v24_code_provenance_v21 import (
     decide_v24_code_provenance_v21,
 )
+from src.pps_ai.decisions.v24_serialization_v22 import (
+    adapt_v22_response,
+    build_v24_serialization_schema,
+    decide_v24_serialization_v22,
+)
 from src.pps_ai.views.v24_multi_observation import build_v24_multi_observation_view
 
 
@@ -204,3 +209,62 @@ def test_v21_keeps_exact_code_when_name_surface_is_not_in_source() -> None:
     assert row["valid_industry_codes"] == ["1169", "1340"]
     assert row["valid_industry_names"] == []
     assert row["rejected_industry_codes"] == ["9999"]
+
+
+def test_v22_schema_uses_axis_source_enums_and_narrow_atomic_types() -> None:
+    record = _record([
+        "기초금액은 110,000,000원이고 계약방법은 일반경쟁이며 "
+        "본점 소재지는 경기도이고 업종코드 1169로 등록한 업체여야 합니다."
+    ])
+    view = build_v24_multi_observation_view(record)
+    schema = build_v24_serialization_schema(view)
+    properties = schema["properties"]
+    assert properties["amount"]["maxItems"] == 4
+    amount_item = properties["amount"]["items"]["properties"]
+    assert amount_item["value_won"]["type"] == ["integer", "null"]
+    assert amount_item["source_id"]["enum"] == [
+        candidate.source_id for candidate in view["candidates"]["amount"]
+    ]
+    industry_item = properties["industry"]["items"]["properties"]
+    assert industry_item["industry_codes"]["items"]["pattern"] == "^[0-9]{4}$"
+
+    no_region = _record(["기초금액은 110,000,000원입니다."])
+    no_region_view = build_v24_multi_observation_view(no_region)
+    no_region_schema = build_v24_serialization_schema(no_region_view)
+    assert no_region_schema["properties"]["region"]["maxItems"] == 0
+
+
+def test_v22_adapter_preserves_integer_amount_semantics() -> None:
+    record = _record(["기초금액은 110,000,000원입니다."])
+    view = build_v24_multi_observation_view(record)
+    source = view["candidates"]["amount"][0].source_id
+    response = _response(amount=[{
+        "source_id": source,
+        "role": "BUDGET_TOTAL",
+        "value_won": 110000000,
+    }])
+    adapted = adapt_v22_response(response, view)
+    assert adapted is not None
+    assert json.loads(adapted["content"])["amount"][0]["value_won"] == "110000000"
+    value, _, diagnostic = decide_v24_serialization_v22(record, view, response)
+    assert value == 0
+    assert not diagnostic["fallback"]
+
+
+def test_v22_rejects_duplicate_observation_or_cross_axis_source() -> None:
+    record = _record(["계약방법은 일반경쟁이며 본점 소재지는 경기도입니다."])
+    view = build_v24_multi_observation_view(record)
+    contract_source = view["candidates"]["contract"][0].source_id
+    row = {
+        "source_id": contract_source,
+        "role": "COMPETITION_METHOD",
+        "competition_method": "GENERAL",
+    }
+    duplicate = _response(contract=[row, row])
+    assert adapt_v22_response(duplicate, view) is None
+    cross_axis = _response(region=[{
+        "source_id": contract_source,
+        "role": "BIDDER_LOCATION",
+        "regions": ["경기도"],
+    }])
+    assert adapt_v22_response(cross_axis, view) is None
