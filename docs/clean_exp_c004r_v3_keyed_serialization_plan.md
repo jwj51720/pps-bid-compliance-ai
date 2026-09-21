@@ -63,3 +63,19 @@ observation을 candidate-complete array로 되돌린 뒤 동일 reducer에 전�
 
 이 probe는 fast20 성능 결과가 아니며, 두 건 성공만으로 holdout에 진입하지 않는다.
 
+## 유료 실행 전 검증
+
+- active tests: 40 passed
+- manifest diff: undeclared 0, unused declaration 0, PASS
+- exact tokenizer:
+  - PPS-DEV-165: 2,889 tokens, required keys M01/M02/M03
+  - PPS-DEV-169: 2,201 tokens, required keys M01/M02
+- rendered inputs:
+  `outputs/clean-exp-c004r-v3-keyed-serialization-probe-v11/rendered_inputs/`
+- human review:
+  - 두 user message는 C004와 byte-identical이다.
+  - system의 유일한 의미 차이는 배열 source-id 지시를 keyed-object 지시로 바꾼 것이다.
+  - role, basis, mandatory, exact amount surface, strict threshold, source candidates는 동일하다.
+  - schema는 모든 candidate key를 `required`로 선언하고 extra key를 금지한다.
+
+따라서 2건 유료 serialization probe를 실행할 수 있다.
