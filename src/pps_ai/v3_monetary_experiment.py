@@ -12,10 +12,10 @@ from typing import Any
 
 from .config import CleanExperimentConfig
 from .decisions.v3_monetary import (
-    build_v3_monetary_schema,
     build_v3_monetary_task,
     decide_v3_monetary,
 )
+from .decisions.v3_keyed_serialization import build_v3_keyed_task, decide_v3_keyed
 from .evaluate import evaluate_rows_for_ids
 from .evidence.validation import clean_final_rows
 from .export import write_submission_csv
@@ -48,17 +48,22 @@ def _cohort_ids(config: CleanExperimentConfig, cohort: str) -> set[str]:
     return set(json.loads(path.read_text(encoding="utf-8"))["ids"])
 
 
-def _mock_response(view: dict[str, Any]) -> dict[str, Any]:
-    observations = [
-        {
-            "source_id": candidate.source_id,
+def _mock_response(view: dict[str, Any], serialization: str) -> dict[str, Any]:
+    values = {
+        candidate.source_id: {
             "role": "OTHER",
             "requirement_basis": "UNKNOWN",
             "mandatory": "UNKNOWN",
             "amount_surface": None,
         }
         for candidate in view["candidates"]
-    ]
+    }
+    if serialization == "candidate-keyed-object-v11":
+        observations: Any = values
+    else:
+        observations = [
+            {"source_id": source_id, **value} for source_id, value in values.items()
+        ]
     return {
         "content": json.dumps({"observations": observations}, ensure_ascii=False),
         "finish_reason": "stop",
@@ -96,6 +101,14 @@ class V3MonetaryExperiment:
         ).resolve()
         if not (self.base_output_dir / "submission.csv").is_file():
             raise FileNotFoundError("baseline submission is required")
+        serialization = config.raw.get("v3_serialization") or {
+            "module": "source-id-array-v1",
+        }
+        if not isinstance(serialization, dict):
+            raise ValueError("v3 serialization policy must be an object")
+        self.serialization = str(serialization.get("module"))
+        if self.serialization not in {"source-id-array-v1", "candidate-keyed-object-v11"}:
+            raise ValueError("unsupported v3 serialization policy")
         self.review_notice_ids = tuple(str(value) for value in policy["review_notice_ids"])
         self.counter = GemmaTokenCounter(config.tokenizer_dir)
 
@@ -128,7 +141,11 @@ class V3MonetaryExperiment:
             }
             if not view["candidates"]:
                 continue
-            task = build_v3_monetary_task(raw, view)
+            task = (
+                build_v3_keyed_task(raw, view)
+                if self.serialization == "candidate-keyed-object-v11"
+                else build_v3_monetary_task(raw, view)
+            )
             count = self.counter.count(task["messages"])
             if count > self.config.prompt_budget:
                 raise ValueError(f"{record.notice_id}: v3 prompt exceeds budget: {count}")
@@ -204,7 +221,7 @@ class V3MonetaryExperiment:
                 "role": role,
                 "tokens": tokens[notice_id],
                 "messages": tasks[notice_id]["messages"],
-                "schema": build_v3_monetary_schema(views[notice_id]),
+                "schema": tasks[notice_id]["schema"],
                 "coverage": coverage[notice_id],
             })
             rendered.append({"role": role, "id": notice_id, "path": str(path)})
@@ -257,7 +274,7 @@ class V3MonetaryExperiment:
                 pending.append(notice_id)
         if mock:
             for notice_id in pending:
-                response = _mock_response(views[notice_id])
+                response = _mock_response(views[notice_id], self.serialization)
                 atomic_json(response_dir / f"{notice_id}.json", response)
                 responses[notice_id] = response
         elif pending:
@@ -284,7 +301,12 @@ class V3MonetaryExperiment:
             notice_id = record.notice_id
             row = dict(base_rows[notice_id])
             if notice_id in tasks:
-                value, evidence, diagnostic = decide_v3_monetary(
+                decide = (
+                    decide_v3_keyed
+                    if self.serialization == "candidate-keyed-object-v11"
+                    else decide_v3_monetary
+                )
+                value, evidence, diagnostic = decide(
                     dict(record.raw), views[notice_id], responses[notice_id],
                     int(row["v3"]), str(row["e3"]),
                 )
@@ -339,8 +361,25 @@ class V3MonetaryExperiment:
             int((response.get("usage") or {}).get("completion_tokens") or 0)
             for response in responses.values()
         ]
+        invalid_responses = sum(
+            int(not observation["diagnostic"].get("valid", False))
+            for observation in observations
+            if observation["id"] in tasks
+        )
+        semantic_fallbacks = sum(
+            int(
+                observation["diagnostic"].get("valid", False)
+                and observation["diagnostic"].get("fallback", False)
+            )
+            for observation in observations
+            if observation["id"] in tasks
+        )
+        if self.serialization == "candidate-keyed-object-v11":
+            status = "PASS" if invalid_responses == 0 else "INCOMPLETE"
+        else:
+            status = "PASS" if mock or fallback == 0 else "INCOMPLETE"
         report = {
-            "status": "PASS" if mock or fallback == 0 else "INCOMPLETE",
+            "status": status,
             "experiment_id": self.config.experiment_id,
             "cohort": self.cohort,
             "records": len(records),
@@ -350,6 +389,9 @@ class V3MonetaryExperiment:
             "resumed_specialist_calls": len(tasks) - len(pending),
             "new_specialist_calls": len(pending),
             "fallbacks_on_candidate_notices": fallback,
+            "invalid_responses": invalid_responses,
+            "semantic_fallbacks": semantic_fallbacks,
+            "serialization": self.serialization,
             "metrics": metrics,
             "non_v3_changed_cells": 0,
             "evidence_validation": evidence_report,
@@ -369,4 +411,3 @@ class V3MonetaryExperiment:
             report,
         )
         return report
-
