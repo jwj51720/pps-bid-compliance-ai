@@ -80,7 +80,8 @@ def build_v3_monetary_task(record: Mapping[str, Any], view: Mapping[str, Any]) -
         f"[나라장터 입력값 — 사람이 읽는 필드]\n- 입찰추정가격(VAT 제외): {friendly_estimate}원\n\n"
         "[v3 판정 기준]\n실제 입찰 참가자격으로 단일 과거실적 금액을 요구하는지를 찾는다. "
         "누적실적·평가점수·특별신인도·서식·경력소개는 참가자격 단일실적이 아니다. "
-        "금액 비교와 최종 라벨은 후속 검증기가 수행한다.\n\n"
+        "후속 검증기는 검증된 요구금액이 위 입찰추정가격을 초과할 때만 1로 계산하고, "
+        "같거나 작으면 0으로 계산한다. 모델은 이 비교나 최종 라벨을 출력하지 않는다.\n\n"
         "[공고 원문 후보 — 모든 제공 문서를 순회한 exact span]\n"
         + render_candidates(view["candidates"])
     )

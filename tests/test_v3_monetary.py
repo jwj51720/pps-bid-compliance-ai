@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import json
 
-from src.pps_ai.decisions.v3_monetary import decide_v3_monetary, parse_amount_won
+from src.pps_ai.decisions.v3_monetary import (
+    build_v3_monetary_schema,
+    build_v3_monetary_task,
+    decide_v3_monetary,
+    parse_amount_won,
+)
 from src.pps_ai.views.v3_monetary import build_v3_monetary_view
 
 
@@ -59,6 +64,23 @@ def test_view_inspects_all_documents_and_keeps_exact_spans() -> None:
     for candidate in view["candidates"]:
         document = record["docs"][candidate.document_order]
         assert document["text"][candidate.start:candidate.end] == candidate.text
+
+
+def test_task_requires_every_candidate_and_states_strict_threshold() -> None:
+    record = _record([
+        "참가자격 수행실적 2억원 이상.",
+        "평가용 수행실적 3억원 이상이면 5점.",
+    ])
+    view = build_v3_monetary_view(record)
+    schema = build_v3_monetary_schema(view)
+    assert schema["properties"]["observations"]["minItems"] == 2
+    source_enum = schema["properties"]["observations"]["items"]["properties"]["source_id"]["enum"]
+    assert source_enum == ["M01", "M02"]
+    task = build_v3_monetary_task(record, view)
+    user = task["messages"][1]["content"]
+    assert "입찰추정가격(VAT 제외): 100000000원" in user
+    assert "입찰추정가격을 초과할 때만 1" in user
+    assert "같거나 작으면 0" in user
 
 
 def test_positive_uses_exact_surface_and_strict_greater_than() -> None:
@@ -135,4 +157,3 @@ def test_duplicate_or_missing_candidate_is_invalid() -> None:
     value, evidence, diagnostic = decide_v3_monetary(record, view, response, 1, "base")
     assert (value, evidence) == (1, "base")
     assert diagnostic["reason"] == "invalid_response"
-
