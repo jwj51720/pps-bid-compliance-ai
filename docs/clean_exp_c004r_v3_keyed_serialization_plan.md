@@ -105,3 +105,11 @@ short/error `PPS-DEV-062`, attachment `PPS-DEV-32`, largest/serialization-error
 `PPS-DEV-165`, positive error-panel `042/051/062`를 읽었다. candidate text, 입찰추정가격,
 role/basis/mandatory/amount 의미, strict `>` reducer 설명은 C004와 동일하고 output container만
 required-key object로 바뀌었다. 따라서 후보 10건의 새 유료 fast20 실행을 승인한다.
+
+## Full-fast 결과와 holdout 승인
+
+Full-fast는 v3 TP 3 / FP 0 / FN 0 / F1 1.0, invalid response 0, 다른 23개 변화 0으로
+PASS했다. 동일 manifest의 holdout20은 41/41 documents inspected, 후보 공고 3건/후보 5개,
+tokens max 1,883, mock PASS이며 rendered positive/attachment/largest를 읽었다. 상세는
+`docs/clean_exp_c004r_v3_keyed_fast20_result.md`에 기록한다. Independent holdout20 3호출을
+실행할 수 있다.
