@@ -16,6 +16,10 @@ from .decisions.v19_requirements import (
     parse_v19_observations,
     reduce_v19_observations,
 )
+from .decisions.v19_quote_resolution_v2 import (
+    parse_v19_observations_relaxed_quote,
+    reduce_v19_with_quote_resolution,
+)
 from .evaluate import evaluate_rows_for_ids
 from .evidence.validation import clean_final_rows
 from .export import write_submission_csv
@@ -108,6 +112,16 @@ class V19RequirementExperiment:
         if not (self.base_output_dir / "submission.csv").is_file():
             raise FileNotFoundError("C004S baseline submission is required")
         self.review_notice_ids = tuple(str(value) for value in policy["review_notice_ids"])
+        quote_policy = config.raw.get("v19_quote_resolution")
+        if quote_policy is None:
+            self.quote_resolution = "strict-byte-exact-v1"
+        elif (
+            isinstance(quote_policy, dict)
+            and quote_policy.get("module") == "v19-positive-quote-resolution-v2"
+        ):
+            self.quote_resolution = "v19-positive-quote-resolution-v2"
+        else:
+            raise ValueError("unsupported v19 quote resolution policy")
         self.counter = GemmaTokenCounter(config.tokenizer_dir)
 
     def _pack_tasks(
@@ -392,9 +406,14 @@ class V19RequirementExperiment:
                 parsed_rows = []
                 failure_reason = None
                 for task_id in task_ids:
-                    parsed, reason = parse_v19_observations(
-                        responses[task_id], task_candidates[task_id],
-                    )
+                    if self.quote_resolution == "v19-positive-quote-resolution-v2":
+                        parsed, reason = parse_v19_observations_relaxed_quote(
+                            responses[task_id], task_candidates[task_id],
+                        )
+                    else:
+                        parsed, reason = parse_v19_observations(
+                            responses[task_id], task_candidates[task_id],
+                        )
                     if parsed is None:
                         failure_reason = f"{task_id}:{reason}"
                         break
@@ -407,10 +426,18 @@ class V19RequirementExperiment:
                     invalid += 1
                     fallback += 1
                 else:
-                    value, evidence, diagnostic = reduce_v19_observations(
-                        candidates, parsed_rows,
-                    )
-                    row["v19"], row["e19"] = value, evidence
+                    if self.quote_resolution == "v19-positive-quote-resolution-v2":
+                        value, evidence, diagnostic = reduce_v19_with_quote_resolution(
+                            candidates, parsed_rows,
+                        )
+                    else:
+                        value, evidence, diagnostic = reduce_v19_observations(
+                            candidates, parsed_rows,
+                        )
+                    if value is None:
+                        fallback += 1
+                    else:
+                        row["v19"], row["e19"] = value, evidence
             candidate_rows[notice_id] = row
             output_observations.append({
                 "id": notice_id, "v19": row["v19"], "e19": row["e19"],
@@ -469,6 +496,7 @@ class V19RequirementExperiment:
             "overflow_passes": audit["overflow_passes"],
             "invalid_responses": invalid,
             "fallbacks": fallback,
+            "quote_resolution": self.quote_resolution,
             "metrics": metrics,
             "non_v19_changed_cells": 0,
             "evidence_validation": evidence_report,
