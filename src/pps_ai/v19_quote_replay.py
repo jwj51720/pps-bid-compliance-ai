@@ -29,11 +29,19 @@ class V19QuoteReplay:
         policy = config.raw.get("v19_quote_replay")
         if not isinstance(policy, dict) or policy.get("module") != "v19-positive-quote-resolution-v2":
             raise ValueError("C005R quote replay is not selected")
-        if int(policy.get("calls", -1)) != 0 or policy.get("cohort") != "fast20":
-            raise ValueError("C005R must be a zero-call fast20 replay")
+        if int(policy.get("calls", -1)) != 0:
+            raise ValueError("v19 quote replay must itself make zero calls")
+        self.cohort = str(policy.get("cohort"))
+        if self.cohort not in {"fast20", "holdout20", "dev200"}:
+            raise ValueError("unsupported v19 quote replay cohort")
         root = config.path.parents[2]
         self.base_output_dir = (root / str(policy["base_output_dir"])).resolve()
         self.expected_tasks = int(policy["expected_tasks"])
+        override_value = policy.get("response_override_dir")
+        self.response_override_dir = (
+            (root / str(override_value)).resolve() if override_value else None
+        )
+        self.override_targets = set(str(value) for value in policy.get("override_targets", []))
         if not (self.base_output_dir / "preflight.json").is_file():
             raise FileNotFoundError("C005 fast preflight is required")
 
@@ -43,7 +51,7 @@ class V19QuoteReplay:
             raise ValueError("manifest policy diff failed")
         experiment = V19RequirementExperiment(
             self.config,
-            cohort="fast20",
+            cohort=self.cohort,
             output_dir=self.output_dir / "_rendered_reconstruction",
         )
         records, views, tasks, task_candidates, audit = experiment.prepare()
@@ -60,7 +68,12 @@ class V19QuoteReplay:
         import hashlib
 
         for task_id in tasks:
-            path = self.base_output_dir / "responses" / f"{task_id}.json"
+            if task_id in self.override_targets:
+                if self.response_override_dir is None:
+                    raise ValueError("v19 response override directory is missing")
+                path = self.response_override_dir / f"{task_id}.json"
+            else:
+                path = self.base_output_dir / "responses" / f"{task_id}.json"
             if not path.is_file():
                 raise FileNotFoundError(f"missing stored C005 response: {task_id}")
             payload = path.read_bytes()
@@ -141,13 +154,13 @@ class V19QuoteReplay:
         write_submission_csv(self.output_dir / "submission.csv", rows)
         metrics = evaluate_rows_for_ids(
             rows, self.config.labels_path,
-            {record.notice_id for record in records}, "fast20",
+            {record.notice_id for record in records}, self.cohort,
         )
-        atomic_json(self.output_dir / "metrics.json", {"fast20": metrics})
+        atomic_json(self.output_dir / "metrics.json", {self.cohort: metrics})
         report = {
             "status": "PASS" if invalid == 0 else "INCOMPLETE",
             "experiment_id": self.config.experiment_id,
-            "cohort": "fast20",
+            "cohort": self.cohort,
             "records": len(records),
             "provider_calls": 0,
             "stored_responses_replayed": len(responses),
