@@ -110,6 +110,12 @@ parameter로 malformed/length 응답만 한 번 재시도하면 의미 정책을
 
 ## 4. EXP-C002: native v24 atomic relation
 
+결과: **fast20에서 중단**. 실행·파싱·source 검증은 통과했고 FP는 5→3으로 감소했지만,
+TP 0 / FN 3으로 `TP>=1` 승격 조건을 충족하지 못했다. holdout20/dev200은 실행하지 않았고
+canonical baseline에 반영하지 않는다. 단일 축당 하나의 `document_value/source_id`만 받는 schema가
+복수 후보 충돌과 지역 집합 차이를 보존하지 못한 것이 핵심 구조 결함이다. 상세 결과는
+`docs/clean_exp_c002_native_v24_fast20_result.md`에 기록한다.
+
 ### 가설
 
 현재 C24의 직접 0/1 판정은 계약방법/낙찰방법, 참가업체 지역/현장 지역, 필수 업종/과업 분야,
