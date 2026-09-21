@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 
 from src.pps_ai.decisions.v24_multi_observation import decide_v24_multi
+from src.pps_ai.decisions.v24_code_provenance_v21 import (
+    decide_v24_code_provenance_v21,
+)
 from src.pps_ai.views.v24_multi_observation import build_v24_multi_observation_view
 
 
@@ -163,3 +166,41 @@ def test_invalid_enum_is_a_fallback_not_a_positive() -> None:
     assert value == 0
     assert evidence == ""
     assert diagnostic["fallback"]
+
+
+def test_v21_ignores_ten_digit_product_code_in_industry_comparison() -> None:
+    record = _record([
+        "업종코드 1169로 등록하고 세부품명번호 8014199001을 보유한 업체여야 합니다."
+    ])
+    view = build_v24_multi_observation_view(record)
+    source = view["candidates"]["industry"][0].source_id
+    response = _response(industry=[{
+        "source_id": source,
+        "role": "BIDDER_MANDATORY_INDUSTRY",
+        "industry_codes": ["1169", "8014199001"],
+        "industry_names": ["학술연구용역"],
+    }])
+    value, _, diagnostic = decide_v24_code_provenance_v21(record, view, response)
+    assert value == 0
+    row = diagnostic["observations"]["industry"][0]
+    assert row["valid_industry_codes"] == ["1169"]
+    assert row["rejected_industry_codes"] == ["8014199001"]
+
+
+def test_v21_keeps_exact_code_when_name_surface_is_not_in_source() -> None:
+    record = _record(["업종코드 1169 또는 업종코드 1340으로 등록한 업체여야 합니다."])
+    record["meta"]["면허업종제한목록"] = "[학술연구용역(1169)] 또는 [기술사사무소(1340)]"
+    view = build_v24_multi_observation_view(record)
+    source = view["candidates"]["industry"][0].source_id
+    response = _response(industry=[{
+        "source_id": source,
+        "role": "BIDDER_MANDATORY_INDUSTRY",
+        "industry_codes": ["1169", "1340", "9999"],
+        "industry_names": ["원문에 없는 업종명"],
+    }])
+    value, _, diagnostic = decide_v24_code_provenance_v21(record, view, response)
+    assert value == 0
+    row = diagnostic["observations"]["industry"][0]
+    assert row["valid_industry_codes"] == ["1169", "1340"]
+    assert row["valid_industry_names"] == []
+    assert row["rejected_industry_codes"] == ["9999"]
