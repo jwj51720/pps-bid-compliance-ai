@@ -1,7 +1,7 @@
 # EXP-C005HR v19 holdout response recovery 계획
 
 작성일: 2026-09-21  
-상태: exact-task append-only recovery 1회 승인
+상태: exact retry 실패, 추가 동일 retry 및 dev200 금지
 
 ## 결함 분류
 
@@ -44,3 +44,9 @@ baseline fallback label이 우연히 negative인 사실로 invalid를 무시하�
 
 Holdout gate는 원 계획과 같다. v19 positive가 없는 cohort에서 FP `<=1`이면 비열화 통과,
 FP `0`이면 목표 통과다. 복구 후에만 dev200 승격 여부를 결정한다.
+
+## 결과
+
+Task hash는 일치했고 정상 17건을 재호출하지 않은 채 target 한 건만 호출했으나, 두 번째 응답도
+동일하게 1,536 tokens의 whitespace loop와 미완성 JSON으로 종료됐다. 계획의 최대 1회 retry를
+소진했다. 상세는 `docs/clean_exp_c005h_c005hr_v19_holdout_result.md`에 기록한다.
