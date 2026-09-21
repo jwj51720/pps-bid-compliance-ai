@@ -40,3 +40,14 @@ Legacy는 import·실행·복사·생성하지 않는다. Attempt는 별도 outp
 5. v3 외 changed cells 0; evidence exact-substring validation PASS.
 6. 품질은 동일하거나 향상. Recovery 자체를 semantic 개선으로 부르지 않는다.
 
+## 유료 실행 전 검증
+
+- manifest diff: undeclared 0, unused declaration 0, PASS
+- reconstructed specialist tasks: 61
+- base preflight task hashes: 61/61 exact match
+- detected local-invalid targets: 정확히 `PPS-DEV-08`, `PPS-DEV-157`
+- normal responses excluded: 59
+- new call upper bound: 2
+- active tests: 40 passed
+
+따라서 exact-task append-only recovery 2호출을 실행할 수 있다.
