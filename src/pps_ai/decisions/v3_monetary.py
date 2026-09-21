@@ -168,6 +168,23 @@ def decide_v3_monetary(
     baseline_value: int,
     baseline_evidence: str,
 ) -> tuple[int, str, dict[str, Any]]:
+    return decide_v3_monetary_with_bases(
+        record, view, response, baseline_value, baseline_evidence,
+        accepted_bases={"SINGLE_CONTRACT"},
+    )
+
+
+def decide_v3_monetary_with_bases(
+    record: Mapping[str, Any],
+    view: Mapping[str, Any],
+    response: Mapping[str, Any],
+    baseline_value: int,
+    baseline_evidence: str,
+    *,
+    accepted_bases: set[str],
+) -> tuple[int, str, dict[str, Any]]:
+    if not accepted_bases or not accepted_bases <= {"SINGLE_CONTRACT", "AGGREGATE"}:
+        raise ValueError("accepted v3 requirement bases are invalid")
     sources = candidate_index(view)
     rows = _parse_response(response, set(sources))
     diagnostic: dict[str, Any] = {
@@ -194,7 +211,7 @@ def decide_v3_monetary(
         amount_won = parse_amount_won(surface) if source_valid else None
         accepted = (
             row["role"] == "BID_QUALIFICATION"
-            and row["requirement_basis"] == "SINGLE_CONTRACT"
+            and row["requirement_basis"] in accepted_bases
             and row["mandatory"] == "YES"
         )
         observed = {

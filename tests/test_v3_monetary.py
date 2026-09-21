@@ -6,6 +6,7 @@ from src.pps_ai.decisions.v3_monetary import (
     build_v3_monetary_schema,
     build_v3_monetary_task,
     decide_v3_monetary,
+    decide_v3_monetary_with_bases,
     parse_amount_won,
 )
 from src.pps_ai.views.v3_monetary import build_v3_monetary_view
@@ -157,3 +158,38 @@ def test_duplicate_or_missing_candidate_is_invalid() -> None:
     value, evidence, diagnostic = decide_v3_monetary(record, view, response, 1, "base")
     assert (value, evidence) == (1, "base")
     assert diagnostic["reason"] == "invalid_response"
+
+
+def test_basis_v2_accepts_aggregate_but_not_unknown() -> None:
+    record = _record(["입찰참가자는 수행실적 합계 2억원 이상이어야 합니다."])
+    view = build_v3_monetary_view(record)
+    aggregate = _response(
+        view,
+        role="BID_QUALIFICATION",
+        requirement_basis="AGGREGATE",
+        mandatory="YES",
+        amount_surface="2억원",
+    )
+    old_value, _, old_diagnostic = decide_v3_monetary(record, view, aggregate, 0, "")
+    assert old_value == 0
+    assert old_diagnostic["fallback"]
+    value, _, diagnostic = decide_v3_monetary_with_bases(
+        record, view, aggregate, 0, "",
+        accepted_bases={"SINGLE_CONTRACT", "AGGREGATE"},
+    )
+    assert value == 1
+    assert diagnostic["decision"] == "POSITIVE_PROOF"
+
+    unknown = _response(
+        view,
+        role="BID_QUALIFICATION",
+        requirement_basis="UNKNOWN",
+        mandatory="YES",
+        amount_surface="2억원",
+    )
+    value, _, diagnostic = decide_v3_monetary_with_bases(
+        record, view, unknown, 0, "",
+        accepted_bases={"SINGLE_CONTRACT", "AGGREGATE"},
+    )
+    assert value == 0
+    assert diagnostic["fallback"]
