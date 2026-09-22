@@ -17,6 +17,14 @@
 작업도 하지 않는다. 제출 기준선은 organizer 자료와 이 저장소의 versioned decision contract를
 바탕으로 독립 작성한다.
 
+독립 작성은 기존 문장의 동의어 치환이 아니다. 먼저 organizer 근거에서 각 항목의
+적용 범위·양성 조건·실질적 예외를 표준화하고, 그 관계를 표현하는 자체 입력
+섹션과 typed 출력 계약을 설계한다. 검증된 source view와 호출 topology는
+성능상 출발점으로 삼되, 문구·변수명·파일 구성을 닮게 만드는 것은 목표가 아니다.
+새 prompt의 영향은 한 번에 한 owner 또는 한 계약 요소씩 측정한다. 이를 통해
+성능 저하가 발생한 필드를 특정하고, 독립성이 확보되었다는 이유만으로 낮은
+성능을 기준선이라고 선언하지 않는다.
+
 ## 2. 불변 독립성 계약
 
 새 submission과 그 실행 경로는 다음을 만족해야 한다.
@@ -38,6 +46,9 @@
 - strict organizer JSONL ingest와 document-order ledger는 현재 active 구현을 유지한다.
 - 필요한 metadata를 item별 human-readable fact로 render한다.
 - 경쟁제품 exact-code index와 특이사항을 package asset으로 고정한다.
+  metadata 코드뿐 아니라 모든 제공 문서의 10자리 코드 언급을 별도
+  `SourceSpan` 사실로 수집한다. 문서 코드의 역할(실제 구매대상·직접생산
+  참가요건·예시)은 이 단계에서 Python이 확정하지 않는다.
 - raw metadata JSON/internal status/code array를 prompt에 노출하지 않는다.
 - 24개 semantic-input contract를 organizer source와 exact rendered span에 연결한다.
 
@@ -46,13 +57,19 @@ Gate: 200/200 records, 모든 제공 문서 hash/순서 보존, active v별 필�
 ### N2. Native source views and owners
 
 - C004S의 native v3 monetary owner와 C005D의 native v19 requirement owner는 이미 독립 구현된
-  자산으로 재사용한다.
+  자산으로 재사용한다. 단, 둘 다 후보 부재·미해결 시 frozen 판정으로 돌아가는 조건부 hybrid였으므로
+  해당 fallback을 제거하고도 필요한 사실·호출·최종 판정이 완결되는지 별도로 검증해야 한다.
 - 나머지 22개 owner는 organizer truth condition에서 새로 구현한다.
 - Python은 exact 사실, source 연결, 명시적 수치식만 계산한다.
 - 역할·예외·필요성 같은 의미 판단은 typed Gemma observation으로 받는다.
+- v10–v18에서는 metadata 코드 부재를 비경쟁제품 증명으로 쓰지 않고,
+  문서 코드와 실제 조달대상의 관계 및 CSV `특이사항` 적용성을 owner가
+  원문과 함께 판단한다.
 - selector 미탐지나 malformed response를 0으로 간주하지 않는다.
 
 Gate: item별 unit fixture, label table을 코드 상수/keyword로 사용한 흔적 0, legacy/reference import 0.
+현재 owner별 실제 공백과 점수 보존의 산술적 제약은
+`docs/clean_native_owner_critical_path_v1.md`를 기준으로 추적한다.
 
 ### N3. Runtime topology
 
@@ -92,7 +109,10 @@ dev200 승격 기준:
 
 허용 하한 `0.805`는 C005D 대비 절대 `-0.010147`이다. 이는 표절 회피를 위한 임의 문구 변경의
 허용 오차가 아니라, 독립 prompt 재표본화 비용을 감수하면서도 품질이 유의하게 붕괴하지 않았는지
-판단하는 사전 기준이다. 하한 미달이면 제출 ZIP을 만들지 않고 per-item 손실부터 고친다.
+판단하는 **진단 기준**이다. `0.805` 이상이지만 C005D 미만이면 손실 항목과 runtime을 검토할
+수는 있으나 새 최고 성능 기준선으로 고정하지 않는다. 하한 미달이면 제출 ZIP을 만들지 않고
+per-item 손실부터 고친다. C005D 이상을 재현하거나, 독립 구조의 명확한 runtime 이득을 포함한
+별도 승격 근거가 있어야 최종 제출 후보로 검토한다.
 
 ### N5. Submission adapter and exact staged mock
 
@@ -119,4 +139,3 @@ tests/test_submission_*.py
 - staged ZIP과 로컬 surrogate의 실행 코드가 다른 경우
 
 이 중 하나라도 해당하면 당일 ZIP이라는 일정 때문에 불완전 후보를 제출하지 않는다.
-
