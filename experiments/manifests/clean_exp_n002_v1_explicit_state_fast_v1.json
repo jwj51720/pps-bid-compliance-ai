@@ -1,0 +1,47 @@
+{
+  "schema_version": "clean-native-v1-diagnostic",
+  "experiment_id": "clean-exp-n002-v1-explicit-state-fast-v1",
+  "pipeline_id": "native-v1-qualification-observation-v3",
+  "experiment": {
+    "base_config": "experiments/manifests/clean_exp_n001_v1_fast_diagnostic_v1.json",
+    "allowed_policy_changes": [
+      "data.source_audit_path",
+      "prompt.task"
+    ]
+  },
+  "data": {
+    "input_path": "data/raw/open/dev.jsonl.gz",
+    "labels_path": "data/raw/open/dev_labels.csv",
+    "cards_path": "data/derived/decision_cards_v31_v4_organizer_definition_resolution.json",
+    "source_audit_path": "outputs/clean-native-v1-qualification-task-v3/dev200/audit.json"
+  },
+  "evaluation": {
+    "fast_panel_path": "configs/dev_fast_panel_v1.json"
+  },
+  "prompt": {
+    "view": "v1-qualification-linked-exact-windows-v2",
+    "task": "native-v1-explicit-state-observation-v3"
+  },
+  "provider": {
+    "model": "google/gemma-4-26b-a4b-it",
+    "api_url": "https://openrouter.ai/api/v1/chat/completions",
+    "api_key_env": "OPENROUTER_API_KEY",
+    "temperature": 0,
+    "max_tokens": 1536,
+    "seed": 20260826,
+    "timeout_seconds": 180,
+    "request_retries": 3,
+    "concurrency": 8,
+    "min_request_interval_seconds": 1.0,
+    "provider_sort": "throughput",
+    "require_parameters": true
+  },
+  "runtime": {
+    "tokenizer_dir": "~/.cache/huggingface/hub/models--google--gemma-4-26B-A4B-it/snapshots/4d7ae4984b7db7de8f8457170b3f1a419ee76d52",
+    "prompt_budget": 14848
+  },
+  "run": {
+    "mode": "fast20_observation"
+  },
+  "output_dir": "outputs/clean-exp-n002-v1-explicit-state-fast-v1"
+}
