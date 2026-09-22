@@ -1,0 +1,13 @@
+{
+  "schema_version": "pps-submission-v1",
+  "candidate": "integrated-v3-v19-retry2-v1",
+  "batch_size": 128,
+  "invalid_retry_rounds": 2,
+  "batch_exception_policy": "recursive-bisection-single-input-isolation",
+  "unresolved_policy": "preserve-base-cell-and-always-write-valid-csv",
+  "model_max_length": 16384,
+  "max_completion_tokens": 1536,
+  "temperature": 0,
+  "seed": 20260826,
+  "quantization": "int8_per_channel_weight_only"
+}
