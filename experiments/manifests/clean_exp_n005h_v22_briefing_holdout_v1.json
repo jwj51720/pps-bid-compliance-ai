@@ -1,0 +1,55 @@
+{
+  "schema_version": "clean-native-v22-diagnostic",
+  "experiment_id": "clean-exp-n005h-v22-briefing-holdout-v1",
+  "pipeline_id": "native-v22-briefing-binary-projection-v1",
+  "experiment": {
+    "base_config": "experiments/manifests/clean_exp_n005r_v22_binary_projection_replay_v1.json",
+    "allowed_policy_changes": [
+      "data.responses_path",
+      "evaluation.cohort",
+      "evaluation.panel_path",
+      "run.mode"
+    ]
+  },
+  "data": {
+    "input_path": "data/raw/open/dev.jsonl.gz",
+    "labels_path": "data/raw/open/dev_labels.csv",
+    "cards_path": "data/derived/decision_cards_v31_v4_organizer_definition_resolution.json",
+    "source_audit_path": "outputs/clean-native-v22-briefing-task-v1/dev200/audit.json"
+  },
+  "evaluation": {
+    "panel_path": "configs/dev_prompt_holdout_v1.json",
+    "cohort": "holdout20"
+  },
+  "prompt": {
+    "view": "v22-briefing-exact-windows-v1",
+    "task": "native-v22-briefing-observation-v1"
+  },
+  "decision": {
+    "owner": "v22-briefing-binary-conjunction-v1",
+    "positive_if": "negotiated=Y AND briefing=Y AND exclusion=Y",
+    "otherwise": 0
+  },
+  "provider": {
+    "model": "google/gemma-4-26b-a4b-it",
+    "api_url": "https://openrouter.ai/api/v1/chat/completions",
+    "api_key_env": "OPENROUTER_API_KEY",
+    "temperature": 0,
+    "max_tokens": 1024,
+    "seed": 20260826,
+    "timeout_seconds": 180,
+    "request_retries": 3,
+    "concurrency": 8,
+    "min_request_interval_seconds": 1.0,
+    "provider_sort": "throughput",
+    "require_parameters": true
+  },
+  "runtime": {
+    "tokenizer_dir": "~/.cache/huggingface/hub/models--google--gemma-4-26B-A4B-it/snapshots/4d7ae4984b7db7de8f8457170b3f1a419ee76d52",
+    "prompt_budget": 14848
+  },
+  "run": {
+    "mode": "panel_observation"
+  },
+  "output_dir": "outputs/clean-exp-n005h-v22-briefing-holdout-v1"
+}
