@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any, Mapping, Sequence
 
+from .v19_quote_resolution_v2 import resolve_exact_quote
+from ..views.v4_requirement_scope import render_v4_scoped_candidates
 from ..views.v4_requirements import V4RequirementCandidate, render_v4_candidates
 
 
@@ -74,8 +76,9 @@ def build_v4_schema(candidates: Sequence[V4RequirementCandidate]) -> dict[str, A
     }
 
 
-def build_v4_task(
+def _build_v4_task(
     record: Mapping[str, Any], candidates: Sequence[V4RequirementCandidate],
+    *, system_prompt: str, rendered_candidates: str, arm: str,
 ) -> dict[str, Any]:
     user = (
         f"[공고 ID]\n{record['id']}\n\n"
@@ -87,22 +90,54 @@ def build_v4_task(
         "이번 관계 관측에서 판단하지 않는다. 모델은 후보별 source 사실만 분류하고 최종식은 "
         "Python이 계산한다.\n\n"
         "[모든 제공 문서를 순서대로 검사한 exact candidate]\n"
-        + render_v4_candidates(candidates)
+        + rendered_candidates
     )
     return {
         "id": str(record["id"]),
-        "arm": "V4_REQUIREMENT_INSTANCES_V1",
+        "arm": arm,
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user},
         ],
         "schema": build_v4_schema(candidates),
     }
 
 
+def build_v4_task(
+    record: Mapping[str, Any], candidates: Sequence[V4RequirementCandidate],
+) -> dict[str, Any]:
+    return _build_v4_task(
+        record, candidates, system_prompt=SYSTEM_PROMPT,
+        rendered_candidates=render_v4_candidates(candidates),
+        arm="V4_REQUIREMENT_INSTANCES_V1",
+    )
+
+
+def build_v4_scope_task(
+    record: Mapping[str, Any], candidates: Sequence[V4RequirementCandidate],
+) -> dict[str, Any]:
+    system = SYSTEM_PROMPT + (
+        "\n\n각 후보의 직전 제목형 원문 줄은 문서 위치를 파악하기 위한 단서일 뿐 자동으로 "
+        "상위 절이라고 확정된 것은 아니다. 줄 번호와 후보 위치를 보고 어떤 절의 "
+        "제출서류·평가·참가자격인지 원문 관계를 확인한다. 제출서류 목록에 실적증명서가 "
+        "있다는 사실만으로 그 실적을 입찰 참가자격으로 강제한다고 판단하지 않는다. "
+        "q는 제목 이력이 아니라 실적 후보 원문 안에서만 복사한다."
+    )
+    return _build_v4_task(
+        record, candidates, system_prompt=system,
+        rendered_candidates=render_v4_scoped_candidates(candidates),
+        arm="V4_REQUIREMENT_PARENT_SCOPE_V1",
+    )
+
+
 def parse_v4_observations(
     response: Mapping[str, Any], candidates: Sequence[V4RequirementCandidate],
+    *, quote_resolution: str = "strict-byte-exact-v1",
 ) -> tuple[list[dict[str, Any]] | None, str | None]:
+    if quote_resolution not in {
+        "strict-byte-exact-v1", "positive-exact-or-unique-whitespace-v1",
+    }:
+        raise ValueError(f"unknown v4 quote resolution: {quote_resolution}")
     if response.get("finish_reason") != "stop" or response.get("invalid") is True:
         return None, "invalid_transport_response"
     try:
@@ -140,15 +175,22 @@ def parse_v4_observations(
         )
         quote = value["q"]
         if potential_positive:
-            if (
-                not isinstance(quote, str)
-                or not 1 <= len(quote) <= 500
-                or quote not in source.text
-            ):
+            if not isinstance(quote, str) or not 1 <= len(quote) <= 500:
                 return None, "positive_quote_not_exact"
+            if quote_resolution == "strict-byte-exact-v1":
+                if quote not in source.text:
+                    return None, "positive_quote_not_exact"
+            else:
+                quote, _ = resolve_exact_quote(source.text, quote)
+                if quote is None:
+                    return None, "positive_quote_not_exact"
         elif quote is not None:
-            return None, "negative_quote_must_be_null"
-        rows.append({"source_id": source_id, **value})
+            if quote_resolution == "strict-byte-exact-v1":
+                return None, "negative_quote_must_be_null"
+            if not isinstance(quote, str) or not 1 <= len(quote) <= 500:
+                return None, "negative_quote_shape"
+            quote = None
+        rows.append({"source_id": source_id, **value, "q": quote})
     return rows, None
 
 

@@ -17,13 +17,18 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.pps_ai.ingest import load_notice_records
-from src.pps_ai.decisions.v4_requirements import build_v4_task
+from src.pps_ai.decisions.v4_requirements import build_v4_scope_task, build_v4_task
+from src.pps_ai.decisions.v4_allowance_axes import build_v4_axis_task
 from src.pps_ai.runtime.openrouter import atomic_json
 from src.pps_ai.runtime.tokenizer import GemmaTokenCounter
 from src.pps_ai.views.v4_requirements import (
     V4RequirementCandidate,
     build_v4_requirement_view,
     render_v4_candidates,
+)
+from src.pps_ai.views.v4_requirement_scope import (
+    build_v4_requirement_scope_view,
+    render_v4_scoped_candidates,
 )
 
 
@@ -52,6 +57,10 @@ def _candidate(candidate: V4RequirementCandidate) -> dict[str, Any]:
         "document_sha256": candidate.document_sha256,
         "trigger_surfaces": list(candidate.trigger_surfaces),
         "text": candidate.text,
+        "heading_trail": [
+            {"start": line.start, "end": line.end, "text": line.text}
+            for line in candidate.heading_trail
+        ],
     }
 
 
@@ -77,6 +86,9 @@ def main() -> int:
     parser.add_argument(
         "--output", default="outputs/clean-exp-c007b-v4-requirement-view-audit-v1",
     )
+    parser.add_argument("--scope", choices=("base", "heading-trail"), default="base")
+    parser.add_argument("--allowance-axes", action="store_true")
+    parser.add_argument("--review-id", action="append", default=[])
     args = parser.parse_args()
 
     input_path = (ROOT / args.input).resolve()
@@ -89,7 +101,21 @@ def main() -> int:
 
     records = load_notice_records(input_path)
     # Build every label-blind view before reading labels or predictions.
-    views = {record.notice_id: build_v4_requirement_view(record.raw) for record in records}
+    view_builder = (
+        build_v4_requirement_scope_view if args.scope == "heading-trail"
+        else build_v4_requirement_view
+    )
+    if args.allowance_axes and args.scope != "heading-trail":
+        parser.error("allowance axes require heading-trail scope")
+    task_builder = (
+        build_v4_axis_task if args.allowance_axes else
+        build_v4_scope_task if args.scope == "heading-trail" else build_v4_task
+    )
+    render_candidates = (
+        render_v4_scoped_candidates if args.scope == "heading-trail"
+        else render_v4_candidates
+    )
+    views = {record.notice_id: view_builder(record.raw) for record in records}
     labels = _read_rows(labels_path)
     baseline = _read_rows(baseline_path)
     expected_ids = {record.notice_id for record in records}
@@ -118,7 +144,13 @@ def main() -> int:
                 or document.text[candidate.start:candidate.end] != candidate.text
             ):
                 raise ValueError(f"{record.notice_id}: candidate provenance differs")
-        rendered = render_v4_candidates(view["candidates"])
+            for heading in candidate.heading_trail:
+                if (
+                    not 0 <= heading.start < heading.end <= candidate.start
+                    or document.text[heading.start:heading.end] != heading.text
+                ):
+                    raise ValueError(f"{record.notice_id}: heading provenance differs")
+        rendered = render_candidates(view["candidates"])
         candidate_only_tokens[record.notice_id] = counter.count([
             {"role": "system", "content": "v4 source observability audit"},
             {"role": "user", "content": rendered or "[NO CANDIDATE]"},
@@ -128,7 +160,7 @@ def main() -> int:
         packs: list[tuple[V4RequirementCandidate, ...]] = []
         for candidate in view["candidates"]:
             trial = tuple([*current, candidate])
-            task = build_v4_task(record.raw, trial)
+            task = task_builder(record.raw, trial)
             if counter.count(task["messages"]) <= 14_848:
                 current.append(candidate)
                 continue
@@ -138,7 +170,7 @@ def main() -> int:
                 )
             packs.append(tuple(current))
             current = [candidate]
-            single = build_v4_task(record.raw, tuple(current))
+            single = task_builder(record.raw, tuple(current))
             if counter.count(single["messages"]) > 14_848:
                 raise ValueError(
                     f"{record.notice_id}/{candidate.source_id}: one candidate exceeds budget"
@@ -147,7 +179,7 @@ def main() -> int:
             packs.append(tuple(current))
         for part, pack in enumerate(packs, 1):
             task_id = f"{record.notice_id}__p{part:02d}"
-            task = build_v4_task(record.raw, pack)
+            task = task_builder(record.raw, pack)
             tasks[task_id] = task
             task_candidates[task_id] = pack
             task_tokens[task_id] = counter.count(task["messages"])
@@ -232,6 +264,7 @@ def main() -> int:
             ("attachment", attachment_id),
             ("largest", largest_task_id.split("__p", 1)[0]),
         ]
+        samples.extend(("manual_review", notice_id) for notice_id in args.review_id)
         overflow_notice = next(
             (row["id"] for row in coverage_rows if row["overflow_passes"]), None,
         )
@@ -269,16 +302,34 @@ def main() -> int:
                 checks = {
                     "qualification_role": "실제 입찰 참가자격" in user,
                     "issuer_or_specific_relation": "특정 발주기관군" in user and "특정 사업명·대상·방식" in user,
-                    "allowance_exception": "민간·해외·동등·일반 유사실적 허용" in user,
+                    "allowance_exception": (
+                        "같은 제한축의 실질적 허용" in user if args.allowance_axes
+                        else "민간·해외·동등·일반 유사실적 허용" in user
+                    ),
                     "necessity_exception": "구체적 필요" in user,
                     "evaluation_zero": "평가·가점" in user,
                     "form_zero": "증빙서식" in user,
-                    "no_final_label": "최종 v4나 위반 0/1은 출력하지 않는다" in system,
+                    "no_final_label": (
+                        "최종 v4 또는 위반 0/1은 출력하지 않는다" in system
+                        if args.allowance_axes else
+                        "최종 v4나 위반 0/1은 출력하지 않는다" in system
+                    ),
                     "all_candidate_ids": all(
                         f"[{candidate.source_id} |" in user
                         for candidate in task_candidates[task_id]
                     ),
                 }
+                if args.scope == "heading-trail":
+                    checks["heading_trail"] = (
+                        "직전 제목형" in system and "원문 줄" in system
+                        and "[직전 제목형 원문 줄 — 소속 관계는 확정하지 않음]" in user
+                    )
+                if args.allowance_axes:
+                    checks["two_allowance_axes"] = (
+                        "i 발주기관 허용" in system
+                        and "a 사업내용 허용" in system
+                        and "발주기관군과 사업내용은 독립된 축" in system
+                    )
                 semantic_rows.append({
                     "task_id": task_id,
                     "checks": checks,
@@ -293,14 +344,28 @@ def main() -> int:
     })
     all_documents = [row for notice in coverage_rows for row in notice["documents"]]
     nonempty = [row for row in positive_coverage if row["gold_evidence_nonempty"]]
+    semantic_pass = bool(semantic_rows) and all(
+        row["status"] == "PASS" for row in semantic_rows
+    )
     report = {
-        "status": "PASS",
+        "status": "PASS" if semantic_pass else "FAIL",
         "phase": "label_blind_source_observability_only",
         "records": len(records),
         "documents_inspected": len(all_documents),
         "documents_uninspected": sum(not row["inspected"] for row in all_documents),
         "candidate_notices": sum(bool(row["candidate_count"]) for row in coverage_rows),
         "candidate_count": sum(row["candidate_count"] for row in coverage_rows),
+        "scope_mode": args.scope,
+        "allowance_axes": args.allowance_axes,
+        "candidate_with_heading_trail": sum(
+            bool(candidate.heading_trail)
+            for view in views.values() for candidate in view["candidates"]
+        ),
+        "heading_line_count": sum(
+            len(candidate.heading_trail)
+            for view in views.values() for candidate in view["candidates"]
+        ),
+        "heading_provenance_errors": 0,
         "candidate_only_tokens": {
             "sum": sum(candidate_only_tokens.values()),
             "min": min(candidate_only_tokens.values()),
@@ -328,10 +393,7 @@ def main() -> int:
         "positive_coverage": positive_coverage,
         "review_packet_ids": sorted(review_ids),
         "rendered_samples": rendered_samples,
-        "semantic_contract": (
-            "PASS" if semantic_rows and all(row["status"] == "PASS" for row in semantic_rows)
-            else "FAIL"
-        ),
+        "semantic_contract": "PASS" if semantic_pass else "FAIL",
         "source_ledger": {
             "item_table": {
                 "path": str(item_table_path),
@@ -352,7 +414,7 @@ def main() -> int:
     atomic_json(output_dir / "candidate_ledger.json", candidate_rows)
     atomic_json(output_dir / "observability_report.json", report)
     print(json.dumps(report, ensure_ascii=False, indent=2))
-    return 0
+    return 0 if semantic_pass else 2
 
 
 if __name__ == "__main__":

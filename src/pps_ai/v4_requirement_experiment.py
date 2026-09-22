@@ -12,9 +12,15 @@ from typing import Any, Mapping, Sequence
 
 from .config import CleanExperimentConfig
 from .decisions.v4_requirements import (
+    build_v4_scope_task,
     build_v4_task,
     parse_v4_observations,
     reduce_v4_observations,
+)
+from .decisions.v4_allowance_axes import (
+    build_v4_axis_task,
+    parse_v4_axis_observations,
+    reduce_v4_axis_observations,
 )
 from .evaluate import evaluate_rows_for_ids
 from .evidence.validation import clean_final_rows
@@ -24,6 +30,7 @@ from .preflight import compare_manifests
 from .runtime.openrouter import OpenRouterRuntime, atomic_json
 from .runtime.tokenizer import GemmaTokenCounter
 from .views.v4_requirements import V4RequirementCandidate, build_v4_requirement_view
+from .views.v4_requirement_scope import build_v4_requirement_scope_view
 
 
 def _read_rows(path: Path) -> dict[str, dict[str, Any]]:
@@ -52,12 +59,15 @@ def _p95(values: list[int]) -> int:
     return ordered[max(0, (95 * len(ordered) + 99) // 100 - 1)] if ordered else 0
 
 
-def _mock_response(candidates: Sequence[V4RequirementCandidate]) -> dict[str, Any]:
+def _mock_response(
+    candidates: Sequence[V4RequirementCandidate], *, allowance_axes: bool = False,
+) -> dict[str, Any]:
     return {
         "content": json.dumps({
             "observations": {
                 candidate.source_id: {
                     "r": "U", "m": "U", "x": "U", "a": "U", "n": "U", "q": None,
+                    **({"i": "U"} if allowance_axes else {}),
                 }
                 for candidate in candidates
             },
@@ -95,6 +105,45 @@ class V4RequirementExperiment:
         if not self.source_audit_report.is_file():
             raise FileNotFoundError("C007B source audit report is required")
         self.review_notice_ids = tuple(str(value) for value in policy["review_notice_ids"])
+        scope = config.raw.get("v4_parent_scope")
+        if scope is not None and (
+            not isinstance(scope, dict)
+            or scope.get("module") != "exact-preceding-heading-trail-v1"
+        ):
+            raise ValueError("unknown v4 parent-scope policy")
+        self.scope_mode = scope is not None
+        axes = config.raw.get("v4_allowance_axes")
+        if axes is not None and (
+            not isinstance(axes, dict)
+            or axes.get("module") != "issuer-work-allowance-axes-v1"
+            or not self.scope_mode
+        ):
+            raise ValueError("unknown v4 allowance-axis policy")
+        self.allowance_axes = axes is not None
+        self._build_task = (
+            build_v4_axis_task if self.allowance_axes else
+            build_v4_scope_task if self.scope_mode else build_v4_task
+        )
+        self._build_view = (
+            build_v4_requirement_scope_view if self.scope_mode else build_v4_requirement_view
+        )
+        replay = config.raw.get("v4_quote_resolution")
+        self.quote_resolution = "strict-byte-exact-v1"
+        self.replay_response_dir: Path | None = None
+        if replay is not None:
+            if not isinstance(replay, dict) or replay.get("module") != (
+                "positive-exact-or-unique-whitespace-v1"
+            ):
+                raise ValueError("unknown v4 quote replay policy")
+            self.quote_resolution = str(replay["module"])
+            if "response_dir" in replay:
+                if replay.get("source_cohort") != cohort:
+                    raise ValueError("v4 quote replay is restricted to its source cohort")
+                self.replay_response_dir = (
+                    config.path.parents[2] / str(replay["response_dir"])
+                ).resolve()
+                if not self.replay_response_dir.is_dir():
+                    raise FileNotFoundError("v4 replay response directory is required")
         self.counter = GemmaTokenCounter(config.tokenizer_dir)
 
     def _pack(
@@ -104,7 +153,7 @@ class V4RequirementExperiment:
         current: list[V4RequirementCandidate] = []
         for candidate in candidates:
             trial = tuple([*current, candidate])
-            task = build_v4_task(record, trial)
+            task = self._build_task(record, trial)
             count = self.counter.count(task["messages"])
             if count <= self.config.prompt_budget:
                 current.append(candidate)
@@ -112,15 +161,15 @@ class V4RequirementExperiment:
             if not current:
                 raise ValueError(f"{record['id']}/{candidate.source_id}: candidate exceeds budget")
             frozen = tuple(current)
-            frozen_task = build_v4_task(record, frozen)
+            frozen_task = self._build_task(record, frozen)
             packs.append((frozen, frozen_task, self.counter.count(frozen_task["messages"])))
             current = [candidate]
-            single_task = build_v4_task(record, tuple(current))
+            single_task = self._build_task(record, tuple(current))
             if self.counter.count(single_task["messages"]) > self.config.prompt_budget:
                 raise ValueError(f"{record['id']}/{candidate.source_id}: candidate exceeds budget")
         if current:
             frozen = tuple(current)
-            task = build_v4_task(record, frozen)
+            task = self._build_task(record, frozen)
             packs.append((frozen, task, self.counter.count(task["messages"])))
         return packs
 
@@ -141,7 +190,7 @@ class V4RequirementExperiment:
         coverage: dict[str, Any] = {}
         tokens: dict[str, int] = {}
         for record in records:
-            view = build_v4_requirement_view(record.raw)
+            view = self._build_view(record.raw)
             if len(view["document_coverage"]) != len(record.documents):
                 raise ValueError(f"{record.notice_id}: document coverage differs")
             if any(not row["inspected"] for row in view["document_coverage"]):
@@ -251,15 +300,33 @@ class V4RequirementExperiment:
                 checks = {
                     "qualification": "실제 입찰 참가자격" in user,
                     "one_relation": "특정 발주기관군" in user and "특정 사업명·대상·방식" in user,
-                    "allowance": "민간·해외·동등·일반 유사실적 허용" in user,
+                    "allowance": (
+                        "같은 제한축의 실질적 허용" in user if self.allowance_axes
+                        else "민간·해외·동등·일반 유사실적 허용" in user
+                    ),
                     "necessity": "구체적 필요" in user,
                     "zero_roles": "평가·가점, 증빙서식, 계약 후 조건" in user,
-                    "no_final": "최종 v4나 위반 0/1은 출력하지 않는다" in system,
+                    "no_final": (
+                        "최종 v4 또는 위반 0/1은 출력하지 않는다" in system
+                        if self.allowance_axes else
+                        "최종 v4나 위반 0/1은 출력하지 않는다" in system
+                    ),
                     "all_candidates": all(
                         f"[{candidate.source_id} |" in user
                         for candidate in task_candidates[task_id]
                     ),
                 }
+                if self.scope_mode:
+                    checks["source_heading_trail"] = (
+                        "직전 제목형" in system and "원문 줄" in system
+                        and "[직전 제목형 원문 줄 — 소속 관계는 확정하지 않음]" in user
+                    )
+                if self.allowance_axes:
+                    checks["two_allowance_axes"] = (
+                        "i 발주기관 허용" in system
+                        and "a 사업내용 허용" in system
+                        and "발주기관군과 사업내용은 독립된 축" in system
+                    )
                 semantic.append({
                     "task_id": task_id,
                     "checks": checks,
@@ -304,11 +371,18 @@ class V4RequirementExperiment:
             path = response_dir / f"{task_id}.json"
             if path.is_file():
                 responses[task_id] = json.loads(path.read_text(encoding="utf-8"))
+            elif not mock and self.replay_response_dir is not None:
+                replay_path = self.replay_response_dir / f"{task_id}.json"
+                if not replay_path.is_file():
+                    raise FileNotFoundError(f"missing v4 replay response: {task_id}")
+                responses[task_id] = json.loads(replay_path.read_text(encoding="utf-8"))
             else:
                 pending.append(task_id)
         if mock:
             for task_id in pending:
-                response = _mock_response(task_candidates[task_id])
+                response = _mock_response(
+                    task_candidates[task_id], allowance_axes=self.allowance_axes,
+                )
                 atomic_json(response_dir / f"{task_id}.json", response)
                 responses[task_id] = response
         elif pending:
@@ -347,9 +421,15 @@ class V4RequirementExperiment:
                 parsed_rows = []
                 failure = None
                 for task_id in task_ids:
-                    parsed, reason = parse_v4_observations(
-                        responses[task_id], task_candidates[task_id],
-                    )
+                    if self.allowance_axes:
+                        parsed, reason = parse_v4_axis_observations(
+                            responses[task_id], task_candidates[task_id],
+                        )
+                    else:
+                        parsed, reason = parse_v4_observations(
+                            responses[task_id], task_candidates[task_id],
+                            quote_resolution=self.quote_resolution,
+                        )
                     if parsed is None:
                         failure = f"{task_id}:{reason}"
                         break
@@ -362,9 +442,14 @@ class V4RequirementExperiment:
                     invalid += 1
                     fallback += 1
                 else:
-                    value, evidence, diagnostic = reduce_v4_observations(
-                        parsed_rows, candidates, row["v4"], row["e4"],
-                    )
+                    if self.allowance_axes:
+                        value, evidence, diagnostic = reduce_v4_axis_observations(
+                            parsed_rows, candidates, row["v4"], row["e4"],
+                        )
+                    else:
+                        value, evidence, diagnostic = reduce_v4_observations(
+                            parsed_rows, candidates, row["v4"], row["e4"],
+                        )
                     row["v4"], row["e4"] = value, evidence
                     fallback += int(bool(diagnostic["fallback"]))
             candidate_rows[notice_id] = row
@@ -419,6 +504,8 @@ class V4RequirementExperiment:
             "specialist_logical_calls": len(tasks),
             "resumed_specialist_calls": len(tasks) - len(pending),
             "new_specialist_calls": len(pending),
+            "quote_resolution": self.quote_resolution,
+            "replay_response_dir": str(self.replay_response_dir) if self.replay_response_dir else None,
             "candidate_notices": audit["candidate_notices"],
             "overflow_passes": audit["overflow_passes"],
             "invalid_responses": invalid,

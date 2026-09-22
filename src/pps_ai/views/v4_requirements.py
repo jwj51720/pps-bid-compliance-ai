@@ -16,6 +16,13 @@ BOUNDARY_SEARCH = 120
 
 
 @dataclass(frozen=True)
+class V4HeadingLine:
+    start: int
+    end: int
+    text: str
+
+
+@dataclass(frozen=True)
 class V4RequirementCandidate:
     source_id: str
     doc_id: str
@@ -26,6 +33,7 @@ class V4RequirementCandidate:
     document_sha256: str
     trigger_surfaces: tuple[str, ...]
     text: str
+    heading_trail: tuple[V4HeadingLine, ...] = ()
 
 
 def _cluster_matches(matches: Sequence[re.Match[str]]) -> list[tuple[int, int, tuple[str, ...]]]:

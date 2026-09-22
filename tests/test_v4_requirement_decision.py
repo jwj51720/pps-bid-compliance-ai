@@ -6,6 +6,7 @@ from src.pps_ai.decisions.v4_requirements import (
     build_v4_schema,
     build_v4_task,
     decide_v4,
+    parse_v4_observations,
     reduce_v4_observations,
 )
 from src.pps_ai.views.v4_requirements import build_v4_requirement_view
@@ -109,6 +110,58 @@ def test_negative_quote_is_rejected_to_keep_evidence_contract_unambiguous() -> N
     response = _response(view, [_value(r="E", q="평가 실적")])
     _, _, diagnostic = decide_v4(response, view["candidates"], 0, "")
     assert diagnostic["reason"] == "negative_quote_must_be_null"
+
+
+def test_quote_replay_ignores_negative_quote_without_changing_semantics() -> None:
+    record = _record(["평가 실적은 가점"])
+    view = build_v4_requirement_view(record)
+    response = _response(view, [_value(r="E", q="평가 실적")])
+    rows, reason = parse_v4_observations(
+        response, view["candidates"],
+        quote_resolution="positive-exact-or-unique-whitespace-v1",
+    )
+    assert reason is None
+    assert rows == [{"source_id": "R001", **_value(r="E")}]
+
+
+def test_quote_replay_returns_unique_unchanged_source_span() -> None:
+    record = _record(["입찰참가자는 공공기관  발주 실적이 있어야 한다."])
+    view = build_v4_requirement_view(record)
+    response = _response(view, [
+        _value(r="Q", m="Y", x="I", q="공공기관 발주 실적이 있어야 한다"),
+    ])
+    rows, reason = parse_v4_observations(
+        response, view["candidates"],
+        quote_resolution="positive-exact-or-unique-whitespace-v1",
+    )
+    assert reason is None
+    assert rows is not None
+    assert rows[0]["q"] == "공공기관  발주 실적이 있어야 한다"
+    assert rows[0]["r"] == "Q" and rows[0]["m"] == "Y"
+
+
+def test_quote_replay_rejects_edited_or_ambiguous_positive() -> None:
+    record = _record(["입찰참가자는 공공기관  발주 실적이 있어야 한다."])
+    view = build_v4_requirement_view(record)
+    for quote in ["민간 발주 실적", "없는 실적"]:
+        response = _response(view, [_value(r="Q", m="Y", x="I", q=quote)])
+        rows, reason = parse_v4_observations(
+            response, view["candidates"],
+            quote_resolution="positive-exact-or-unique-whitespace-v1",
+        )
+        assert rows is None and reason == "positive_quote_not_exact"
+
+    ambiguous = _record(["실적: 공공기관  발주 실적 / 공공기관 발주 실적"])
+    candidates = build_v4_requirement_view(ambiguous)["candidates"]
+    response = _response(
+        {"candidates": candidates},
+        [_value(r="Q", m="Y", x="I", q="공공기관발주실적")],
+    )
+    rows, reason = parse_v4_observations(
+        response, candidates,
+        quote_resolution="positive-exact-or-unique-whitespace-v1",
+    )
+    assert rows is None and reason == "positive_quote_not_exact"
 
 
 def test_multiple_pack_rows_reduce_only_with_complete_candidate_coverage() -> None:

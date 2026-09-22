@@ -34,7 +34,8 @@ def main() -> int:
     if args.preflight_only:
         report = experiment.preflight_only()
     else:
-        if not args.mock and not os.environ.get(config.provider.api_key_env):
+        replay = config.raw.get("v4_quote_resolution") or {}
+        if not args.mock and "response_dir" not in replay and not os.environ.get(config.provider.api_key_env):
             parser.error(f"{config.provider.api_key_env} is required")
         report = experiment.run(mock=args.mock)
     print(json.dumps({
