@@ -1,0 +1,16 @@
+{
+  "schema_version": "clean-l41-derived-submission-v1",
+  "candidate": "l41-runtime-hardened-invalid-retry-v1",
+  "reference_zip_sha256": "a06feff77ffbc4a6f2a47cd0e2d322f341f652ca865d1b9cf53919012c8ca216",
+  "base_calls_per_notice": 3,
+  "arms": ["r10", "B", "C24"],
+  "batch_size": 128,
+  "invalid_retry_rounds": 1,
+  "batch_exception_policy": "recursive-bisection-then-invalid-placeholder",
+  "unrecovered_policy": "always-emit-arm-fallback-then-emergency-zero-csv-on-run-error",
+  "model_max_length": 16384,
+  "max_completion_tokens": 1536,
+  "temperature": 0,
+  "seed": 20260826,
+  "quantization": "int8_per_channel_weight_only"
+}
