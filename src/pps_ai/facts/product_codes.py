@@ -10,7 +10,9 @@ from typing import Any, Mapping
 
 
 CODE_PATTERN = re.compile(r"[0-9]{10}\Z")
-ENTRY_PATTERN = re.compile(r"\s*([^,\[\]]+?)\s*\[([0-9]{10})\]\s*\Z")
+ENTRY_PATTERN = re.compile(
+    r"(?:^|,\s*)([^\[\]]+?)\s*\[([0-9]{10}|[0-9]{8})\](?=\s*(?:,|$))"
+)
 
 
 @dataclass(frozen=True)
@@ -27,17 +29,22 @@ def parse_supplied_product_codes(value: Any) -> tuple[tuple[str, str], ...]:
         return ()
     if not isinstance(value, str):
         raise ValueError("product-code metadata must be a string or null")
-    parts = value.split(",")
     parsed: list[tuple[str, str]] = []
     seen: set[str] = set()
-    for part in parts:
-        match = ENTRY_PATTERN.fullmatch(part)
-        if match is None:
+    cursor = 0
+    for match in ENTRY_PATTERN.finditer(value):
+        if match.start() != cursor:
             raise ValueError("unparseable product-code metadata entry")
         name, code = match.groups()
+        name = name.strip()
+        if not name:
+            raise ValueError("product-code metadata entry has an empty name")
         if code not in seen:
             seen.add(code)
-            parsed.append((code, name.strip()))
+            parsed.append((code, name))
+        cursor = match.end()
+    if cursor != len(value) or not parsed:
+        raise ValueError("unparseable product-code metadata entry")
     return tuple(parsed)
 
 

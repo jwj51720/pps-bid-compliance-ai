@@ -11,6 +11,11 @@ Before a paid prompt experiment, export and read the exact rendered system/user 
 Before a paid prompt experiment, perform a separate **semantic-input contract** review for every active v item. The review must trace its applicability facts, 1-condition, material 0-condition/exception, required notice document type, and required metadata/organizer-CSV fact to an organizer-provided source and an exact span in the rendered message. A tokenizer-admitted, schema-valid prompt is not complete merely because it renders; do not pay for a run while an active item has only an item name, vague note, or an untraced condition.
 For an ablation, declare `experiment.base_config` and `experiment.allowed_policy_changes`, then run `scripts/preflight_experiment.py` before the paid call. It must find no undeclared effective prompt, LLM, or grouped-execution change. Put grouping/reference execution in versioned config (`grouped_run`), never only in a remembered CLI command. An invalidated config is audit-only and must not be runnable.
 Use the versioned `configs/dev_fast_panel_v*.json` local fast cohort rather than file-order first-N records. A fast-panel result ranks candidates only; do not promote a canonical policy without dev-200 confirmation.
+Once outcomes from dev-200 or one of its subsets have been inspected and used to select rules, prompts, or
+reducers, treat that cohort as adaptive development data, not independent validation. Do not call a reused
+holdout independent, and do not promote a one-cell dev correction as evidence of generalization. After a
+public regression, prefer one-change controlled ablations and organizer-unlabeled distribution/source audits;
+never respond by accumulating new notice-specific lexical corrections.
 
 ## Project Structure
 

@@ -1,0 +1,193 @@
+{
+  "schema_version": "clean-experiment-v1",
+  "experiment_id": "clean-exp-s022-v5-full-source-role-probe-v1",
+  "pipeline_id": "clean-s022-v5-full-source-role-probe-v1",
+  "base_config": null,
+  "allowed_policy_changes": [],
+  "experiment": {
+    "base_config": "experiments/manifests/clean_exp_s001_integrated_v3_v19_v1.json",
+    "allowed_policy_changes": [
+      "v5_full_source_role_probe"
+    ]
+  },
+  "reference": {
+    "zip_path": "dist/reference/submit.zip",
+    "zip_sha256": "a06feff77ffbc4a6f2a47cd0e2d322f341f652ca865d1b9cf53919012c8ca216",
+    "strategy": "frozen-l41-parity"
+  },
+  "data": {
+    "input_path": "data/raw/open/dev.jsonl.gz",
+    "labels_path": "data/raw/open/dev_labels.csv",
+    "organizer_data_dir": "data/raw/open/data",
+    "item_table_path": "data/raw/open/data/항목표.json"
+  },
+  "layers": {
+    "ingest": "strict-organizer-jsonl-v1",
+    "source_ledger": "sha256-source-ledger-v1",
+    "facts": "reference-l41-facts-v1",
+    "views": "c004s-plus-v19-requirement-instance-view-v1",
+    "retrieval": "reference-l41-bge-m3-v1",
+    "decisions": [
+      "reference-r10-v6",
+      "reference-C24",
+      "native-v3-monetary-v1",
+      "candidate-keyed-object-v11",
+      "v3-basis-reducer-v2",
+      "v19-requirement-instance-observation-reducer-v1",
+      "v19-positive-quote-resolution-v2"
+    ],
+    "assembly": "integrated-owner-routing-v3-v19-retry2-v1",
+    "evidence": "exact-substring-no-label-mutation-v1",
+    "export": "submission-49-columns-v1"
+  },
+  "v3_policy": {
+    "module": "native-v3-monetary-v1",
+    "base_output_dir": "outputs/clean-reference-l41-openrouter-dev200-v1",
+    "owner_change": "hybrid.r10 -> hybrid.native_v3_monetary_v1",
+    "source_view": "all-documents-exact-performance-money-windows-v1",
+    "observation": "candidate-complete-role-and-exact-amount-surface-v1",
+    "reducer": "single-or-aggregate-qualification-amount-strictly-greater-than-estimated-price-v2",
+    "failure_policy": "r10-v3-on-unresolved-after-two-retries",
+    "review_notice_ids": [
+      "PPS-DEV-04",
+      "PPS-DEV-042",
+      "PPS-DEV-05",
+      "PPS-DEV-051",
+      "PPS-DEV-053",
+      "PPS-DEV-054",
+      "PPS-DEV-059",
+      "PPS-DEV-062",
+      "PPS-DEV-071"
+    ]
+  },
+  "v3_serialization": {
+    "module": "candidate-keyed-object-v11",
+    "base": "source-id-array-v1",
+    "semantic_change": false
+  },
+  "v3_recovery": {
+    "base_output_dir": "outputs/clean-exp-c004r-v3-keyed-full-fast-v11/dev200",
+    "expected_targets": [
+      "PPS-DEV-08",
+      "PPS-DEV-157"
+    ],
+    "invalid_structured_response_retry": 2,
+    "task_change": false
+  },
+  "v3_basis_replay": {
+    "module": "v3-basis-reducer-v2",
+    "base_final_output_dir": "outputs/clean-exp-c004rr-v3-keyed-recovery-v1",
+    "semantic_output_dir": "outputs/clean-exp-c004r-v3-keyed-full-fast-v11/dev200",
+    "recovery_output_dir": "outputs/clean-exp-c004rr-v3-keyed-recovery-v1",
+    "accepted_bases_before": [
+      "SINGLE_CONTRACT"
+    ],
+    "accepted_bases_after": [
+      "SINGLE_CONTRACT",
+      "AGGREGATE"
+    ],
+    "expected_changed_v3_cells": 1,
+    "calls": 0
+  },
+  "v19_policy": {
+    "module": "v19-requirement-instance-observation-reducer-v1",
+    "base_output_dir": "outputs/clean-exp-c004s-v3-basis-reducer-replay-v2",
+    "owner_change": "llm.B -> hybrid.native_v19_requirement_instances_v1",
+    "source_view": "all-documents-exact-assurance-certificate-windows-v1",
+    "observation": "candidate-keyed-requirement-role-issuer-obligation-time-v1",
+    "reducer": "external-assurance-and-mandatory-prebid-obtain-or-bid-submit-v1",
+    "failure_policy": "conditional-B-after-native-unresolved-and-two-retries",
+    "review_notice_ids": [
+      "PPS-DEV-036",
+      "PPS-DEV-050",
+      "PPS-DEV-057",
+      "PPS-DEV-096",
+      "PPS-DEV-098",
+      "PPS-DEV-112",
+      "PPS-DEV-133",
+      "PPS-DEV-152",
+      "PPS-DEV-158",
+      "PPS-DEV-162",
+      "PPS-DEV-178"
+    ]
+  },
+  "v19_quote_resolution": {
+    "module": "v19-positive-quote-resolution-v2",
+    "scope": "positive-predicate-candidates-only",
+    "exact_first": true,
+    "whitespace_unique_fallback": true,
+    "similarity_or_edit_matching": false,
+    "unresolved_positive_policy": "conditional-B-fallback"
+  },
+  "v19_serialization_recovery": {
+    "module": "v19-invalid-only-same-task-retry-v2",
+    "primary_serialization": "candidate-keyed-verbose-v1",
+    "recovery_serialization": "candidate-keyed-verbose-v1",
+    "trigger": "strict-semantic-parse-failure-only",
+    "max_retries_per_invalid_task": 2,
+    "semantic_change": false,
+    "label_default": false
+  },
+  "provider": {
+    "model": "google/gemma-4-26b-a4b-it",
+    "embedding_model": "baai/bge-m3",
+    "api_url": "https://openrouter.ai/api/v1/chat/completions",
+    "embedding_url": "https://openrouter.ai/api/v1/embeddings",
+    "api_key_env": "OPENROUTER_API_KEY",
+    "temperature": 0,
+    "max_tokens": 1536,
+    "seed": 20260826,
+    "timeout_seconds": 180,
+    "request_retries": 3,
+    "concurrency": 8,
+    "min_request_interval_seconds": 1,
+    "provider_sort": "throughput",
+    "require_parameters": true
+  },
+  "retrieval": {
+    "top_k": 10,
+    "batch_size": 16
+  },
+  "runtime": {
+    "tokenizer_dir": "~/.cache/huggingface/hub/models--google--gemma-4-26B-A4B-it/snapshots/4d7ae4984b7db7de8f8457170b3f1a419ee76d52",
+    "prompt_budget": 14848,
+    "batch_size": 128,
+    "expected_calls_per_record": "r10+C24+one-v19-owner plus conditional v3 and invalid-only retries",
+    "invalid_response_retries": 2,
+    "batch_exception_policy": "recursive-bisection-single-task-isolation"
+  },
+  "evaluation": {
+    "metric": "mean-positive-class-f1-v1-v24",
+    "fast_panel_path": "configs/dev_fast_panel_v1.json",
+    "holdout_panel_path": "configs/dev_prompt_holdout_v1.json"
+  },
+  "output_dir": "outputs/clean-exp-s022-v5-full-source-role-probe-v1",
+  "v5_full_source_role_probe": {
+    "mode": "source-only-diagnostic",
+    "max_notices": 23,
+    "dev_ids": [
+      "PPS-DEV-07",
+      "PPS-DEV-045",
+      "PPS-DEV-046",
+      "PPS-DEV-047",
+      "PPS-DEV-048",
+      "PPS-DEV-049",
+      "PPS-DEV-057"
+    ],
+    "source_review_path": "outputs/clean-exp-s020-direct-owner-source-role-audit-v1/source_samples.json",
+    "blind_ids": [
+      "PPS-D-003512",
+      "PPS-D-017997",
+      "PPS-D-021678",
+      "PPS-D-009424",
+      "PPS-D-016295",
+      "PPS-D-017534",
+      "PPS-D-018798",
+      "PPS-D-010082"
+    ],
+    "unlabeled_input_path": "data/raw/open/train_unlabeled.jsonl.gz",
+    "candidate_policy": "frozen-v5-positive-only",
+    "output_contract": "bidder-location-role-with-exact-quote-v1",
+    "final_label_change": false
+  }
+}

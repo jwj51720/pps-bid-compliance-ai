@@ -4,6 +4,28 @@
 기록한다. `outputs/`의 재현 가능한 local metric과 달리, 동료가 구두로 전달한
 제출 성적은 원본 zip·config가 확보되기 전까지 **외부 관측**으로 표기한다.
 
+## 2026-09-23: S001 integrated public — 구조적 상승과 adaptive-dev 괴리
+
+| archive | adaptive dev200 | public | runtime |
+|---|---:|---:|---:|
+| `pps_20260922_153225.zip` | 0.8151465658 | **0.6053527995** | 95m 27s |
+
+기존 최고 확인 public 0.2604457110 대비 +0.3449070885이므로 item owner, bounded source view,
+구조화 사실이라는 큰 구조는 실제 평가에서도 유효했다. 그러나 local-public 차이는
+-0.2097937663으로, dev200을 반복적으로 보고 선택한 규칙·reducer와 OpenRouter stored-response
+replay를 독립 일반화 점수로 취급한 것이 잘못이었다.
+
+S001의 신규 v3/v19 local 기여 합은 +0.0354729013이며, 두 item만 변경할 때 가능한 Macro
+변화 상한은 2/24=0.0833333333이다. 따라서 전체 괴리를 두 specialist 탓으로만 돌릴 수 없다.
+dev200과 organizer 비라벨 20,000건의 S004 감사에서는 제한경쟁 67.5% 대 42.37%, 소액수의
+17.5% 대 44.81%, 5억원 이상 12.0% 대 2.82%라는 큰 shift가 확인됐다. 상세 진단은
+`docs/s001_public_generalization_diagnosis_20260923.md`와
+`docs/clean_exp_s004_generalization_shift_audit_result.md`를 따른다.
+
+앞으로 dev200과 그 subset은 adaptive development data다. public regression 뒤에 dev 오류별
+lexical correction을 누적하지 않고, 한 번에 한 owner만 통제 ablation하며 organizer 비라벨
+strata의 activation/source-role 감사를 먼저 수행한다.
+
 ## 2026-09-02: EXP044 runtime timeout
 
 EXP044 제출은 `full_split_merge`와 `grouping: four_way`를 함께 사용했고, 2시간
