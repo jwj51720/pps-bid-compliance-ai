@@ -1,0 +1,12 @@
+# EXP300: identical v12 relation input with labels-only final serialization.
+inherits: config.exp299-v12-product-target-review-ve-fast-panel-c4.yaml
+experiment:
+  id: exp-300-v12-product-target-review-vonly-fast-panel-c4
+  base_config: configs/config.exp299-v12-product-target-review-ve-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.output_mode]
+  derived_data: [decision_cards_v22_v12_product_target, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-300-v12-product-target-review-vonly-fast-panel-c4
+prompt:
+  output_mode: labels_only

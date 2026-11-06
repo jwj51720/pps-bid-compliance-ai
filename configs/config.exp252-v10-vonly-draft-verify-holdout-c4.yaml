@@ -1,0 +1,12 @@
+# EXP252: policy-identical independent holdout for EXP251.
+inherits: config.exp251-v10-vonly-draft-verify-fast-panel-c4.yaml
+experiment:
+  id: exp-252-v10-vonly-draft-verify-holdout-c4
+  base_config: configs/config.exp251-v10-vonly-draft-verify-fast-panel-c4.yaml
+  allowed_policy_changes: []
+  derived_data: [decision_cards_v10_v6_v7_scope, competition_products_v1, dev_prompt_holdout_v1]
+  lifecycle: diagnostic
+data:
+  fast_panel_ids_path: configs/dev_prompt_holdout_v1.json
+output:
+  dir: outputs/exp-252-v10-vonly-draft-verify-holdout-c4

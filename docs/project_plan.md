@@ -1,0 +1,91 @@
+# 2026-09-21 clean-room 전환
+
+이 문서 아래의 초기 flat-`src`/EXP171 설명은 역사적 계획이다. 현재 active import root는
+`src/pps_ai` 하나뿐이다. 과거 `src`, `scripts`, `tests`, `submission`은
+`legacy/pipeline_v1_20260921/`로 이동했으며 참고용으로만 읽고 import하거나 실행하지 않는다.
+실행 가능한 새 기준선은 `experiments/manifests/reference_l41_openrouter_dev200_v1.json`이고,
+결과는 `docs/clean_reference_l41_dev200_result.md`에 기록했다. clean submission adapter가 아직
+없으므로 root `config.yaml`은 현재 canonical submission을 뜻하지 않는다.
+
+---
+
+맞습니다. 이전 구조는 아직 결정되지 않은 전략까지 폴더로 확정해버린 면이 있었습니다.
+
+이번에는 문서를 전체적으로 다시 정리해서, 초기에 필요한 구조만 남겼습니다. 핵심은 아래처럼 훨씬 단순합니다.
+
+```text
+pps-bid-compliance-ai/
+│
+├── config.yaml
+├── configs/              # versioned/historical experiment configs
+├── data/
+├── src/
+├── scripts/
+├── submission/
+├── outputs/
+├── dist/                 # ignored submission zips and shared archives
+└── docs/
+```
+
+`src/`도 처음에는 최대한 평평하게 유지합니다.
+
+```text
+src/
+├── pipeline.py
+├── data.py
+├── prompt.py
+├── submission.py
+├── evaluate.py
+└── external/
+    ├── openrouter.py
+    ├── openai.py
+    └── local_gemma.py
+```
+
+특히 `rag/`, `rules/`, `wiki/`, `retrieval/` 같은 폴더는 **지금 만들지 않는 방향**으로 바꿨습니다. LLM Wiki가 주력이 되면 그때 `knowledge/`를 만들고, embedding retrieval이 주력이 되면 그때 `retrieval/`을 만들고, rule 코드가 커지면 그때 `rules/`를 만들면 됩니다.
+
+## 문서 입력 전략 옵션
+
+역사적으로 최종 정책은 `config.yaml`의 `prompt.context_strategy`와 제출용
+`submission/runtime_config.json`이 함께 정했다. 2026-09-10 당시 제출 후보는 EXP171
+source-first/full-final(`submit-exp171-source-first-full-final-v1`)이다. 1차는 모든
+admitted source에서 source-only fact inventory를 만들고, 2차는 카드·필요 metadata/CSV
+사실·inventory·원문을 다시 보고 V/E를 최종 판정한다. source overflow는 exact tokenizer
+기준 ordered pack으로 나누되, v grouping과 결합하지 않는다. organizer-format 4,000자
+single V/E control은 `configs/config.exp125a-exact-baseline-ve-fast-panel.yaml` 및 Git
+history로 보존한다. EXP135의 2-way v-item partition은 dev에서 개선됐지만 public
+0.220069으로 일반화 근거를 잃었으므로 versioned historical experiment로만 보존한다.
+`single`의 adaptive full-document packing과
+`full_split_merge`는 별도 versioned ablation이다. 후자는 각 실제 source document를
+독립 pass로 넣고 결과를 OR-merge한다.
+비공고문 pass에는 동일 공고임을 유지하기 위한 짧은 공고문 앵커와 메타데이터가
+함께 들어간다. 어느 모드든 한 source document 자체가 예산을 넘을 때에만 해당
+문서를 exact tokenizer 기준으로 잘라 연속 pass로 보낸다.
+
+`full_split_merge`의 strict ablation은 `strict_document_evidence: true`를 함께
+설정한다. 이때 Gemma에는 대상 문서·공고문 앵커·metadata의 역할과 정부계약
+컴플라이언스 판정 절차를 명확히 설명하고, Python은 non-absence positive의 evidence가
+대상 문서 조각 안에 없으면 OR 병합 전 0으로 강등한다. 부재탐지 5개 항목은 문서마다
+“필요 조건이 없음”을 판단한 뒤 모든 pass가 1일 때만 최종 1이 되는 AND 결합을 쓴다.
+non-absence는 원칙적으로 OR이며, 문서 간에 실적제한과 지역제한이라는 두 사실을 함께
+확인해야 하는 v8만 최소 상태 관찰을 결합하는 별도 ablation으로 둔다.
+
+당시에는 어느 선택이든 `src.pipeline.BaselinePipeline`이 두 환경의 공통 구현이었으며, 패키징은
+canonical config와 submission runtime의 관련 필드가 일치하지 않으면 실패한다.
+
+제가 보기에도 이번 방향이 더 적절합니다.
+
+> **폴더 구조가 전략을 결정하면 안 되고, 실험을 통해 결정된 전략이 폴더 구조를 만들게 해야 합니다.**
+
+그리고 `data/`도 `raw/`와 `derived/`만 둬서, `derived/` 안에는 향후 `law_wiki.md`, chunk, embedding, self-label 결과 등 무엇이든 넣을 수 있게 열어뒀습니다.
+
+가장 중요한 **실험과 제출이 같은 pipeline을 실행한다**는 원칙은 그대로 유지했습니다.
+
+## Fast evaluation panel
+
+파일 순서의 첫 20건은 v17~v24 positive를 전혀 포함하지 않아 Macro-F1 fast gate로 사용하지
+않는다. 기본 local fast cohort는 `configs/dev_fast_panel_v1.json`의 고정 20건이다. 모든 v의
+positive를 최소 하나 포함하고, 계약법 비율과 문서 길이 사분위를 dev-200에 맞춘다. fast panel은
+후보 순위·방향 확인용일 뿐 canonical 정책 변경은 반드시 dev-200에서 확인한다.
+
+* 처음에는 local gemma는 사용하지 않습니다. openrouter(./memo.md) 접근으로 시도합니다.

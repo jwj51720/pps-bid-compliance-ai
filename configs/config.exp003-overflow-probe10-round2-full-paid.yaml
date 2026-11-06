@@ -1,0 +1,19 @@
+experiment: {id: exp-003-overflow-probe10-round2-full-paid, derived_data: []}
+data: {root: data/raw/open, input: dev.jsonl.gz, labels: dev_labels.csv, item_table: data/항목표.json}
+output: {dir: outputs/exp-003-overflow-probe10-round2-full-paid}
+prompt: {max_document_chars: null, context_strategy: single}
+llm:
+  provider: openrouter
+  model: google/gemma-4-26b-a4b-it
+  api_key_env: OPENROUTER_API_KEY
+  api_url: https://openrouter.ai/api/v1/chat/completions
+  temperature: 0.0
+  max_tokens: 2500
+  seed: 20260826
+  timeout_seconds: 180
+  request_retries: 1
+  prediction_attempts: 1
+  provider_sort: throughput
+  require_parameters: true
+  min_request_interval_seconds: 1.0
+run: {resume: true, concurrency: 1}

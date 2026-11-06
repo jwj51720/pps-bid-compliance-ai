@@ -1,0 +1,12 @@
+# EXP200: dev-200 diagnostic of the fully corrected EXP197 input policy.
+inherits: config.exp197-human-readable-metadata-fast-panel-c4.yaml
+experiment:
+  id: exp-200-corrected-input-source-first-dev200-c4
+  base_config: configs/config.exp197-human-readable-metadata-fast-panel-c4.yaml
+  allowed_policy_changes: []
+  derived_data: [decision_cards_v10_v6_v7_scope, competition_products_v1]
+  lifecycle: diagnostic
+data:
+  fast_panel_ids_path: null
+output:
+  dir: outputs/exp-200-corrected-input-source-first-dev200-c4

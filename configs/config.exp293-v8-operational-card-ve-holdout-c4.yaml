@@ -1,0 +1,12 @@
+# EXP293: conditional policy-identical V/E holdout for EXP291.
+inherits: config.exp291-v8-operational-card-ve-fast-panel-c4.yaml
+experiment:
+  id: exp-293-v8-operational-card-ve-holdout-c4
+  base_config: configs/config.exp291-v8-operational-card-ve-fast-panel-c4.yaml
+  allowed_policy_changes: []
+  derived_data: [decision_cards_v21_v8_operational, competition_products_v1, dev_prompt_holdout_v1]
+  lifecycle: diagnostic
+data:
+  fast_panel_ids_path: configs/dev_prompt_holdout_v1.json
+output:
+  dir: outputs/exp-293-v8-operational-card-ve-holdout-c4

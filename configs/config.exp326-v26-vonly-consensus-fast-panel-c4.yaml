@@ -1,0 +1,11 @@
+# EXP326: two full-source V-only drafts followed by a full-source V-only resolver.
+inherits: config.exp324-v26-vonly-fast-panel-c4.yaml
+experiment:
+  id: exp-326-v26-vonly-consensus-fast-panel-c4
+  base_config: configs/config.exp324-v26-vonly-fast-panel-c4.yaml
+  allowed_policy_changes: [staged_run, staged_run.mode]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-326-v26-vonly-consensus-fast-panel-c4
+staged_run:
+  mode: vonly_consensus_full_source_v1

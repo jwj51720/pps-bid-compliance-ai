@@ -1,0 +1,12 @@
+# EXP262: policy-identical dev200 confirmation for EXP261.
+inherits: config.exp261-v14-threshold-ve-holdout-c4.yaml
+experiment:
+  id: exp-262-v14-threshold-ve-dev200-c4
+  base_config: configs/config.exp261-v14-threshold-ve-holdout-c4.yaml
+  allowed_policy_changes: []
+  derived_data: [decision_cards_v16_v14_threshold, competition_products_v1]
+  lifecycle: diagnostic
+data:
+  fast_panel_ids_path: null
+output:
+  dir: outputs/exp-262-v14-threshold-ve-dev200-c4

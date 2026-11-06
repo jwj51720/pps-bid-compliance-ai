@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "id": "dev_prompt_probe_v3",
+  "purpose": "Fixed five-notice diagnostic cohort for one-axis prompt ablations. It is not a performance gate and must never be replaced using model scores.",
+  "selection_contract": [
+    "Selected only from organizer-provided dev labels, document structure/length, contract-law metadata, and organizer CSV lookup status; historical model predictions and scores were not used.",
+    "The cohort includes national and local contracts, one document that fits the 4,000-character baseline, documents beyond that baseline, single- and multi-document notices, CSV matched/not-matched cases, absence detection, and v24 comparison.",
+    "Scores diagnose directional prompt effects. Any candidate promoted from this probe must be rerun on dev_fast_panel_v1 and then dev-200."
+  ],
+  "ids": ["PPS-DEV-04", "PPS-DEV-13", "PPS-DEV-15", "PPS-DEV-29", "PPS-DEV-060"],
+  "records": [
+    {"id": "PPS-DEV-04", "reason": "National-contract, three-document notice; v3 positive."},
+    {"id": "PPS-DEV-13", "reason": "Local-contract, three-document, competition-product exact-match; v10 absence positive."},
+    {"id": "PPS-DEV-15", "reason": "National-contract, two-document, competition-product not-matched; v12 positive."},
+    {"id": "PPS-DEV-29", "reason": "Local-contract, one-document just above 4,000 characters; v24 positive."},
+    {"id": "PPS-DEV-060", "reason": "Local-contract, one-document within 4,000 characters, competition-product exact-match; v11 absence positive."}
+  ]
+}

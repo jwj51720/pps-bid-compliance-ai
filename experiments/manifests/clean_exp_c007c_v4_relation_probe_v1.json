@@ -1,0 +1,160 @@
+{
+  "schema_version": "clean-experiment-v1",
+  "experiment_id": "clean-exp-c007c-v4-relation-probe-v1",
+  "pipeline_id": "clean-c007c-v4-requirement-relation-probe-v1",
+  "base_config": null,
+  "allowed_policy_changes": [],
+  "experiment": {
+    "base_config": "experiments/manifests/clean_exp_c005d_v19_dev200_promotion_v1.json",
+    "allowed_policy_changes": [
+      "layers.views",
+      "layers.decisions",
+      "layers.assembly",
+      "v4_policy",
+      "runtime.expected_calls_per_record"
+    ]
+  },
+  "reference": {
+    "zip_path": "dist/reference/submit.zip",
+    "zip_sha256": "a06feff77ffbc4a6f2a47cd0e2d322f341f652ca865d1b9cf53919012c8ca216",
+    "strategy": "frozen-l41-parity"
+  },
+  "data": {
+    "input_path": "data/raw/open/dev.jsonl.gz",
+    "labels_path": "data/raw/open/dev_labels.csv",
+    "organizer_data_dir": "data/raw/open/data",
+    "item_table_path": "data/raw/open/data/항목표.json"
+  },
+  "layers": {
+    "ingest": "strict-organizer-jsonl-v1",
+    "source_ledger": "sha256-source-ledger-v1",
+    "facts": "reference-l41-facts-v1",
+    "views": "c004s-plus-v19-plus-v4-requirement-instance-view-v1",
+    "retrieval": "reference-l41-bge-m3-v1",
+    "decisions": [
+      "reference-r10-v6",
+      "reference-C24",
+      "native-v3-monetary-v1",
+      "candidate-keyed-object-v11",
+      "v3-basis-reducer-v2",
+      "v19-requirement-instance-observation-reducer-v1",
+      "v19-positive-quote-resolution-v2",
+      "v19-invalid-only-compact-recovery-v1",
+      "native-v4-requirement-instances-v1"
+    ],
+    "assembly": "c005d-owner-with-native-v4-relation-probe-v1",
+    "evidence": "exact-substring-no-label-mutation-v1",
+    "export": "submission-49-columns-v1"
+  },
+  "v3_policy": {
+    "module": "native-v3-monetary-v1",
+    "base_output_dir": "outputs/clean-reference-l41-openrouter-dev200-v1",
+    "owner_change": "hybrid.r10 -> hybrid.native_v3_monetary_v1",
+    "source_view": "all-documents-exact-performance-money-windows-v1",
+    "observation": "candidate-complete-role-and-exact-amount-surface-v1",
+    "reducer": "single-qualification-amount-strictly-greater-than-estimated-price-v1",
+    "failure_policy": "baseline-v3-on-unresolved-or-invalid",
+    "review_notice_ids": [
+      "PPS-DEV-04", "PPS-DEV-042", "PPS-DEV-05", "PPS-DEV-051", "PPS-DEV-053",
+      "PPS-DEV-054", "PPS-DEV-059", "PPS-DEV-062", "PPS-DEV-071"
+    ]
+  },
+  "v3_serialization": {
+    "module": "candidate-keyed-object-v11",
+    "base": "source-id-array-v1",
+    "semantic_change": false
+  },
+  "v3_recovery": {
+    "base_output_dir": "outputs/clean-exp-c004r-v3-keyed-full-fast-v11/dev200",
+    "expected_targets": ["PPS-DEV-08", "PPS-DEV-157"],
+    "invalid_structured_response_retry": 1,
+    "attempt_number": 1,
+    "task_change": false
+  },
+  "v3_basis_replay": {
+    "module": "v3-basis-reducer-v2",
+    "base_final_output_dir": "outputs/clean-exp-c004rr-v3-keyed-recovery-v1",
+    "semantic_output_dir": "outputs/clean-exp-c004r-v3-keyed-full-fast-v11/dev200",
+    "recovery_output_dir": "outputs/clean-exp-c004rr-v3-keyed-recovery-v1",
+    "accepted_bases_before": ["SINGLE_CONTRACT"],
+    "accepted_bases_after": ["SINGLE_CONTRACT", "AGGREGATE"],
+    "expected_changed_v3_cells": 1,
+    "calls": 0
+  },
+  "v19_policy": {
+    "module": "v19-requirement-instance-observation-reducer-v1",
+    "base_output_dir": "outputs/clean-exp-c004s-v3-basis-reducer-replay-v2",
+    "owner_change": "llm.B -> hybrid.native_v19_requirement_instances_v1",
+    "source_view": "all-documents-exact-assurance-certificate-windows-v1",
+    "observation": "candidate-keyed-requirement-role-issuer-obligation-time-v1",
+    "reducer": "external-assurance-and-mandatory-prebid-obtain-or-bid-submit-v1",
+    "failure_policy": "baseline-v19-on-no-candidate-or-invalid-response",
+    "review_notice_ids": [
+      "PPS-DEV-036", "PPS-DEV-050", "PPS-DEV-057", "PPS-DEV-096",
+      "PPS-DEV-098", "PPS-DEV-112", "PPS-DEV-133", "PPS-DEV-152",
+      "PPS-DEV-158", "PPS-DEV-162", "PPS-DEV-178"
+    ]
+  },
+  "v19_quote_resolution": {
+    "module": "v19-positive-quote-resolution-v2",
+    "scope": "positive-predicate-candidates-only",
+    "exact_first": true,
+    "whitespace_unique_fallback": true,
+    "similarity_or_edit_matching": false,
+    "unresolved_positive_policy": "baseline-v19-fallback"
+  },
+  "v19_serialization_recovery": {
+    "module": "v19-invalid-only-compact-recovery-v1",
+    "primary_serialization": "candidate-keyed-verbose-v1",
+    "recovery_serialization": "v19-compact-serialization-v1",
+    "trigger": "strict-semantic-parse-failure-only",
+    "max_retries_per_invalid_task": 1,
+    "semantic_change": false,
+    "label_default": false
+  },
+  "v4_policy": {
+    "module": "native-v4-requirement-instances-v1",
+    "status": "diagnostic-probe-not-canonical",
+    "base_output_dir": "outputs/clean-exp-c005d-v19-dev200-promotion-v1/dev200",
+    "source_audit_report": "outputs/clean-exp-c007b-v4-requirement-view-audit-v1/observability_report.json",
+    "owner_change": "hybrid.r10 -> hybrid.native_v4_requirement_instances_v1",
+    "source_view": "all-documents-exact-clustered-performance-requirement-windows-v1",
+    "observation": "candidate-keyed-compact-role-restriction-allowance-necessity-v1",
+    "reducer": "relation-only-without-price-scope-diagnostic-v1",
+    "failure_policy": "baseline-v4-on-no-candidate-invalid-or-unresolved",
+    "review_notice_ids": [
+      "PPS-DEV-04", "PPS-DEV-042", "PPS-DEV-051", "PPS-DEV-053",
+      "PPS-DEV-059", "PPS-DEV-06", "PPS-DEV-062", "PPS-DEV-10",
+      "PPS-DEV-109", "PPS-DEV-123", "PPS-DEV-137"
+    ]
+  },
+  "provider": {
+    "model": "google/gemma-4-26b-a4b-it",
+    "embedding_model": "baai/bge-m3",
+    "api_url": "https://openrouter.ai/api/v1/chat/completions",
+    "embedding_url": "https://openrouter.ai/api/v1/embeddings",
+    "api_key_env": "OPENROUTER_API_KEY",
+    "temperature": 0,
+    "max_tokens": 1536,
+    "seed": 20260826,
+    "timeout_seconds": 180,
+    "request_retries": 3,
+    "concurrency": 8,
+    "min_request_interval_seconds": 1.0,
+    "provider_sort": "throughput",
+    "require_parameters": true
+  },
+  "retrieval": {"top_k": 10, "batch_size": 16},
+  "runtime": {
+    "tokenizer_dir": "~/.cache/huggingface/hub/models--google--gemma-4-26B-A4B-it/snapshots/4d7ae4984b7db7de8f8457170b3f1a419ee76d52",
+    "prompt_budget": 14848,
+    "batch_size": 128,
+    "expected_calls_per_record": "stored C005D rows plus one conditional v4 candidate call; fast20=18 calls"
+  },
+  "evaluation": {
+    "metric": "mean-positive-class-f1-v1-v24",
+    "fast_panel_path": "configs/dev_fast_panel_v1.json",
+    "holdout_panel_path": "configs/dev_prompt_holdout_v1.json"
+  },
+  "output_dir": "outputs/clean-exp-c007c-v4-relation-probe-v1"
+}

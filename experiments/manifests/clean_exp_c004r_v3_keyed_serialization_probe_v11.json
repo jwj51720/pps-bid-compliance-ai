@@ -1,0 +1,102 @@
+{
+  "schema_version": "clean-experiment-v1",
+  "experiment_id": "clean-exp-c004r-v3-keyed-serialization-probe-v11",
+  "pipeline_id": "clean-l41-native-v3-monetary-keyed-probe-v11",
+  "base_config": null,
+  "allowed_policy_changes": [],
+  "experiment": {
+    "base_config": "experiments/manifests/clean_exp_c004_v3_monetary_v1.json",
+    "allowed_policy_changes": [
+      "layers.decisions",
+      "v3_serialization_probe"
+    ]
+  },
+  "reference": {
+    "zip_path": "dist/reference/submit.zip",
+    "zip_sha256": "a06feff77ffbc4a6f2a47cd0e2d322f341f652ca865d1b9cf53919012c8ca216",
+    "strategy": "frozen-l41-parity"
+  },
+  "data": {
+    "input_path": "data/raw/open/dev.jsonl.gz",
+    "labels_path": "data/raw/open/dev_labels.csv",
+    "organizer_data_dir": "data/raw/open/data",
+    "item_table_path": "data/raw/open/data/항목표.json"
+  },
+  "layers": {
+    "ingest": "strict-organizer-jsonl-v1",
+    "source_ledger": "sha256-source-ledger-v1",
+    "facts": "reference-l41-facts-v1",
+    "views": "reference-l41-sections-plus-native-v3-monetary-v1",
+    "retrieval": "reference-l41-bge-m3-v1",
+    "decisions": [
+      "reference-r10-v6",
+      "reference-v19-B",
+      "reference-C24",
+      "native-v3-monetary-v1",
+      "v3-keyed-serialization-v11"
+    ],
+    "assembly": "reference-l41-owner-with-native-v3-monetary-v1",
+    "evidence": "exact-substring-no-label-mutation-v1",
+    "export": "submission-49-columns-v1"
+  },
+  "v3_policy": {
+    "module": "native-v3-monetary-v1",
+    "base_output_dir": "outputs/clean-reference-l41-openrouter-dev200-v1",
+    "owner_change": "hybrid.r10 -> hybrid.native_v3_monetary_v1",
+    "source_view": "all-documents-exact-performance-money-windows-v1",
+    "observation": "candidate-complete-role-and-exact-amount-surface-v1",
+    "reducer": "single-qualification-amount-strictly-greater-than-estimated-price-v1",
+    "failure_policy": "baseline-v3-on-unresolved-or-invalid",
+    "review_notice_ids": [
+      "PPS-DEV-04",
+      "PPS-DEV-042",
+      "PPS-DEV-05",
+      "PPS-DEV-051",
+      "PPS-DEV-053",
+      "PPS-DEV-054",
+      "PPS-DEV-059",
+      "PPS-DEV-062",
+      "PPS-DEV-071"
+    ]
+  },
+  "v3_serialization_probe": {
+    "module": "v3-keyed-serialization-v11",
+    "base_output_dir": "outputs/clean-exp-c004-v3-monetary-v1/fast20",
+    "base_response_dir": "outputs/clean-exp-c004-v3-monetary-v1/fast20/responses",
+    "notice_ids": ["PPS-DEV-165", "PPS-DEV-169"],
+    "allowed_change": "array-with-source-id-to-required-candidate-keyed-object",
+    "semantic_change": false
+  },
+  "provider": {
+    "model": "google/gemma-4-26b-a4b-it",
+    "embedding_model": "baai/bge-m3",
+    "api_url": "https://openrouter.ai/api/v1/chat/completions",
+    "embedding_url": "https://openrouter.ai/api/v1/embeddings",
+    "api_key_env": "OPENROUTER_API_KEY",
+    "temperature": 0,
+    "max_tokens": 1536,
+    "seed": 20260826,
+    "timeout_seconds": 180,
+    "request_retries": 3,
+    "concurrency": 8,
+    "min_request_interval_seconds": 1.0,
+    "provider_sort": "throughput",
+    "require_parameters": true
+  },
+  "retrieval": {
+    "top_k": 10,
+    "batch_size": 16
+  },
+  "runtime": {
+    "tokenizer_dir": "~/.cache/huggingface/hub/models--google--gemma-4-26B-A4B-it/snapshots/4d7ae4984b7db7de8f8457170b3f1a419ee76d52",
+    "prompt_budget": 14848,
+    "batch_size": 128,
+    "expected_calls_per_record": "3 + I(v3 monetary candidate exists)"
+  },
+  "evaluation": {
+    "metric": "mean-positive-class-f1-v1-v24",
+    "fast_panel_path": "configs/dev_fast_panel_v1.json",
+    "holdout_panel_path": "configs/dev_prompt_holdout_v1.json"
+  },
+  "output_dir": "outputs/clean-exp-c004r-v3-keyed-serialization-probe-v11"
+}

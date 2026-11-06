@@ -1,0 +1,70 @@
+# EXP142 is deliberately preview-only. It may render and mock, never call a
+# provider. A later paid config must repeat the semantic-input review.
+experiment:
+  id: exp-142-semantic-verifier-preview
+  base_config: configs/config.exp139-two-call-g02-overlay-fast-panel.yaml
+  allowed_policy_changes: [grouped_run.grouping, grouped_run.decision_cards_overrides.G01_full_baseline, grouped_run.decision_cards_overrides.G02_qualification_document_procedure, grouped_run.decision_cards_overrides.G03_product_absence, grouped_run.competition_products_overrides.G01_full_baseline, grouped_run.competition_products_overrides.G02_qualification_document_procedure, grouped_run.competition_products_overrides.G03_product_absence, grouped_run.prompt_profile_overrides.G01_full_baseline, grouped_run.prompt_profile_overrides.G02_document_restrictions_override, grouped_run.prompt_profile_overrides.G02_qualification_document_procedure, grouped_run.prompt_profile_overrides.G03_product_absence]
+  derived_data: [decision_cards_v8_official_interpretations, competition_products_v1, semantic_input_contract_v1]
+  lifecycle: preview
+data:
+  root: data/raw/open
+  input: dev.jsonl.gz
+  labels: dev_labels.csv
+  item_table: data/항목표.json
+  fast_panel_ids_path: configs/dev_fast_panel_v1.json
+output:
+  dir: outputs/exp-142-semantic-verifier-preview
+prompt:
+  max_document_chars: 4000
+  context_strategy: single
+  overflow_split_enabled: false
+  strict_document_evidence: false
+  absence_detection_strategy: per_pass_or
+  decision_cards_path: null
+  competition_products_path: null
+  profile: official_baseline_subset_v1
+  layout: plain
+  role_directive: standard
+  item_catalog_style: minimal
+  metadata_style: official_lines
+  output_mode: labels_and_evidence
+  max_model_len: 16384
+  output_reserve_tokens: 1536
+  notice_anchor_chars: 4000
+  mode: baseline
+  include_normalized_facts: false
+llm:
+  provider: openrouter
+  model: google/gemma-4-26b-a4b-it
+  api_key_env: OPENROUTER_API_KEY
+  api_url: https://openrouter.ai/api/v1/chat/completions
+  tokenizer_source: google/gemma-4-26b-a4b-it
+  temperature: 0.0
+  max_tokens: 1536
+  seed: 20260826
+  timeout_seconds: 180
+  request_retries: 3
+  prediction_attempts: 2
+  provider_sort: throughput
+  require_parameters: true
+  min_request_interval_seconds: 1.0
+run:
+  resume: true
+  concurrency: 4
+  local_limit: null
+grouped_run:
+  grouping: semantic_verifier_overlay_v1
+  reference_mode: none
+  reference_navigation: none
+  decision_cards_overrides:
+    G01_full_baseline: null
+    G02_qualification_document_procedure: data/derived/decision_cards_v8_official_interpretations.json
+    G03_product_absence: data/derived/decision_cards_v8_official_interpretations.json
+  competition_products_overrides:
+    G01_full_baseline: null
+    G02_qualification_document_procedure: null
+    G03_product_absence: data/derived/competition_products_v1.json
+  prompt_profile_overrides:
+    G01_full_baseline: official_baseline_v1
+    G02_qualification_document_procedure: official_baseline_subset_v1
+    G03_product_absence: official_baseline_subset_v1

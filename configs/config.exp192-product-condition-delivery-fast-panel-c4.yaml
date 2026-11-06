@@ -1,0 +1,12 @@
+# EXP192: restore organizer CSV row conditions and friendly exact-code provenance.
+inherits: config.exp169-complete-source-2500-fast-panel-c4.yaml
+experiment:
+  id: exp-192-product-condition-delivery-fast-panel-c4
+  base_config: configs/config.exp169-complete-source-2500-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.competition_product_context_mode]
+  derived_data: [decision_cards_v6, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: candidate
+output:
+  dir: outputs/exp-192-product-condition-delivery-fast-panel-c4
+prompt:
+  competition_product_context_mode: conditions_and_provenance_v2

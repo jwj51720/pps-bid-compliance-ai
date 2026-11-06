@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "dev_v2_card_probe_v1",
+  "purpose": "Diagnostic-only 14-notice probe for the isolated v2 decision-card effect; it cannot rank a canonical policy.",
+  "selection_contract": [
+    "Includes all seven dev v2-positive notices only to measure recall on the complete available v2-positive set.",
+    "Includes seven v2-negative notices selected without model outputs, documents, evidence, or other labels: ascending SHA-256 of 'v2-card-probe-v1:<id>'.",
+    "The panel is frozen. Its labels may be used for evaluation and cohort composition, never to write or edit the v2 card."
+  ],
+  "ids": [
+    "PPS-DEV-02", "PPS-DEV-03", "PPS-DEV-042", "PPS-DEV-053", "PPS-DEV-062", "PPS-DEV-069", "PPS-DEV-078",
+    "PPS-DEV-160", "PPS-DEV-191", "PPS-DEV-035", "PPS-DEV-066", "PPS-DEV-083", "PPS-DEV-161", "PPS-DEV-051"
+  ],
+  "selection_summary": {"record_count": 14, "v2_positive": 7, "v2_negative": 7}
+}

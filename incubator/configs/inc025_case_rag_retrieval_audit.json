@@ -1,0 +1,15 @@
+{
+  "experiment_id": "inc025_case_rag_retrieval_audit",
+  "data_root": "data/raw/open",
+  "model": "baai/bge-m3",
+  "tokenizer": "BAAI/bge-m3",
+  "api_url": "https://openrouter.ai/api/v1/embeddings",
+  "api_key_env": "OPENROUTER_API_KEY",
+  "model_context_tokens": 8192,
+  "observed_transport_overhead_tokens": 1,
+  "input_cost_per_million_usd": 0.01,
+  "max_cost_usd": 0.1,
+  "batch_size": 32,
+  "timeout_seconds": 120,
+  "derived_output_path": "incubator/data/derived/inc025_dev_case_embeddings.json"
+}

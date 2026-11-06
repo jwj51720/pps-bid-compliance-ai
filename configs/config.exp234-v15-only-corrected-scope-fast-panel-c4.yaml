@@ -1,0 +1,12 @@
+# EXP234: v15-only correction of enterprise-class and exception scope.
+inherits: config.exp232-v15-only-existing-card-fast-panel-c4.yaml
+experiment:
+  id: exp-234-v15-only-corrected-scope-fast-panel-c4
+  base_config: configs/config.exp232-v15-only-existing-card-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.decision_cards_path]
+  derived_data: [decision_cards_v13_v15_scope, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-234-v15-only-corrected-scope-fast-panel-c4
+prompt:
+  decision_cards_path: data/derived/decision_cards_v13_v15_scope.json

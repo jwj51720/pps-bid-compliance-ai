@@ -1,0 +1,12 @@
+# EXP291: source-correct v8 operational card with V/E serialization.
+inherits: config.exp290-v8-only-existing-card-ve-fast-panel-c4.yaml
+experiment:
+  id: exp-291-v8-operational-card-ve-fast-panel-c4
+  base_config: configs/config.exp290-v8-only-existing-card-ve-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.decision_cards_path]
+  derived_data: [decision_cards_v21_v8_operational, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-291-v8-operational-card-ve-fast-panel-c4
+prompt:
+  decision_cards_path: data/derived/decision_cards_v21_v8_operational.json

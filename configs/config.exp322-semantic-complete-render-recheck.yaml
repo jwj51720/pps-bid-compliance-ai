@@ -1,0 +1,9 @@
+# EXP322 render recheck after the final v2/v21 card-completeness edits.
+inherits: config.exp322-semantic-complete-card-fast-panel-c4.yaml
+experiment:
+  id: exp-322-semantic-complete-render-recheck
+  base_config: configs/config.exp322-semantic-complete-card-fast-panel-c4.yaml
+  allowed_policy_changes: []
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-322-semantic-complete-render-recheck

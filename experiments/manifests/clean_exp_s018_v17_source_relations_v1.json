@@ -1,0 +1,29 @@
+{
+  "schema_version": "clean-zero-call-source-audit-v1",
+  "experiment_id": "clean-exp-s018-v17-source-relations-v1",
+  "mode": "adaptive-dev-source-audit-plus-unlabeled-morphology",
+  "experiment": {
+    "base_config": "experiments/manifests/clean_exp_s014_covariate_shift_stress_v1.json",
+    "allowed_policy_changes": []
+  },
+  "reference": {
+    "zip_path": "dist/reference/submit.zip",
+    "zip_sha256": "a06feff77ffbc4a6f2a47cd0e2d322f341f652ca865d1b9cf53919012c8ca216",
+    "source_detector": "dev.final_tqec_pipeline.scope_hits_v2"
+  },
+  "data": {
+    "dev_input_path": "data/raw/open/dev.jsonl.gz",
+    "population_input_path": "data/raw/open/train_unlabeled.jsonl.gz",
+    "dev_labels_path": "data/raw/open/dev_labels.csv",
+    "final_submission_path": "outputs/clean-exp-s001-integrated-v3-v19-v1/submission.csv",
+    "product_index_path": "data/derived/competition_products_v1.json"
+  },
+  "population_sample": {
+    "hash_prefix": "s018-v17:",
+    "per_bucket": 2,
+    "bucket_axes": ["contract", "attachment", "csv_code_present"]
+  },
+  "output_dir": "outputs/clean-exp-s018-v17-source-relations-v1",
+  "calls": {"llm": 0, "embedding": 0},
+  "final_prediction": false
+}

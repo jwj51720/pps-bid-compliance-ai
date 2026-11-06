@@ -1,0 +1,53 @@
+{
+  "prompt": {
+    "max_document_chars": null,
+    "context_strategy": "single",
+    "overflow_split_enabled": true,
+    "strict_document_evidence": false,
+    "output_mode": "labels_and_evidence",
+    "profile": "complete_fact_v1",
+    "layout": "plain",
+    "role_directive": "standard",
+    "item_catalog_style": "minimal",
+    "metadata_style": "official_lines_human_v2",
+    "absence_detection_strategy": "per_pass_and",
+    "decision_cards_file": "decision_cards_v10_v6_v7_scope.json",
+    "competition_products_file": "competition_products_v1.json",
+    "competition_product_context_mode": "conditions_and_provenance_v2",
+    "organizer_input_semantics_mode": "anonymization_v1",
+    "max_model_len": 32768,
+    "output_reserve_tokens": 2500,
+    "notice_anchor_chars": 4000,
+    "mode": "relation_checklist_after_source_v1",
+    "include_normalized_facts": false
+  },
+  "runtime": {
+    "seed": 20260826,
+    "batch_size": 128,
+    "batch_retries": 2,
+    "gpu_memory_utilization": 0.92,
+    "quantization_env": "PPS_QUANT",
+    "default_quantization": "int8_per_channel_weight_only"
+  },
+  "staged_run": {"mode": "off"},
+  "specialist_run": {
+    "mode": "replace_items_v1",
+    "specialists": [
+      {
+        "id": "exp221_v4",
+        "active_items": ["v4"],
+        "decision_cards_file": "decision_cards_v11_v4_scope.json",
+        "profile": "complete_fact_subset_v1",
+        "mode": "baseline"
+      },
+      {
+        "id": "exp231_v5",
+        "active_items": ["v5"],
+        "decision_cards_file": "decision_cards_v12_v5_threshold.json",
+        "profile": "complete_fact_subset_v1",
+        "mode": "baseline"
+      }
+    ]
+  },
+  "postprocess": {"frozen_rule_set": "exp123_v1"}
+}

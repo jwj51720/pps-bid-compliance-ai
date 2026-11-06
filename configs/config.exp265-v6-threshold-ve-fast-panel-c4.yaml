@@ -1,0 +1,12 @@
+# EXP265: corrected v6 threshold selectors with V/E output.
+inherits: config.exp264-v6-only-existing-card-fast-panel-c4.yaml
+experiment:
+  id: exp-265-v6-threshold-ve-fast-panel-c4
+  base_config: configs/config.exp264-v6-only-existing-card-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.decision_cards_path]
+  derived_data: [decision_cards_v17_v6_threshold, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-265-v6-threshold-ve-fast-panel-c4
+prompt:
+  decision_cards_path: data/derived/decision_cards_v17_v6_threshold.json

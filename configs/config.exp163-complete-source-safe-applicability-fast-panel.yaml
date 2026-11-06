@@ -1,0 +1,58 @@
+# EXP163: EXP154 complete-source one-stage with only source-traced explicit
+# applicability exclusions. No document, metadata, card, model, schema, or
+# merge policy changes; each remaining active item still receives all source.
+experiment:
+  id: exp-163-complete-source-safe-applicability-fast-panel
+  base_config: configs/config.exp154-full-source-32k-card-v6-product-fast-panel.yaml
+  allowed_policy_changes: [applicability_gate.mode]
+  derived_data: [decision_cards_v6, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: invalidated # 11/20 only; OpenRouter in-flight-credit HTTP 402, audit-only
+data:
+  root: data/raw/open
+  input: dev.jsonl.gz
+  labels: dev_labels.csv
+  item_table: data/항목표.json
+  fast_panel_ids_path: configs/dev_fast_panel_v1.json
+output:
+  dir: outputs/exp-163-complete-source-safe-applicability-fast-panel
+prompt:
+  max_document_chars: null
+  context_strategy: single
+  overflow_split_enabled: true
+  strict_document_evidence: false
+  absence_detection_strategy: per_pass_and
+  decision_cards_path: data/derived/decision_cards_v6.json
+  competition_products_path: data/derived/competition_products_v1.json
+  profile: complete_fact_v1
+  layout: plain
+  role_directive: standard
+  metadata_style: official_lines
+  output_mode: labels_and_evidence
+  max_model_len: 32768
+  output_reserve_tokens: 1536
+  notice_anchor_chars: 4000
+  mode: baseline
+  include_normalized_facts: false
+applicability_gate:
+  mode: safe_v1 # options: off, safe_v1
+postprocess:
+  frozen_rule_set: exp123_v1
+llm:
+  provider: openrouter
+  model: google/gemma-4-26b-a4b-it
+  api_key_env: OPENROUTER_API_KEY
+  api_url: https://openrouter.ai/api/v1/chat/completions
+  tokenizer_source: google/gemma-4-26b-a4b-it
+  temperature: 0.0
+  max_tokens: 1536
+  seed: 20260826
+  timeout_seconds: 180
+  request_retries: 3
+  prediction_attempts: 2
+  provider_sort: throughput
+  require_parameters: true
+  min_request_interval_seconds: 1.0
+run:
+  resume: true
+  concurrency: 20
+  local_limit: null

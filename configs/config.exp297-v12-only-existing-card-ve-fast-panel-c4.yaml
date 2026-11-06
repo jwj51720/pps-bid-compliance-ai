@@ -1,0 +1,14 @@
+# EXP297: v12-only V/E attention control with the incumbent card.
+inherits: config.exp205-relation-checklist-after-source-fast-panel-c4.yaml
+experiment:
+  id: exp-297-v12-only-existing-card-ve-fast-panel-c4
+  base_config: configs/config.exp205-relation-checklist-after-source-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.active_items, prompt.profile, prompt.mode]
+  derived_data: [decision_cards_v10_v6_v7_scope, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-297-v12-only-existing-card-ve-fast-panel-c4
+prompt:
+  active_items: [v12]
+  profile: complete_fact_subset_v1
+  mode: baseline

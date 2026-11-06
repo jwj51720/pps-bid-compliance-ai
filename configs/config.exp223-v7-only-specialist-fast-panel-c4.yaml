@@ -1,0 +1,14 @@
+# EXP223: v7-only complete-input attention diagnostic.
+inherits: config.exp205-relation-checklist-after-source-fast-panel-c4.yaml
+experiment:
+  id: exp-223-v7-only-specialist-fast-panel-c4
+  base_config: configs/config.exp205-relation-checklist-after-source-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.active_items, prompt.profile, prompt.mode]
+  derived_data: [decision_cards_v10_v6_v7_scope, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-223-v7-only-specialist-fast-panel-c4
+prompt:
+  active_items: [v7]
+  profile: complete_fact_subset_v1
+  mode: baseline

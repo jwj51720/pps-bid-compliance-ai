@@ -1,0 +1,12 @@
+# EXP341: repeat the exact v31 card catalog after every admitted source pack.
+inherits: config.exp339-v31-v4-organizer-definition-fast-panel-c4.yaml
+experiment:
+  id: exp-341-v31-exact-card-recap-fast-panel-c4
+  base_config: configs/config.exp339-v31-v4-organizer-definition-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.mode]
+  derived_data: [decision_cards_v31_v4_organizer_definition_resolution, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-341-v31-exact-card-recap-fast-panel-c4
+prompt:
+  mode: exact_card_recap_after_source_v1

@@ -1,0 +1,11 @@
+inherits: config.exp319-v9-only-existing-card-ve-fast-panel-c4.yaml
+experiment:
+  id: exp-320-v9-only-existing-card-vonly-fast-panel-c4
+  base_config: configs/config.exp319-v9-only-existing-card-ve-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.output_mode]
+  derived_data: [decision_cards_v10_v6_v7_scope, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: invalidated
+output:
+  dir: outputs/exp-320-v9-only-existing-card-vonly-fast-panel-c4
+prompt:
+  output_mode: labels_only

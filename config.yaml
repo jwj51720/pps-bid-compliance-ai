@@ -1,0 +1,76 @@
+# EXP231 best-local composition: EXP208 all-item relation checklist, then
+# replace v4 and v5 with their independently validated full-source specialists.
+experiment:
+  id: submit-exp231-v4-v5-specialists-v1
+  derived_data: [decision_cards_v10_v6_v7_scope, decision_cards_v11_v4_scope, decision_cards_v12_v5_threshold, competition_products_v1]
+
+data:
+  root: data/raw/open
+  input: dev.jsonl.gz
+  labels: dev_labels.csv
+  item_table: data/항목표.json
+  fast_panel_ids_path: configs/dev_fast_panel_v1.json # default local fast gate; submission does not read this field
+
+output:
+  dir: outputs/submit-exp231-v4-v5-specialists-v1
+
+prompt:
+  max_document_chars: null
+  context_strategy: single # options: single, split, full_split_merge
+  overflow_split_enabled: true # options: true, false
+  strict_document_evidence: false # options: true, false; full_split_merge only
+  profile: complete_fact_v1 # options: default, official_baseline_v1, official_baseline_subset_v1, complete_fact_v1
+  layout: plain # options: plain, markdown, markdown_v2
+  role_directive: standard # options: standard, compliance_expert_v1, source_first_v1
+  item_catalog_style: minimal # options: minimal, official_references
+  metadata_style: official_lines_human_v2 # options: official_lines, official_lines_human_v2, full_json
+  output_mode: labels_and_evidence # options: labels_and_evidence, labels_only, labels_and_anchor, labels_and_sparse_evidence
+  absence_detection_strategy: per_pass_and # options: per_pass_or, per_pass_and
+  decision_cards_path: data/derived/decision_cards_v10_v6_v7_scope.json
+  competition_products_path: data/derived/competition_products_v1.json
+  competition_product_context_mode: conditions_and_provenance_v2
+  organizer_input_semantics_mode: anonymization_v1
+  max_model_len: 32768
+  output_reserve_tokens: 2500
+  notice_anchor_chars: 4000
+  mode: relation_checklist_after_source_v1
+  include_normalized_facts: false # options: true, false
+
+llm:
+  provider: openrouter
+  model: google/gemma-4-26b-a4b-it
+  api_key_env: OPENROUTER_API_KEY
+  api_url: https://openrouter.ai/api/v1/chat/completions
+  temperature: 0.0
+  max_tokens: 2500
+  seed: 20260826
+  timeout_seconds: 180
+  request_retries: 3
+  prediction_attempts: 2
+  provider_sort: throughput # options: price, throughput, latency
+  require_parameters: true # options: true, false
+  min_request_interval_seconds: 1.0
+
+run:
+  resume: true # options: true, false
+  concurrency: 64
+
+staged_run:
+  mode: "off"
+
+specialist_run:
+  mode: replace_items_v1
+  specialists:
+    - id: exp221_v4
+      active_items: [v4]
+      decision_cards_path: data/derived/decision_cards_v11_v4_scope.json
+      profile: complete_fact_subset_v1
+      mode: baseline
+    - id: exp231_v5
+      active_items: [v5]
+      decision_cards_path: data/derived/decision_cards_v12_v5_threshold.json
+      profile: complete_fact_subset_v1
+      mode: baseline
+
+postprocess:
+  frozen_rule_set: exp123_v1

@@ -1,0 +1,44 @@
+# EXP018 plus an explicit v-to-source navigation map in every final system prompt.
+experiment:
+  id: exp-019-routed-law-navigation-first20
+  derived_data: [decision_cards_v2, competition_products_v1, legal_reference_bundles_v1]
+data:
+  root: data/raw/open
+  input: dev.jsonl.gz
+  labels: dev_labels.csv
+  item_table: data/항목표.json
+output:
+  dir: outputs/exp-019-routed-law-navigation-first20
+prompt:
+  max_document_chars: null
+  context_strategy: full_split_merge # options: single, split, full_split_merge
+  overflow_split_enabled: true # options: true, false
+  strict_document_evidence: true # options: true, false; full_split_merge only
+  absence_detection_strategy: per_pass_and # options: per_pass_or, per_pass_and; full_split_merge only
+  decision_cards_path: data/derived/decision_cards_v2.json
+  competition_products_path: data/derived/competition_products_v1.json
+  reference_bundle_dir: data/derived/legal_reference_bundles_v1
+  reference_routing: metadata_v1 # options: metadata_v1
+  max_model_len: 32768
+  output_reserve_tokens: 2500
+  notice_anchor_chars: 4000
+  mode: baseline # options: baseline, structured, guided
+  include_normalized_facts: false # options: true, false
+llm:
+  provider: openrouter
+  model: google/gemma-4-26b-a4b-it
+  api_key_env: OPENROUTER_API_KEY
+  api_url: https://openrouter.ai/api/v1/chat/completions
+  temperature: 0.0
+  max_tokens: 2500
+  seed: 20260826
+  timeout_seconds: 180
+  request_retries: 3
+  prediction_attempts: 2
+  provider_sort: throughput # options: price, throughput, latency
+  require_parameters: true # options: true, false
+  min_request_interval_seconds: 1.0
+run:
+  resume: true # options: true, false
+  concurrency: 4
+  local_limit: 20

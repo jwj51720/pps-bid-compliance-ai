@@ -1,0 +1,12 @@
+# EXP242: isolate evidence-output burden in the validated v5-only specialist.
+inherits: config.exp229-v5-only-threshold-card-fast-panel-c4.yaml
+experiment:
+  id: exp-242-v5-only-threshold-vonly-fast-panel-c4
+  base_config: configs/config.exp229-v5-only-threshold-card-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.output_mode]
+  derived_data: [decision_cards_v12_v5_threshold, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-242-v5-only-threshold-vonly-fast-panel-c4
+prompt:
+  output_mode: labels_only

@@ -1,0 +1,12 @@
+# EXP273: v23 observable amount/date operands with V/E final ownership.
+inherits: config.exp272-v23-only-existing-card-fast-panel-c4.yaml
+experiment:
+  id: exp-273-v23-quantitative-proof-ve-fast-panel-c4
+  base_config: configs/config.exp272-v23-only-existing-card-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.mode]
+  derived_data: [decision_cards_v10_v6_v7_scope, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-273-v23-quantitative-proof-ve-fast-panel-c4
+prompt:
+  mode: v23_quantitative_proof_v1

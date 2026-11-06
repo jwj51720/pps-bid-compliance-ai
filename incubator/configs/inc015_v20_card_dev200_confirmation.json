@@ -1,0 +1,23 @@
+{
+  "experiment_id": "inc015_v20_card_dev200_confirmation",
+  "data_root": "data/raw/open",
+  "card_path": "incubator/data/derived/v20_decision_card_v1.json",
+  "expected_card_sha256": "910dacbd467d94c2027765e264818c61a60ededce5c83bcf309e9492097655bc",
+  "model_tokenizer": "google/gemma-4-26B-A4B-it",
+  "model": "google/gemma-4-26b-a4b-it",
+  "api_url": "https://openrouter.ai/api/v1/chat/completions",
+  "api_key_env": "OPENROUTER_API_KEY",
+  "temperature": 0.0,
+  "seed": 20260905,
+  "max_tokens": 120,
+  "timeout_seconds": 90,
+  "request_retries": 1,
+  "max_model_len": 32768,
+  "output_reserve_tokens": 512,
+  "max_requests": 400,
+  "max_cost_usd": 1.50,
+  "observed_input_cost_per_token_usd": 0.00000015,
+  "observed_completion_cost_per_token_usd": 0.00000060,
+  "assumed_completion_tokens": 12,
+  "concurrency": 16
+}

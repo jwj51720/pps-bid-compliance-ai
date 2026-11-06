@@ -1,0 +1,12 @@
+# EXP294: conditional policy-identical V-only holdout for EXP292.
+inherits: config.exp292-v8-operational-card-vonly-fast-panel-c4.yaml
+experiment:
+  id: exp-294-v8-operational-card-vonly-holdout-c4
+  base_config: configs/config.exp292-v8-operational-card-vonly-fast-panel-c4.yaml
+  allowed_policy_changes: []
+  derived_data: [decision_cards_v21_v8_operational, competition_products_v1, dev_prompt_holdout_v1]
+  lifecycle: diagnostic
+data:
+  fast_panel_ids_path: configs/dev_prompt_holdout_v1.json
+output:
+  dir: outputs/exp-294-v8-operational-card-vonly-holdout-c4

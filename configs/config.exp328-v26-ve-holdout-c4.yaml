@@ -1,0 +1,12 @@
+# EXP328: policy-identical V26 direct V/E on the independent holdout panel.
+inherits: config.exp323-v26-ve-fast-panel-c4.yaml
+experiment:
+  id: exp-328-v26-ve-holdout-c4
+  base_config: configs/config.exp323-v26-ve-fast-panel-c4.yaml
+  allowed_policy_changes: []
+  derived_data: [decision_cards_v26_semantic_complete, competition_products_v1, dev_prompt_holdout_v1]
+  lifecycle: diagnostic
+data:
+  fast_panel_ids_path: configs/dev_prompt_holdout_v1.json
+output:
+  dir: outputs/exp-328-v26-ve-holdout-c4

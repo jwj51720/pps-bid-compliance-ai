@@ -1,0 +1,25 @@
+{
+  "experiment_id": "inc121_output_contract_anchor_pilot",
+  "purpose": "EXP-120-style fixed-input comparison of V/E, V-only, and V+source-anchor output contracts.",
+  "model": "google/gemma-4-26b-a4b-it",
+  "api_url": "https://openrouter.ai/api/v1/chat/completions",
+  "api_key_env": "OPENROUTER_API_KEY",
+  "temperature": 0.0,
+  "seed": 20260906,
+  "max_tokens": 1536,
+  "timeout_seconds": 180,
+  "request_retries": 1,
+  "max_workers": 12,
+  "max_requests": 96,
+  "max_cost_usd": 1.0,
+  "context_chars": 4000,
+  "cohort_size": 32,
+  "arms": ["control_ve", "a1_v_only", "a2_anchor"],
+  "selection": "one hash-selected positive per item; then doc-count, input-completeness, and source-length strata; then hash fill",
+  "promotion_gate": {
+    "a2_macro_f1_delta_min": 0.02,
+    "a2_recall_non_decrease": true,
+    "a2_non_absence_evidence_validity": 1.0,
+    "max_failure_rate": 0.02
+  }
+}

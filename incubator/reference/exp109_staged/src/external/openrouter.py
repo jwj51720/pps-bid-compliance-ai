@@ -1,0 +1,179 @@
+"""Small OpenRouter chat-completions adapter with bounded retries."""
+
+from __future__ import annotations
+
+import time
+from threading import Lock
+from dataclasses import dataclass
+from typing import Any
+
+import requests
+
+
+class OpenRouterError(RuntimeError):
+    """Raised when a completion cannot be obtained safely."""
+
+
+@dataclass(frozen=True)
+class Completion:
+    content: str
+    model: str
+    latency_seconds: float
+    usage: dict[str, Any]
+    finish_reason: str | None = None
+
+
+class OpenRouterClient:
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        api_url: str,
+        model: str,
+        temperature: float,
+        max_tokens: int,
+        seed: int,
+        timeout_seconds: float,
+        request_retries: int,
+        provider_sort: str,
+        require_parameters: bool,
+        min_request_interval_seconds: float,
+    ) -> None:
+        if not api_key:
+            raise ValueError("OpenRouter API key is empty")
+        self.api_url = api_url
+        self.model = model
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.seed = seed
+        self.timeout_seconds = timeout_seconds
+        self.request_retries = request_retries
+        self.provider_sort = provider_sort
+        self.require_parameters = require_parameters
+        self.min_request_interval_seconds = min_request_interval_seconds
+        self._request_lock = Lock()
+        self._last_request_started = 0.0
+        self.headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+    def _wait_for_request_slot(self) -> None:
+        with self._request_lock:
+            elapsed = time.monotonic() - self._last_request_started
+            delay = self.min_request_interval_seconds - elapsed
+            if delay > 0:
+                time.sleep(delay)
+            self._last_request_started = time.monotonic()
+
+    def complete(
+        self,
+        messages: list[dict[str, str]],
+        response_schema: dict[str, Any],
+    ) -> Completion:
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "seed": self.seed,
+            "stream": False,
+            "provider": {
+                "require_parameters": self.require_parameters,
+                "sort": self.provider_sort,
+            },
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "pps_compliance_judgment",
+                    "strict": True,
+                    "schema": response_schema,
+                },
+            },
+        }
+        last_error = "unknown error"
+        for attempt in range(self.request_retries + 1):
+            started = time.monotonic()
+            response: requests.Response | None = None
+            try:
+                self._wait_for_request_slot()
+                response = requests.post(
+                    self.api_url,
+                    headers=self.headers,
+                    json=payload,
+                    timeout=self.timeout_seconds,
+                )
+            except requests.RequestException as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+                retryable = True
+            else:
+                retryable = response.status_code in {408, 409, 429} or response.status_code >= 500
+                if response.ok:
+                    try:
+                        body = response.json()
+                        choice = body["choices"][0]
+                        content = choice["message"]["content"]
+                    except (ValueError, KeyError, IndexError, TypeError) as exc:
+                        raise OpenRouterError(f"malformed OpenRouter response: {exc}") from exc
+                    if not isinstance(content, str) or not content.strip():
+                        raise OpenRouterError("OpenRouter returned empty content")
+                    return Completion(
+                        content=content,
+                        model=str(body.get("model", self.model)),
+                        latency_seconds=round(time.monotonic() - started, 3),
+                        usage=body.get("usage") if isinstance(body.get("usage"), dict) else {},
+                        finish_reason=str(choice.get("finish_reason"))
+                        if choice.get("finish_reason") is not None
+                        else None,
+                    )
+                try:
+                    error_body = response.json()
+                    error_message = error_body.get("error", {}).get("message", response.text)
+                except ValueError:
+                    error_message = response.text
+                last_error = f"HTTP {response.status_code}: {str(error_message)[:500]}"
+                if not retryable:
+                    raise OpenRouterError(last_error)
+            if attempt < self.request_retries and retryable:
+                retry_after = 0.0
+                if response is not None:
+                    try:
+                        retry_after = float(response.headers.get("Retry-After", 0))
+                    except ValueError:
+                        retry_after = 0.0
+                time.sleep(min(60.0, max(retry_after, 2.0**attempt)))
+        raise OpenRouterError(f"request failed after retries: {last_error}")
+
+
+class MockClient:
+    """Deterministic no-network client for pipeline and format smoke tests."""
+
+    model = "mock"
+
+    def complete(
+        self,
+        messages: list[dict[str, str]],
+        response_schema: dict[str, Any],
+    ) -> Completion:
+        import json
+
+        del messages
+        properties = response_schema["properties"]
+        sparse = "판정" in properties and "발췌" in properties
+        label_properties = properties["판정"]["properties"] if sparse else properties
+        first_item = next(iter(label_properties))
+        labels_only = label_properties[first_item]["type"] == "integer"
+        anchor_mode = not labels_only and "판단어구" in label_properties[first_item]["properties"]
+        payload = (
+            {"판정": {item: 0 for item in label_properties}, "발췌": [], "부재검토": {item: "필수조건_확인" for item in label_properties if item in {"v10", "v11", "v16", "v18", "v20"}}}
+            if sparse
+            else {item: 0 for item in label_properties}
+            if labels_only
+            else {item: {"위반여부": 0, "판단어구": None} for item in label_properties}
+            if anchor_mode
+            else {item: {"위반여부": 0, "근거문구": None} for item in label_properties}
+        )
+        if "v8병합관찰" in response_schema.get("properties", {}):
+            payload["v8병합관찰"] = {"상태": "검토", "관찰근거문구": None}
+        content = json.dumps(payload, ensure_ascii=False)
+        return Completion(content=content, model=self.model, latency_seconds=0.0, usage={})

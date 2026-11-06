@@ -1,0 +1,12 @@
+# EXP209: policy-identical corrected direct dev200 control for EXP208.
+inherits: config.exp202-corrected-input-direct-fast-panel-c4.yaml
+experiment:
+  id: exp-209-corrected-input-direct-dev200-c4
+  base_config: configs/config.exp202-corrected-input-direct-fast-panel-c4.yaml
+  allowed_policy_changes: []
+  derived_data: [decision_cards_v10_v6_v7_scope, competition_products_v1]
+  lifecycle: control
+data:
+  fast_panel_ids_path: null
+output:
+  dir: outputs/exp-209-corrected-input-direct-dev200-c4

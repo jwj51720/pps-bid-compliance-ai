@@ -1,0 +1,12 @@
+# EXP330: source-correct v23 interval relations; card-only V/E ablation.
+inherits: config.exp323-v26-ve-fast-panel-c4.yaml
+experiment:
+  id: exp-330-v27-v23-interval-card-fast-panel-c4
+  base_config: configs/config.exp323-v26-ve-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.decision_cards_path]
+  derived_data: [decision_cards_v27_v23_interval_relations, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-330-v27-v23-interval-card-fast-panel-c4
+prompt:
+  decision_cards_path: data/derived/decision_cards_v27_v23_interval_relations.json

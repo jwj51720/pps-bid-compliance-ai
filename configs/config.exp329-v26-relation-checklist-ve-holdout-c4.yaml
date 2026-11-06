@@ -1,0 +1,12 @@
+# EXP329: policy-identical V26 checklist on the independent holdout panel.
+inherits: config.exp327-v26-relation-checklist-ve-fast-panel-c4.yaml
+experiment:
+  id: exp-329-v26-relation-checklist-ve-holdout-c4
+  base_config: configs/config.exp327-v26-relation-checklist-ve-fast-panel-c4.yaml
+  allowed_policy_changes: []
+  derived_data: [decision_cards_v26_semantic_complete, competition_products_v1, dev_prompt_holdout_v1]
+  lifecycle: diagnostic
+data:
+  fast_panel_ids_path: configs/dev_prompt_holdout_v1.json
+output:
+  dir: outputs/exp-329-v26-relation-checklist-ve-holdout-c4

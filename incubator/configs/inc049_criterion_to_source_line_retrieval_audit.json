@@ -1,0 +1,12 @@
+{
+  "experiment_id": "inc049_criterion_to_source_line_retrieval_audit",
+  "data_root": "data/raw/open",
+  "model": "baai/bge-m3",
+  "api_url": "https://openrouter.ai/api/v1/embeddings",
+  "api_key_env": "OPENROUTER_API_KEY",
+  "initial_batch_size": 128,
+  "workers": 8,
+  "timeout_seconds": 120,
+  "request_retries": 1,
+  "max_cost_usd": 0.08
+}

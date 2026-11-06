@@ -1,0 +1,12 @@
+# EXP239: test the validated v5 numeric operand inside the all-item relation policy.
+inherits: config.exp205-relation-checklist-after-source-fast-panel-c4.yaml
+experiment:
+  id: exp-239-v5-numeric-all-item-fast-panel-c4
+  base_config: configs/config.exp205-relation-checklist-after-source-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.decision_cards_path]
+  derived_data: [decision_cards_v12_v5_threshold, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: candidate
+output:
+  dir: outputs/exp-239-v5-numeric-all-item-fast-panel-c4
+prompt:
+  decision_cards_path: data/derived/decision_cards_v12_v5_threshold.json

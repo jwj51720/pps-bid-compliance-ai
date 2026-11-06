@@ -1,0 +1,66 @@
+{
+  "schema_version": "clean-experiment-v1",
+  "experiment_id": "clean-exp-c001-c24-serialization-recovery-v1",
+  "lifecycle": "audit_only_incomplete",
+  "pipeline_id": "clean-c24-serialization-recovery-v1",
+  "base_config": null,
+  "base_manifest": "experiments/manifests/reference_l41_openrouter_dev200_v1.json",
+  "allowed_policy_changes": ["runtime.invalid_structured_response_retry"],
+  "reference": {
+    "zip_path": "dist/reference/submit.zip",
+    "zip_sha256": "a06feff77ffbc4a6f2a47cd0e2d322f341f652ca865d1b9cf53919012c8ca216",
+    "strategy": "frozen-l41-parity"
+  },
+  "data": {
+    "input_path": "data/raw/open/dev.jsonl.gz",
+    "labels_path": "data/raw/open/dev_labels.csv",
+    "organizer_data_dir": "data/raw/open/data",
+    "item_table_path": "data/raw/open/data/항목표.json"
+  },
+  "layers": {
+    "ingest": "strict-organizer-jsonl-v1",
+    "source_ledger": "sha256-source-ledger-v1",
+    "facts": "reference-l41-facts-v1",
+    "views": "reference-l41-semantic-sections-v2",
+    "retrieval": "reference-l41-bge-m3-v1",
+    "decisions": ["reference-r10-v6", "reference-v19-B", "reference-C24"],
+    "assembly": "reference-l41-explicit-owner-v1",
+    "evidence": "exact-substring-no-label-mutation-v1",
+    "export": "submission-49-columns-v1"
+  },
+  "provider": {
+    "model": "google/gemma-4-26b-a4b-it",
+    "embedding_model": "baai/bge-m3",
+    "api_url": "https://openrouter.ai/api/v1/chat/completions",
+    "embedding_url": "https://openrouter.ai/api/v1/embeddings",
+    "api_key_env": "OPENROUTER_API_KEY",
+    "temperature": 0,
+    "max_tokens": 1536,
+    "seed": 20260826,
+    "timeout_seconds": 180,
+    "request_retries": 3,
+    "concurrency": 8,
+    "min_request_interval_seconds": 1.0,
+    "provider_sort": "throughput",
+    "require_parameters": true
+  },
+  "retrieval": {"top_k": 10, "batch_size": 16},
+  "runtime": {
+    "tokenizer_dir": "~/.cache/huggingface/hub/models--google--gemma-4-26B-A4B-it/snapshots/4d7ae4984b7db7de8f8457170b3f1a419ee76d52",
+    "prompt_budget": 14848,
+    "batch_size": 128,
+    "expected_calls_per_record": 3
+  },
+  "recovery": {
+    "base_output_dir": "outputs/clean-reference-l41-openrouter-dev200-v1",
+    "target_arm": "C24",
+    "invalid_structured_response_retry": 1,
+    "expected_invalid_targets": 9
+  },
+  "evaluation": {
+    "metric": "mean-positive-class-f1-v1-v24",
+    "fast_panel_path": "configs/dev_fast_panel_v1.json",
+    "holdout_panel_path": "configs/dev_prompt_holdout_v1.json"
+  },
+  "output_dir": "outputs/clean-exp-c001-c24-serialization-recovery-v1"
+}

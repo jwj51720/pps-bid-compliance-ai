@@ -1,0 +1,6 @@
+{
+  "experiment_id": "inc016_v20_predicate_candidate_audit",
+  "data_root": "data/raw/open",
+  "target_item": "v20",
+  "policy": "offline source-location audit for decomposed applicability and declaration predicates; no automatic labels and no API calls"
+}

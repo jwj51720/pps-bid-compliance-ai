@@ -1,0 +1,12 @@
+# EXP208: policy-identical dev200 extension of EXP205/206.
+inherits: config.exp205-relation-checklist-after-source-fast-panel-c4.yaml
+experiment:
+  id: exp-208-relation-checklist-after-source-dev200-c4
+  base_config: configs/config.exp205-relation-checklist-after-source-fast-panel-c4.yaml
+  allowed_policy_changes: []
+  derived_data: [decision_cards_v10_v6_v7_scope, competition_products_v1]
+  lifecycle: candidate
+data:
+  fast_panel_ids_path: null
+output:
+  dir: outputs/exp-208-relation-checklist-after-source-dev200-c4

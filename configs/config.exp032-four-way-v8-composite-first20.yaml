@@ -1,0 +1,45 @@
+# EXP032: EXP031 plus the already implemented v8 document-local conjunction.
+experiment:
+  id: exp-032-four-way-v8-composite-first20
+  derived_data: [decision_cards_v3, competition_products_v1]
+data:
+  root: data/raw/open
+  input: dev.jsonl.gz
+  labels: dev_labels.csv
+  item_table: data/항목표.json
+output:
+  dir: outputs/exp-032-four-way-v8-composite-first20
+prompt:
+  max_document_chars: null
+  context_strategy: full_split_merge
+  overflow_split_enabled: true
+  strict_document_evidence: true
+  absence_detection_strategy: per_pass_and
+  decision_cards_path: data/derived/decision_cards_v3.json
+  competition_products_path: data/derived/competition_products_v1.json
+  layout: plain # options: plain, markdown; keep EXP031 presentation fixed
+  max_model_len: 32768
+  output_reserve_tokens: 2500
+  notice_anchor_chars: 4000
+  mode: baseline
+  include_normalized_facts: false
+v8_composite_merge:
+  enabled: true # options: false, true
+llm:
+  provider: openrouter
+  model: google/gemma-4-26b-a4b-it
+  api_key_env: OPENROUTER_API_KEY
+  api_url: https://openrouter.ai/api/v1/chat/completions
+  temperature: 0.0
+  max_tokens: 2500
+  seed: 20260826
+  timeout_seconds: 180
+  request_retries: 3
+  prediction_attempts: 2
+  provider_sort: throughput
+  require_parameters: true
+  min_request_interval_seconds: 1.0
+run:
+  resume: true
+  concurrency: 4
+  local_limit: 20

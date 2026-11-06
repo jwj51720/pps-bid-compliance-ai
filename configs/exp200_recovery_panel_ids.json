@@ -1,0 +1,25 @@
+{
+  "description": "EXP200 records with an initial malformed inventory or source-first final response; retry repair panel only",
+  "ids": [
+    "PPS-DEV-28",
+    "PPS-DEV-037",
+    "PPS-DEV-059",
+    "PPS-DEV-068",
+    "PPS-DEV-079",
+    "PPS-DEV-084",
+    "PPS-DEV-087",
+    "PPS-DEV-106",
+    "PPS-DEV-110",
+    "PPS-DEV-112",
+    "PPS-DEV-113",
+    "PPS-DEV-136",
+    "PPS-DEV-140",
+    "PPS-DEV-141",
+    "PPS-DEV-145",
+    "PPS-DEV-164",
+    "PPS-DEV-181",
+    "PPS-DEV-183",
+    "PPS-DEV-185",
+    "PPS-DEV-188"
+  ]
+}

@@ -1,0 +1,12 @@
+# EXP270: corrected v1 qualification scope with V/E output.
+inherits: config.exp269-v1-only-existing-card-fast-panel-c4.yaml
+experiment:
+  id: exp-270-v1-qualification-scope-ve-fast-panel-c4
+  base_config: configs/config.exp269-v1-only-existing-card-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.decision_cards_path]
+  derived_data: [decision_cards_v18_v1_qualification_scope, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-270-v1-qualification-scope-ve-fast-panel-c4
+prompt:
+  decision_cards_path: data/derived/decision_cards_v18_v1_qualification_scope.json

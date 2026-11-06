@@ -1,0 +1,8 @@
+{
+  "experiment_id": "inc007_token_admission_profile",
+  "data_root": "data/raw/open",
+  "model_tokenizer": "google/gemma-4-26B-A4B-it",
+  "max_model_len": 32768,
+  "output_reserve_tokens": 2500,
+  "notice_anchor_chars": 4000
+}

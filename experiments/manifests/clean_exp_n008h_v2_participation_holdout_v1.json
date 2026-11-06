@@ -1,0 +1,53 @@
+{
+  "schema_version": "clean-native-v2-diagnostic",
+  "experiment_id": "clean-exp-n008h-v2-participation-holdout-v1",
+  "pipeline_id": "native-v2-performance-binary-projection-v1",
+  "experiment": {
+    "base_config": "experiments/manifests/clean_exp_n008_v2_participation_fast_v1.json",
+    "allowed_policy_changes": [
+      "evaluation.cohort",
+      "evaluation.panel_path"
+    ]
+  },
+  "data": {
+    "input_path": "data/raw/open/dev.jsonl.gz",
+    "labels_path": "data/raw/open/dev_labels.csv",
+    "cards_path": "data/derived/decision_cards_v32_v2_purchase_scope.json",
+    "source_audit_path": "outputs/clean-native-v2-performance-task-v2/dev200/audit.json"
+  },
+  "evaluation": {
+    "panel_path": "configs/dev_prompt_holdout_v1.json",
+    "cohort": "holdout20"
+  },
+  "prompt": {
+    "view": "v2-performance-bounded-windows-v2",
+    "task": "native-v2-performance-observation-v2"
+  },
+  "decision": {
+    "owner": "v2-performance-binary-conjunction-v1",
+    "positive_if": "performance_participation=Y AND procurement_role in goods/service AND explicit_allowance=N AND estimated_price<applicable_threshold AND valid_quote",
+    "otherwise": 0
+  },
+  "provider": {
+    "model": "google/gemma-4-26b-a4b-it",
+    "api_url": "https://openrouter.ai/api/v1/chat/completions",
+    "api_key_env": "OPENROUTER_API_KEY",
+    "temperature": 0,
+    "max_tokens": 1024,
+    "seed": 20260826,
+    "timeout_seconds": 180,
+    "request_retries": 3,
+    "concurrency": 8,
+    "min_request_interval_seconds": 1.0,
+    "provider_sort": "throughput",
+    "require_parameters": true
+  },
+  "runtime": {
+    "tokenizer_dir": "~/.cache/huggingface/hub/models--google--gemma-4-26B-A4B-it/snapshots/4d7ae4984b7db7de8f8457170b3f1a419ee76d52",
+    "prompt_budget": 14848
+  },
+  "run": {
+    "mode": "panel_observation"
+  },
+  "output_dir": "outputs/clean-exp-n008h-v2-participation-holdout-v1"
+}

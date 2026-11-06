@@ -1,0 +1,12 @@
+# EXP312: policy-identical dev200 confirmation for the v7 V/E specialist.
+inherits: config.exp309-v7-only-existing-card-ve-holdout-c4.yaml
+experiment:
+  id: exp-312-v7-only-existing-card-ve-dev200-c4
+  base_config: configs/config.exp309-v7-only-existing-card-ve-holdout-c4.yaml
+  allowed_policy_changes: []
+  derived_data: [decision_cards_v10_v6_v7_scope, competition_products_v1]
+  lifecycle: diagnostic
+data:
+  fast_panel_ids_path: null
+output:
+  dir: outputs/exp-312-v7-only-existing-card-ve-dev200-c4

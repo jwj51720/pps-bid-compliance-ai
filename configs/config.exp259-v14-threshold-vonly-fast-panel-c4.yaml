@@ -1,0 +1,12 @@
+# EXP259: corrected v14 policy with labels-only serialization.
+inherits: config.exp258-v14-threshold-ve-fast-panel-c4.yaml
+experiment:
+  id: exp-259-v14-threshold-vonly-fast-panel-c4
+  base_config: configs/config.exp258-v14-threshold-ve-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.output_mode]
+  derived_data: [decision_cards_v16_v14_threshold, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-259-v14-threshold-vonly-fast-panel-c4
+prompt:
+  output_mode: labels_only

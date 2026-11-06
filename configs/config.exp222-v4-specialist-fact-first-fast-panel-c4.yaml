@@ -1,0 +1,12 @@
+# EXP222: v4-only role/fact decomposition before model-owned v4/e4.
+inherits: config.exp219-v4-only-scope-fast-panel-c4.yaml
+experiment:
+  id: exp-222-v4-specialist-fact-first-fast-panel-c4
+  base_config: configs/config.exp219-v4-only-scope-fast-panel-c4.yaml
+  allowed_policy_changes: [prompt.mode]
+  derived_data: [decision_cards_v11_v4_scope, competition_products_v1, dev_fast_panel_v1]
+  lifecycle: diagnostic
+output:
+  dir: outputs/exp-222-v4-specialist-fact-first-fast-panel-c4
+prompt:
+  mode: v4_specialist_fact_first_v1
